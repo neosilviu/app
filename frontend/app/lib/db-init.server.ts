@@ -138,7 +138,7 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
                 "CREATE TABLE IF NOT EXISTS _metadata (key TEXT PRIMARY KEY, value TEXT, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP)",
                 "CREATE TABLE IF NOT EXISTS entity_definition (id TEXT PRIMARY KEY, name TEXT NOT NULL, label TEXT, labelPlural TEXT, description TEXT, icon TEXT DEFAULT 'Box', colorTheme TEXT, tableName TEXT, displayField TEXT, fields TEXT NOT NULL, validations TEXT, relationships TEXT, uiConfig TEXT, menuConfig TEXT, permissions TEXT, features TEXT, layout TEXT, dashboardConfig TEXT, isSystem INTEGER DEFAULT 0, workspaceId TEXT DEFAULT 'system', archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT, UNIQUE(name, workspaceId))",
                 "CREATE TABLE IF NOT EXISTS system_setting (id TEXT PRIMARY KEY, namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT, dataType TEXT DEFAULT 'text', description TEXT, isSecret INTEGER DEFAULT 0, workspaceId TEXT, archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT, UNIQUE(namespace, key))",
-                "CREATE TABLE IF NOT EXISTS _ai_prompt (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, template TEXT NOT NULL, model TEXT, provider TEXT, config TEXT, description TEXT, workspaceId TEXT DEFAULT 'system', archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT)",
+                "CREATE TABLE IF NOT EXISTS _ai_prompt (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, systemPrompt TEXT, userPromptTemplate TEXT, model TEXT, inputContext TEXT, outputField TEXT, category TEXT, description TEXT, workspaceId TEXT DEFAULT 'system', archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT, isLocked INTEGER DEFAULT 0)",
                 "CREATE TABLE IF NOT EXISTS user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, emailVerified INTEGER DEFAULT 0, image TEXT, role TEXT DEFAULT 'user', preferredLanguage TEXT DEFAULT 'ro', workspaceId TEXT, lastWorkspaceId TEXT, status TEXT DEFAULT 'active', archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT)",
                 "CREATE TABLE IF NOT EXISTS session (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES user(id), archived INTEGER DEFAULT 0, archivedAt DATETIME, deletedAt DATETIME, workspaceId TEXT, createdBy TEXT, updatedBy TEXT)",
                 "CREATE TABLE IF NOT EXISTS account (id TEXT PRIMARY KEY, userId TEXT NOT NULL REFERENCES user(id), accountId TEXT NOT NULL, providerId TEXT NOT NULL, accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt INTEGER, refreshTokenExpiresAt INTEGER, scope TEXT, password TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, archived INTEGER DEFAULT 0, archivedAt DATETIME, deletedAt DATETIME, workspaceId TEXT, createdBy TEXT, updatedBy TEXT)",
@@ -192,8 +192,21 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
                 ], true);
 
                 await syncTableSchema(db, '_ai_prompt', [
-                    'name', 'description', 'systemPrompt', 'userPromptTemplate', 'model', 'inputContext', 'outputField', 'category', 'workspaceId', 'archived', 'deletedAt', 'updatedAt'
+                    'name', 'description', 'systemPrompt', 'userPromptTemplate', 'model', 'inputContext', 'outputField', 'category', 'workspaceId', 'archived', 'deletedAt', 'updatedAt', 'isLocked'
                 ], true);
+
+                // Level 8: Handle legacy 'template' column if it exists (Rename to systemPrompt if systemPrompt is empty)
+                try {
+                    const columns = await db.query(`PRAGMA table_info("_ai_prompt")`);
+                    if (columns.find((c: any) => c.name === 'template')) {
+                        console.log("[DB-INIT] Legacy 'template' column detected in _ai_prompt. Migrating data...");
+                        await db.query(`UPDATE _ai_prompt SET systemPrompt = template WHERE (systemPrompt IS NULL OR systemPrompt = '') AND template IS NOT NULL`);
+                        // We don't drop columns in SQLite easily, but we can make it NULLable if we had a better DDL engine.
+                        // For now, we just ensure it doesn't block inserts.
+                    }
+                } catch (e) {
+                    console.warn("[DB-INIT] Legacy _ai_prompt migration skipped:", e.message);
+                }
 
                 // Level 8: Ensure archived exists as numeric 0 for all system entities
                 await db.query("UPDATE _ai_prompt SET archived = 0 WHERE archived IS NULL").catch(() => {});
@@ -418,6 +431,13 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
     console.log('[DB-INIT] Syncing AI prompts baseline (Batched)...');
     const statements: any[] = [];
 
+    // Level 8: Check for legacy 'template' column to avoid NOT NULL constraints
+    let hasTemplate = false;
+    try {
+        const columns = await db.query(`PRAGMA table_info("_ai_prompt")`);
+        hasTemplate = !!columns.find((c: any) => c.name === 'template');
+    } catch (e) {}
+
     // Categories that contain arrays of prompts
     const categories = ['system', 'global', 'workspaceTemplates'];
     
@@ -427,12 +447,32 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
 
         for (const p of promptList) {
             const nameStr = typeof p.name === 'object' ? (p.name.en || p.name.ro) : (p.name || p.id);
-            statements.push(
-                db.prepare(`INSERT OR REPLACE INTO _ai_prompt (id, name, systemPrompt, userPromptTemplate, model, inputContext, outputField, workspaceId) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-                    .bind(p.id, nameStr, p.content || p.systemPrompt || '', p.userPromptTemplate || '', 
-                        p.model || 'gemini', p.inputContext || '', p.outputField || 'output', 'system')
-            );
+            
+            // Enterprise Level 8: Unified bind to handle both legacy 'template' and new architecture
+            const sql = hasTemplate 
+                ? `INSERT OR REPLACE INTO _ai_prompt (id, name, systemPrompt, userPromptTemplate, model, inputContext, outputField, workspaceId, category, isLocked, template) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                : `INSERT OR REPLACE INTO _ai_prompt (id, name, systemPrompt, userPromptTemplate, model, inputContext, outputField, workspaceId, category, isLocked) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+            const values = [
+                p.id, 
+                nameStr, 
+                p.content || p.systemPrompt || '', 
+                p.userPromptTemplate || '', 
+                p.model || 'gemini-1.5-pro', 
+                p.inputContext || '', 
+                p.outputField || 'output', 
+                'system',
+                category,
+                p.isLocked ? 1 : 0
+            ];
+
+            if (hasTemplate) {
+                values.push(p.content || p.systemPrompt || '');
+            }
+
+            statements.push(db.prepare(sql).bind(...values));
         }
     }
 
