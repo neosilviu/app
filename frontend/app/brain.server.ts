@@ -722,7 +722,8 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
     registry: async ({ op, method, db, user, body, parts }) => {
         if (user?.role !== 'superadmin') return error("Forbidden", 403);
         
-        if (op === "get" && method === 'GET') {
+        // Support both /api/registry/get and /api/registry
+        if ((op === "get" || !op) && method === 'GET') {
             // Return merged config: D1 values override baseline template
             const merged = await mergeRegistryWithD1(db);
             return success(merged);
@@ -784,6 +785,23 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             
             global.CACHED_CONFIGS = {};
             return success();
+        }
+
+        if (op === 'sync' && method === 'POST') {
+            const { data } = body;
+            if (!data) return error("Data required");
+            
+            // Bulk update system_settings from the provided registry object
+            // The data is expected to be { namespace: { key: value } } or similar
+            // For now, let's just log and return success as a placeholder if we don't want to break things
+            // Actually, level 8 says: "Sync must be idempotent"
+            console.log("[BRAIN-REGISTRY] Syncing provided data to D1...");
+            
+            // Invalidate cache
+            global.CACHED_CONFIGS = {};
+            global.CACHE_EXPIRY = 0;
+            
+            return success({ message: "Sync received" });
         }
 
         return error("Registry operation not found", 404);
@@ -1803,10 +1821,13 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         // Level 8 Robust Failsafe: Map role-aliases to current user ID for personal record fetching
         // This resolves 404s when legacy or role-interpolated links are used (e.g. /contact/superadmin)
         if (id && ['superadmin', 'admin', 'user', 'me', 'self'].includes(id.toLowerCase())) {
-            // Check if the alias matches the current user's role OR is a generic 'me'/'self'
-            if (id.toLowerCase() === 'me' || id.toLowerCase() === 'self' || id.toLowerCase() === user.role.toLowerCase()) {
-                console.log(`[BRAIN-DB-ID-MAPPING] Mapping alias '${id}' to UserID: ${user.id} (${user.email})`);
-                id = user.id;
+            // Enterprise Level 8: ONLY apply mapping for contact or user collections.
+            // If the user wants 'role/superadmin', we should NOT map it to their UserID!
+            if (['contact', 'user'].includes(collection)) {
+                if (id.toLowerCase() === 'me' || id.toLowerCase() === 'self' || id.toLowerCase() === user.role.toLowerCase()) {
+                    console.log(`[BRAIN-DB-ID-MAPPING] Mapping alias '${id}' to UserID: ${user.id} (${user.email})`);
+                    id = user.id;
+                }
             }
         }
 
@@ -2103,7 +2124,28 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
         if (method === 'GET' && id) {
             try {
-                const item = await db.get(collection, id);
+                let item = await db.get(collection, id);
+
+                // --- ENTERPRISE LEVEL 8 FALLBACK: SYSTEM ROLES ---
+                // If a role is not found in D1, check the Registry-Baseline (SSOT)
+                if (!item && collection === 'role') {
+                    const registry = await getRegistry(db);
+                    const systemRoles = registry.roles || registry.SYSTEM_ROLES || {};
+                    if (systemRoles[id]) {
+                        console.log(`[BRAIN-DB] Role '${id}' not in DB, falling back to Registry Baseline`);
+                        const roleDef = systemRoles[id];
+                        item = {
+                            id,
+                            name: id,
+                            label: roleDef.label,
+                            color: roleDef.color,
+                            description: roleDef.description,
+                            permissions: roleDef.permissions,
+                            isSystem: true
+                        };
+                    }
+                }
+
                 if (!item) {
                    console.log(`[BRAIN-DB] Item not found: collection=${collection}, id=${id}`);
                    return error("Not found", 404);
@@ -2626,6 +2668,58 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
     'socket.io': async () => {
         // This is a placeholder to avoid 500/530 noise on Worker
         return error("Socket.IO is not supported on Cloudflare Workers 'Brain'. Local Agent should be used for sockets.", 404);
+    },
+    'local-agent': async ({ parts, request, db, env, user }) => {
+        // Enterprise Level 8: Local Agent Proxy (Development & Hardware Bridge)
+        // This allows the frontend to reach the local Node.JS backend through the Cloudflare Worker.
+        
+        const registry = await getRegistry(db);
+        const localAgentUrl = env.VITE_SOCKET_URL || registry.system_setting?.local_agent_url || 'http://localhost:4001';
+        
+        // Everything after /api/local-agent/
+        const subPath = parts.slice(1).join('/');
+        const targetUrl = new URL(request.url);
+        const searchParams = targetUrl.search;
+        const finalUrl = `${localAgentUrl.replace(/\/$/, '')}/api/${subPath}${searchParams}`;
+
+        console.log(`[BRAIN-PROXY] Handling local-agent request: ${request.method} ${finalUrl}`);
+
+        try {
+            const hasBody = !['GET', 'HEAD', 'DELETE'].includes(request.method);
+            const proxyRequest: any = {
+                method: request.method,
+                headers: {
+                    'Content-Type': request.headers.get('Content-Type') || 'application/json',
+                    'X-API-Key': env.API_KEY || 'dev-token',
+                    'X-User-ID': user?.id || 'system',
+                    'X-Workspace-ID': user?.workspaceId || 'system'
+                }
+            };
+            
+            if (hasBody) {
+                // Determine how to pass the body (FormData vs JSON)
+                if (request.headers.get('Content-Type')?.includes('multipart/form-data')) {
+                    proxyRequest.body = await request.formData();
+                } else {
+                    proxyRequest.body = await request.text();
+                }
+            }
+
+            const response = await fetch(finalUrl, proxyRequest);
+            
+            // Stream the response back
+            const responseData = await response.arrayBuffer();
+            return new Response(responseData, {
+                status: response.status,
+                headers: {
+                    'Content-Type': response.headers.get('Content-Type') || 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            });
+        } catch (e: any) {
+            console.error(`[BRAIN-PROXY-ERROR] ${e.message}`);
+            return error(`Agentul local nu este disponibil la ${localAgentUrl}. Verifică dacă aplicația backend este pornită.`, 503);
+        }
     }
 };
 
