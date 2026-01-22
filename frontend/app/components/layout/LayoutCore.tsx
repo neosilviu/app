@@ -23,6 +23,7 @@ import {
   Send,
   HardDrive,
   AlertCircle,
+  HelpCircle,
   ShieldCheck,
   BadgeCheck,
   Database,
@@ -55,7 +56,8 @@ import { InboxDrawer } from '../dashboard/InboxDrawer';
 
 function UserMenuContent({ onClose, onOpenChangelog }: { onClose: () => void, onOpenChangelog?: () => void }) {
   const { user, hasPermission, logout } = useAuth();
-  const { lang } = useParams();
+  const { lang, ...params } = useParams();
+  const location = useLocation();
   const { t } = useTranslation();
   const config = useConfig();
   const navigation = config?.navigation || { main: [], admin: [], user: [] };
@@ -114,6 +116,11 @@ function UserMenuContent({ onClose, onOpenChangelog }: { onClose: () => void, on
                    <Button variant="ghost" className="justify-start gap-3 h-12 rounded-2xl font-bold text-xs" onClick={() => { onClose(); if (onOpenChangelog) onOpenChangelog(); }}>
                       <History size={16} className="text-indigo-500" /> {renderString(t('common:whats_new'), lang)}
                    </Button>
+                   <HelpDialog id={params.id || location.pathname} onOpen={onClose} trigger={
+                      <Button variant="ghost" className="justify-start gap-3 h-12 rounded-2xl font-bold text-xs">
+                        <HelpCircle size={16} className="text-blue-500" /> {renderString(t('common:help'), lang)}
+                      </Button>
+                   } />
                    <BugReportModal onOpen={onClose} />
                 </div>
             </div>
@@ -893,7 +900,10 @@ function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChange
   const helpId = params.id || location.pathname;
 
   const creatableEntities = Object.entries(entities).filter(([id, config]: [string, any]) => 
-    hasPermission(config) && config.features?.creatable !== false && config.menuConfig?.category !== 'administration'
+    hasPermission(config) && 
+    config.features?.creatable !== false && 
+    config.menuConfig?.category !== 'administration' &&
+    config.menuConfig?.showInNewMenu !== false
   );
 
   // Breadcrumbs component
@@ -1015,6 +1025,12 @@ function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChange
                     </span>
                 </div>
             )}
+
+            {/* Bug & Help Group */}
+            <div className="hidden lg:flex items-center p-1 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
+               <BugReportModal />
+               <HelpDialog id={helpId} />
+            </div>
 
             {/* Language & Actions Group */}
             <div className="hidden sm:flex items-center p-1 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
@@ -1229,7 +1245,10 @@ export default function DashboardLayout({ children, title }: { children?: React.
   const allNavItems = [...navigation.main, ...navigation.admin, ...navigation.user];
 
   const creatableEntities = Object.entries(entities).filter(([id, config]: [string, any]) => 
-    hasPermission(config) && config.features?.creatable !== false && config.menuConfig?.category !== 'administration'
+    hasPermission(config) && 
+    config.features?.creatable !== false && 
+    config.menuConfig?.category !== 'administration' &&
+    config.menuConfig?.showInNewMenu !== false
   );
 
   const isAuthPage = location.pathname.includes('/login') || 

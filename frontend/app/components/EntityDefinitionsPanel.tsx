@@ -1535,6 +1535,18 @@ export function EntityDefinitionsPanel() {
                                                         </div>
 
                                                         <div className="space-y-1">
+                                                            <Label className="text-[9px] font-bold">Pictogramă Câmp (Lucide)</Label>
+                                                            <IconPicker 
+                                                                value={field.ui?.icon || field.icon}
+                                                                onChange={(val) => {
+                                                                    const fields = [...editingEntity.fields];
+                                                                    fields[idx].ui = { ...(fields[idx].ui || {}), icon: val };
+                                                                    setEditingEntity({ ...editingEntity, fields });
+                                                                }}
+                                                            />
+                                                        </div>
+
+                                                        <div className="space-y-1">
                                                             <Label className="text-[9px] font-bold">Form Column Width</Label>
                                                             <select 
                                                                 value={field.width || '1/2'}
@@ -1857,6 +1869,20 @@ export function EntityDefinitionsPanel() {
                                                 checked={editingEntity.menuConfig?.showInMainMenu !== false}
                                                 onCheckedChange={(checked) => {
                                                     const config = { ...editingEntity.menuConfig, showInMainMenu: checked };
+                                                    setEditingEntity({ ...editingEntity, menuConfig: config });
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <div className="space-y-0.5">
+                                                <label className="text-[9px] font-black uppercase text-slate-600">Vizibil în meniul "Adaugă Nou"</label>
+                                                <p className="text-[7px] text-slate-400">Apare în butonul global de "+" / "Quick Add"</p>
+                                            </div>
+                                            <Switch 
+                                                checked={!!editingEntity.menuConfig?.showInNewMenu}
+                                                onCheckedChange={(checked) => {
+                                                    const config = { ...editingEntity.menuConfig, showInNewMenu: checked };
                                                     setEditingEntity({ ...editingEntity, menuConfig: config });
                                                 }}
                                             />

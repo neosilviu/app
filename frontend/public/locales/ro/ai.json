@@ -1,0 +1,15 @@
+{
+  "ai_placeholder": "Întreabă agentul AI...",
+  "search_placeholder": "Caută ('.' fișiere, ',' contacte, '?' AI)...",
+  "quick_access": "Acces Rapid",
+  "agent_welcome": "Bună! Sunt asistentul tău personal Studio AI. Cu ce te pot ajuta astăzi?",
+  "agent_title": "Agent Studio AI",
+  "agent_status": "Online & Gata de ajutor",
+  "type_message": "Scrie mesajul tău...",
+  "powered_by": "Powered by Studio AI",
+  "error_prefix": "Ups! S-a produs o eroare: ",
+  "to_open": "pentru deschidere",
+  "to_search": "pentru căutare",
+  "search_files": "pentru fișiere",
+  "search_contacts": "pentru contacte"
+}

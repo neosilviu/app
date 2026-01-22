@@ -342,8 +342,13 @@ export function AiCommandBar() {
             )}
           </div>
           <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex justify-between items-center text-[10px] text-slate-400">
-             <div className="flex gap-3"><span className="flex items-center gap-1"><Command size={10} /> + K {renderString(t('common:to_open'), lang)}</span><span className="flex items-center gap-1"><span className="px-1 border rounded bg-white dark:bg-slate-800">↵</span> {renderString(t('common:to_search'), lang)}</span></div>
-             <div>{renderString(t('common:ai_platform'), lang)}</div>
+             <div className="flex gap-4 flex-wrap">
+                <span className="flex items-center gap-1"><Command size={10} /> + K {renderString(t('ai:to_open'), lang)}</span>
+                <span className="flex items-center gap-1"><span className="px-1 border rounded bg-white dark:bg-slate-800 font-mono mx-0.5">.</span> {renderString(t('ai:search_files'), lang)}</span>
+                <span className="flex items-center gap-1"><span className="px-1 border rounded bg-white dark:bg-slate-800 font-mono mx-0.5">,</span> {renderString(t('ai:search_contacts'), lang)}</span>
+                <span className="flex items-center gap-1"><span className="px-1 border rounded bg-white dark:bg-slate-800 font-mono mx-0.5">↵</span> {renderString(t('ai:to_search'), lang)}</span>
+             </div>
+             <div className="shrink-0">{renderString(t('common:ai_platform'), lang)}</div>
           </div>
         </div>
       )}

@@ -63,8 +63,9 @@
   "extend_system_desc": "Extend system configuration at runtime.",
   "key_name": "Key Name (Snake Case)",
   "register_key": "Register New Key",
-  "marketplace": {
-    "install_architecture": "Install Architecture",
+    "marketplace": {
+      "search_placeholder": "Search templates (e.g. CRM, Medical)...",
+      "install_architecture": "Install Architecture",
     "build_with_ai": "Build with AI",
     "ai_description": "Describe your business model and let the AI generate the entire schema.",
     "launch_ai": "Launch AI Architect",

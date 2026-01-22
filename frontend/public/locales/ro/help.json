@@ -1,0 +1,7 @@
+{
+  "title": "Ajutor Contextual AI",
+  "description": "Ghid inteligent pentru pagina curentă",
+  "ai_thinking": "AI analizează pagina și generează instrucțiuni...",
+  "load_error": "Nu am putut încărca ajutorul pentru această pagină.",
+  "ai_guide_description": "Instrucțiuni generate automat de inteligența artificială bazate pe contextul curent."
+}

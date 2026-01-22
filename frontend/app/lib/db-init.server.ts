@@ -204,7 +204,7 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
                         // We don't drop columns in SQLite easily, but we can make it NULLable if we had a better DDL engine.
                         // For now, we just ensure it doesn't block inserts.
                     }
-                } catch (e) {
+                } catch (e: any) {
                     console.warn("[DB-INIT] Legacy _ai_prompt migration skipped:", e.message);
                 }
 

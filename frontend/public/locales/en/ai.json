@@ -1,0 +1,15 @@
+{
+  "ai_placeholder": "Ask the AI agent...",
+  "search_placeholder": "Search ('.' files, ',' contacts, '?' AI)...",
+  "quick_access": "Quick Access",
+  "agent_welcome": "Hi! I'm your personal Studio AI assistant. How can I help you today?",
+  "agent_title": "Studio AI Agent",
+  "agent_status": "Online & Ready to help",
+  "type_message": "Type your message...",
+  "powered_by": "Powered by Studio AI",
+  "error_prefix": "Oops! An error occurred: ",
+  "to_open": "to open",
+  "to_search": "to search",
+  "search_files": "for files",
+  "search_contacts": "for contacts"
+}

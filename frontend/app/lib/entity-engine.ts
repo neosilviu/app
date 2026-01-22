@@ -163,6 +163,7 @@ export function normalizeEntity(raw: any): EntityDefinition {
   // 6. Metadata Normalization (Menu, Dashboard, Relationships)
   const menuConfig = {
     showInMainMenu: true,
+    showInNewMenu: (name === 'contact' || name === 'task'),
     priority: 50,
     ...safeParse(raw.menuConfig, {})
   };

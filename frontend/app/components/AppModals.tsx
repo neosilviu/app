@@ -36,12 +36,13 @@ import { toast } from 'sonner';
 interface HelpDialogProps {
   id: string; // The route or entityKey
   trigger?: React.ReactNode;
+  onOpen?: () => void;
 }
 
 /**
  * HelpDialog - AI-powered contextual help system.
  */
-export function HelpDialog({ id, trigger }: HelpDialogProps) {
+export function HelpDialog({ id, trigger, onOpen }: HelpDialogProps) {
   const { lang } = useParams();
   const { i18n, t } = useTranslation();
   const [help, setHelp] = useState<{ title: string; content: string; description?: string } | null>(null);
@@ -66,6 +67,7 @@ export function HelpDialog({ id, trigger }: HelpDialogProps) {
     if (open && !help) {
       fetchHelp();
     }
+    if (open && onOpen) onOpen();
   }, [open, id]);
 
   const handleRefresh = () => fetchHelp(true);

@@ -255,7 +255,6 @@ import {
   FileArchive,
   FileSpreadsheet,
   Folder,
-  FolderMinus,
   FolderSearch,
   Keyboard,
   Mouse,

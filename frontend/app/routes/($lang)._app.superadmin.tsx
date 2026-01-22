@@ -91,6 +91,7 @@ export default function SuperadminPage() {
     }, [activeTab]);
 
     const [installing, setInstalling] = useState<string | null>(null);
+    const [marketplaceSearch, setMarketplaceSearch] = useState('');
 
     // AI Architect State
     const [aiPrompt, setAiPrompt] = useState('');
@@ -227,9 +228,24 @@ export default function SuperadminPage() {
                     <AiArchitectSandbox />
                 </TabsContent>
 
-                <TabsContent value="marketplace" className="mt-0 focus-visible:outline-none">
+                <TabsContent value="marketplace" className="mt-0 focus-visible:outline-none space-y-6">
+                    <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                        <Input 
+                            placeholder={renderString(t('superadmin:marketplace.search_placeholder'), lang)}
+                            className="pl-12 h-14 bg-white/50 backdrop-blur-xl border-white/20 rounded-2xl shadow-sm focus:ring-amber-500/20 text-lg font-bold italic uppercase tracking-wider"
+                            value={marketplaceSearch}
+                            onChange={(e) => setMarketplaceSearch(e.target.value)}
+                        />
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {marketplace.map((template) => {
+                        {marketplace.filter((m: any) => {
+                            if(!marketplaceSearch) return true;
+                            const s = marketplaceSearch.toLowerCase();
+                            const name = renderString(m.name, lang).toLowerCase();
+                            const desc = renderString(m.description, lang).toLowerCase();
+                            return name.includes(s) || desc.includes(s);
+                        }).map((template) => {
                             const Icon = getIconComponent(template.icon || 'box');
                             return (
                                 <GlassCard key={template.id} className="flex flex-col group hover:ring-2 hover:ring-primary/20 transition-all">

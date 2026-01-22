@@ -63,8 +63,9 @@
   "extend_system_desc": "Extinde configurația sistemului la runtime.",
   "key_name": "Nume Cheie (Snake Case)",
   "register_key": "Înregistrează Cheie Nouă",
-  "marketplace": {
-    "install_architecture": "Instalează Arhitectura",
+    "marketplace": {
+      "search_placeholder": "Caută șabloane (ex: CRM, Medical)...",
+      "install_architecture": "Instalează Arhitectura",
     "build_with_ai": "Construiește cu AI",
     "ai_description": "Descrie modelul de afaceri și lasă AI-ul să genereze întreaga schemă.",
     "launch_ai": "Lansează AI Architect",
