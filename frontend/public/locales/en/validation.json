@@ -1,0 +1,7 @@
+{
+  "invalid_email": "Invalid email",
+  "invalid_phone": "Invalid phone",
+  "invalid_format": "Invalid format for {{label}}",
+  "required": "{{label}} is required",
+  "at_least_one": "{{label}} is required"
+}

@@ -1,0 +1,20 @@
+{
+  "active": "Activ",
+  "more": "Mai mult",
+  "system_tools": "Unelte Sistem",
+  "system_alert": "Alertă Sistem",
+  "version_default": "Versiune v2",
+  "agent_label": "Agent",
+  "brain_label": "Creier",
+  "high_cpu": "CPU Ridicat",
+  "low_memory": "Memorie Scăzută",
+  "ram_full": "RAM Plin",
+  "usage": "Utilizare",
+  "worker_issue": "Problemă Worker",
+  "press_space_to_close": "Apasă [Space] pentru a închide",
+  "shortcuts": "Scurtături Rapide",
+  "main_menu": "Meniu Principal",
+  "apps_workers": "Aplicații",
+  "data_systems": "Sisteme de Date",
+  "administration": "Administrare"
+}

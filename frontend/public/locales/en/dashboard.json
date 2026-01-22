@@ -1,0 +1,12 @@
+{
+  "view_edit_desc": "View and edit your {{label}} database.",
+  "open_module": "Open Module",
+  "no_activity": "Recent activity is not available.",
+  "ai_assistant": "AI Assistant",
+  "ai_assistant_desc": "Analyze your data with the AI architect.",
+  "data_integration": "Data Integration",
+  "d1_sync": "Cloudflare D1 synchronization is active.",
+  "manage_todos": "Manage Tasks",
+  "last_update": "Last update",
+  "all_done": "All tasks completed"
+}

@@ -1,0 +1,86 @@
+# ==========================================
+# Dependencies
+# ==========================================
+node_modules/
+.pnp
+.pnp.js
+
+# ==========================================
+# Studio App v2 Specific
+# ==========================================
+OLD/
+backups/
+local-inbox/
+whatsapp_session/
+temp_test_dir/
+logs/
+.dev/
+.dev-logs/
+frontend/build/
+frontend/.react-router/
+frontend/.wrangler/
+backend-v2/dist/
+backend-v2/logs/
+backend-v2/db/*.sqlite
+backend-v2/db/*.sqlite-journal
+
+# ==========================================
+# Files to NEVER upload (Secrets & Data)
+# ==========================================
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend-v2/.env.v2
+frontend/wrangler.toml
+frontend/wrangler.production.toml
+
+# ==========================================
+# Databases & Backups
+# ==========================================
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-journal
+*.bak
+*.sqlite.bak
+
+# ==========================================
+# Build & Compiled
+# ==========================================
+dist/
+build/
+.react-router/
+.wrangler/
+worker-configuration.d.ts
+
+# ==========================================
+# OS & IDEs
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.suo
+*.sln
+*.sw?
+
+# ==========================================
+# Logs & Temps
+# ==========================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tmp
+*.temp
+tmp/
+temp/

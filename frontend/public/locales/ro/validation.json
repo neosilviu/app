@@ -1,0 +1,7 @@
+{
+  "invalid_email": "Email invalid",
+  "invalid_phone": "Telefon invalid",
+  "invalid_format": "Format invalid pentru {{label}}",
+  "required": "{{label}} este obligatoriu",
+  "at_least_one": "{{label}} este obligatoriu"
+}

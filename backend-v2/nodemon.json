@@ -1,0 +1,6 @@
+{
+  "watch": ["src", "../registry-baseline.ts"],
+  "ext": "ts,json",
+  "ignore": ["src/**/*.spec.ts", "src/**/*.test.ts", "logs/*", "dist/*", "test/*", "tests/*", "local_db.sqlite-wal", "local_db.sqlite-shm"],
+  "exec": "ts-node src/index.ts"
+}

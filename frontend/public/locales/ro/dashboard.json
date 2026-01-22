@@ -1,0 +1,12 @@
+{
+  "view_edit_desc": "Vizualizează și editează baza de date pentru {{label}}.",
+  "open_module": "Deschide Modulul",
+  "no_activity": "Activitate recentă nu este disponibilă.",
+  "ai_assistant": "Asistent AI",
+  "ai_assistant_desc": "Analizează-ți datele cu AI arhitectul.",
+  "data_integration": "Integrare Date",
+  "d1_sync": "Sincronizarea cu Cloudflare D1 este activă.",
+  "manage_todos": "Gestionează Task-uri",
+  "last_update": "Ultima actualizare",
+  "all_done": "Toate task-urile completate"
+}

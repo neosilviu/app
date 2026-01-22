@@ -1,0 +1,20 @@
+{
+  "active": "Active",
+  "more": "More",
+  "system_tools": "System Tools",
+  "system_alert": "System Alert",
+  "version_default": "Version v2",
+  "agent_label": "Agent",
+  "brain_label": "Brain",
+  "high_cpu": "High CPU",
+  "low_memory": "Low Memory",
+  "ram_full": "RAM Full",
+  "usage": "Usage",
+  "worker_issue": "Worker Issue",
+  "press_space_to_close": "Press [Space] to close",
+  "shortcuts": "Quick Shortcuts",
+  "main_menu": "Main Menu",
+  "apps_workers": "Applications",
+  "data_systems": "Data Systems",
+  "administration": "Administration"
+}

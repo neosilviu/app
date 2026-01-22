@@ -1,0 +1,58 @@
+{
+  "name": "studio-backend-v2",
+  "version": "2.0.0",
+  "description": "Enterprise Level 8 Registry-Driven Backend",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "prod": "npm run build && pm2 start ecosystem.config.js --env production",
+    "dev": "nodemon src/index.ts",
+    "build": "tsc",
+    "lint": "eslint src/**/*.ts",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@radix-ui/react-accordion": "^1.2.12",
+    "@types/uuid": "^10.0.0",
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "fs-extra": "^11.3.3",
+    "googleapis": "^169.0.0",
+    "joi": "^17.11.0",
+    "kysely": "^0.28.10",
+    "mime-types": "latest",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.12",
+    "puppeteer": "^24.35.0",
+    "sharp": "^0.34.5",
+    "socket.io": "^4.8.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "systeminformation": "^5.30.00",
+    "uuid": "^13.0.0",
+    "whatsapp-web.js": "https://github.com/pedroslopez/whatsapp-web.js",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/fs-extra": "^11.0.0",
+    "@types/mime-types": "^3.0.1",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^20.10.0",
+    "@types/ws": "^8.5.10",
+    "nodemon": "^3.1.11",
+    "rimraf": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "overrides": {
+    "diff": "8.0.3",
+    "tar": "7.5.3"
+  }
+}
