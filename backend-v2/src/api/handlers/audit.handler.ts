@@ -4,7 +4,7 @@ import { DatabaseDriver } from '../../db/driver';
 const router = Router();
 const db = DatabaseDriver.getInstance();
 
-router.get('/logs', async (req, res) => {
+router.get('/log', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;

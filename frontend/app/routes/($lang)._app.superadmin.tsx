@@ -4,17 +4,7 @@ import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '~/components/ui/card';
 import { IconMap } from '~/lib/icons';
-import { 
-    Plus, Trash, Save, Sparkles, Settings as SettingsIcon, Database, Shield, Layout, 
-    ChevronRight, Menu as MenuIcon, User, Users, Briefcase, 
-    CheckCircle2, PlusCircle, RefreshCw, Activity, Search, Box,
-    Eye, ExternalLink, Layers,
-    ArrowDownUp, HelpCircle, Type, Zap, Trash2, Image as ImageIcon,
-    Cloud, HardDrive, File, DollarSign, Percent, List, Tag, AlignLeft,
-    Clock, Calendar, ToggleRight, Mail, Phone, Music, Palette,
-    Star, FileCode, Code2, MapPin, Calculator, Handshake, Edit3, QrCode,
-    Rocket, ShieldAlert
-} from 'lucide-react';
+import { Plus, Trash, Save, Sparkles, Settings as SettingsIcon, Database, Shield, Layout, ChevronRight, Menu as MenuIcon, User, Users, Briefcase, CheckCircle2, PlusCircle, RefreshCw, Activity, Search, Box, Eye, ExternalLink, Layers, ArrowDownUp, HelpCircle, Type, Zap, Trash2, Image as ImageIcon, Cloud, HardDrive, File, DollarSign, Percent, List, Tag, AlignLeft, Clock, Calendar, ToggleRight, Mail, Phone, Music, Palette, Star, FileCode, Code2, MapPin, Calculator, Handshake, Edit3, QrCode, Rocket, ShieldAlert } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Badge } from '~/components/ui/badge';
 import { GlassCard } from '~/components/ui/GlassCard';
@@ -65,10 +55,17 @@ const getIconComponent = (name: any) => {
 export default function SuperadminPage() {
     const navigate = useNavigate();
     const { lang } = useParams();
-    const { entities, uiConfig, refreshConfig, navigation, updateUiConfig, marketplace, constants } = useConfig();
-    const { t } = useTranslation(['common', 'superadmin', 'settings', 'ai_settings', 'entities']);
+    const { entity, uiConfig, refreshConfig, navigation, updateUiConfig, marketplace, constants } = useConfig();
+    const { t } = useTranslation(['common', 'superadmin', 'settings', 'ai_settings', 'entity']);
     const [searchParams, setSearchParams] = useSearchParams();
-    const { user, switchWorkspace } = useAuth();
+    const { user, switchWorkspace, hasPageAccess } = useAuth();
+
+    // Security check: Only superadmins
+    useEffect(() => {
+        if (user && !hasPageAccess('superadmin')) {
+            navigate('/');
+        }
+    }, [user, hasPageAccess, navigate]);
     
     // Tab Sync Logic
     const currentTab = searchParams.get('tab') || 'ai-architect';
@@ -129,14 +126,14 @@ export default function SuperadminPage() {
         if (!aiResult) return;
         setIsAiGenerating(true);
         try {
-            const res = await api.brain.post('entities', { 
+            const res = await api.brain.post('entity', { 
                 action: 'install', 
                 template: {
                     id: crypto.randomUUID(),
                     name: `AI Generated: ${aiPrompt.slice(0, 20)}...`,
-                    entities: aiResult.entities || [],
-                    automations: aiResult.automations || [],
-                    widgets: aiResult.widgets || []
+                    entity: aiResult.entity || [],
+                    automation: aiResult.automation || [],
+                    widget: aiResult.widget || []
                 }
             });
 
@@ -166,7 +163,7 @@ export default function SuperadminPage() {
     const handleInstallTemplate = async (template: any) => {
         setInstalling(template.id);
         try {
-            const res = await api.brain.post('entities', { action: 'install', template });
+            const res = await api.brain.post('entity', { action: 'install', template });
             if (res.success) {
                 toast.success(`Template "${template.name}" installed in Cloud!`);
                 refreshConfig(true);
@@ -254,14 +251,14 @@ export default function SuperadminPage() {
                                             <div className="p-3 bg-slate-100 rounded-2xl text-primary">
                                                 <Icon size={24} />
                                             </div>
-                                            <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest">{template.entities.length} Entities</Badge>
+                                            <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest">{template.entity?.length || 0} Entities</Badge>
                                         </div>
                                         <CardTitle className="text-lg font-black italic uppercase tracking-tighter">{renderString(template.name, lang)}</CardTitle>
                                         <CardDescription className="line-clamp-2 text-xs font-medium">{renderString(template.description, lang)}</CardDescription>
                                     </CardHeader>
                                     <CardContent className="flex-1">
                                         <div className="flex flex-wrap gap-1">
-                                            {template.entities.map((e: any) => (
+                                            {template.entity?.map((e: any) => (
                                                 <Badge key={e.id} variant="secondary" className="text-[8px] uppercase">{renderString(e.label, lang)}</Badge>
                                             ))}
                                         </div>

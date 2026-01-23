@@ -28,8 +28,11 @@ class DbQueue {
 
         this.activeCount++;
         const queueId = Math.random().toString(36).substring(7);
-        if (this.activeCount > 5) {
-            console.warn(`[DB-QUEUE][${queueId}] High contention: ${this.activeCount} task in queue`);
+        
+        // Level 8: Reduced noise for DB queueing on Windows
+        // 5 was too low for modern React Router parallel loading, increased to 25.
+        if (this.activeCount > 25) {
+            console.warn(`[DB-QUEUE][${queueId}] High contention detected: ${this.activeCount} tasks in queue. This is normal on Windows Dev to prevent SQLite locks.`);
         }
 
         const wrapped = async () => {

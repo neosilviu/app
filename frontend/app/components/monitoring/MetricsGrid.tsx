@@ -9,6 +9,7 @@ interface MetricsGridProps {
     localStats: any;
     workerStats: any;
     user: any;
+    isSuper?: boolean;
     handleRestartWindows: () => void;
     handleRestartServer: () => void;
 }
@@ -17,6 +18,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
     localStats, 
     workerStats, 
     user, 
+    isSuper,
     handleRestartWindows, 
     handleRestartServer 
 }) => {
@@ -101,7 +103,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                             </div>
                         </div>
                     </div>
-                    {user?.role === 'superadmin' && (
+                    {isSuper && (
                         <Button 
                             variant="outline" 
                             size="sm" 
@@ -118,7 +120,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             {/* Workers/Server Control Card */}
             <Card className="overflow-hidden border-none shadow-xl shadow-slate-200/50 bg-white/70 backdrop-blur-md rounded-3xl">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-xs font-black uppercase italic tracking-[0.2em] text-slate-400">{t("monitoring:local.workers_status")}</CardTitle>
+                    <CardTitle className="text-xs font-black uppercase italic tracking-[0.2em] text-slate-400">{t("monitoring:local.worker_status")}</CardTitle>
                     <div className="rounded-2xl bg-primary/10 p-3 text-primary">
                         <Zap className="h-5 w-5" />
                     </div>

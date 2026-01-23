@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { RegistryManager } from '../../core/registry';
 import { DatabaseDriver } from '../../db/driver';
 import { AuditService } from '../../core/audit';
-import winston from 'winston';
 
 const router = Router();
 const db = DatabaseDriver.getInstance();
@@ -14,11 +13,11 @@ router.get('/', async (req, res) => {
   try {
     // List all entities defined in registry
     const registry = RegistryManager.getInstance().get();
-    const entities = Object.keys(registry.entities).map(key => ({
+    const entityList = Object.keys(registry.entity).map(key => ({
       name: key,
-      ...registry.entities[key]
+      ...registry.entity[key]
     }));
-    res.json({ success: true, data: entities });
+    res.json({ success: true, data: entityList });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -28,7 +27,7 @@ router.get('/:name', async (req, res) => {
   const { name } = req.params;
   const registry = RegistryManager.getInstance().get();
   
-  if (!registry.entities[name]) {
+  if (!registry.entity[name]) {
     return res.status(404).json({ success: false, error: 'Entity not found in registry' });
   }
 
@@ -60,7 +59,7 @@ router.get('/:name/:id', async (req, res) => {
   const { name, id } = req.params;
   const registry = RegistryManager.getInstance().get();
 
-  if (!registry.entities[name]) {
+  if (!registry.entity[name]) {
     return res.status(404).json({ success: false, error: 'Entity not found in registry' });
   }
 
@@ -80,7 +79,7 @@ router.post('/:name', async (req, res) => {
   const data = req.body;
   const registry = RegistryManager.getInstance().get();
 
-  if (!registry.entities[name]) {
+  if (!registry.entity[name]) {
     return res.status(404).json({ success: false, error: 'Entity definition not found' });
   }
 

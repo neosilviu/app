@@ -1,24 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { 
-    Brain, Sparkles, Save, Play, Code, Layout, 
-    Eye, Database, Trash2, Plus, RefreshCw, X,
-    ChevronRight, Info, AlertTriangle, CheckCircle2,
-    Box
-} from 'lucide-react';
+import {  Brain, Sparkles, Play, Code, Layout, Eye, Database, RefreshCw, X, AlertTriangle, Box } from 'lucide-react';
 import { Button } from '~/components/ui/button';
-import { Input } from '~/components/ui/input';
 import { Badge } from '~/components/ui/badge';
 import { GlassCard } from '~/components/ui/GlassCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
-import { cn, api } from '~/lib/core';
+import { api } from '~/lib/core';
 import { useConfig } from '~/hooks/useConfig';
 import { toast } from 'sonner';
-import { DynamicEntityDetail } from './entities/DynamicEntityDetail';
-import { DynamicEntityList } from './entities/DynamicEntityList';
+import { DynamicEntityDetail } from './entity/DynamicEntityDetail';
+import { DynamicEntityList } from './entity/DynamicEntityList';
 import { EntityDefinitionsPanel } from './EntityDefinitionsPanel';
 
 export function AiArchitectSandbox() {
-    const { entities, refreshConfig } = useConfig();
+    const { entity, refreshConfig } = useConfig();
     const [draftJson, setDraftJson] = useState<string>(
         JSON.stringify({
             label: "Product Prototype",
@@ -107,7 +101,7 @@ export function AiArchitectSandbox() {
         if (confirm(`Deploy entity "${entityId}" to Registry and Database?`)) {
             setIsSaving(true);
             try {
-                const res = await api.brain.post(`entities/${entityId}`, {
+                const res = await api.brain.post(`entity/${entityId}`, {
                     ...parsedDraft,
                     name: entityId // Force name to match
                 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Clock, User, Box, ArrowRight, RotateCcw } from 'lucide-react';
+import { Activity, Clock, Box, ArrowRight, RotateCcw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
@@ -22,13 +22,13 @@ interface ActivityLog {
 }
 
 export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], loading: boolean }) {
-  const { entities, constants } = useConfig();
+  const { entity, constants } = useConfig();
   const { lang = 'ro' } = useParams();
   const [filter, setFilter] = React.useState<string>('all');
 
   const handleUndo = async (logId: string) => {
     try {
-      const res = await api.brain.post(`actions/undo/${logId}`);
+      const res = await api.brain.post(`action/undo/${logId}`);
       if (res.success) {
         toast.success("Operațiune anulată cu succes!");
         window.location.reload();
@@ -68,7 +68,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
                 Toate
             </Button>
             {activeEntities.map(ent => {
-                const def = entities[ent] || { label: ent };
+                const def = entity[ent] || { label: ent };
                 return (
                     <Button 
                         key={ent}
@@ -105,7 +105,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
         ) : (
           <div className="divide-y divide-slate-50 dark:divide-white/5">
             {filteredLogs.map((log) => {
-              const entityDefRaw = entities[log.entityType] || entities[log.entityType.toLowerCase()] || {};
+              const entityDefRaw = entity[log.entityType] || entity[log.entityType.toLowerCase()] || {};
               const entityDef = normalizeEntity({ ...entityDefRaw, name: log.entityType });
               const theme = getThemeClasses(entityDef.colorTheme || 'slate');
               const Icon = IconMap[entityDef.icon || ''] || Box;

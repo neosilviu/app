@@ -25,11 +25,11 @@ export class EntitySync {
    */
   public async syncAll(): Promise<void> {
     const reg = this.registry.get();
-    const entities = reg.entities; // From Registry ENTITY_CONFIGS
+    const entityConfigs = reg.entity; // From Registry ENTITY_CONFIGS
 
-    logger.info(`Syncing ${Object.keys(entities).length} entities to DB...`);
+    logger.info(`Syncing ${Object.keys(entityConfigs).length} entities to DB...`);
 
-    for (const [entityKey, def] of Object.entries(entities)) {
+    for (const [entityKey, def] of Object.entries(entityConfigs)) {
       const defTyped = def as any;
       const tableName = defTyped.tableName || entityKey;
       

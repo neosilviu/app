@@ -2,16 +2,16 @@
  * Registry Baseline - Studio App v2
  * Enterprise Level 8 System Specification
  * 
- * TEMPLATE ONLY - Actual values come from D1 system_setting table.
+ * TEMPLATE ONLY - Actual values come from D1 SYSTEM_SETTING table.
  * 
  * Structure:
- * - Navigation (NAV_STRUCTURE): Route definitions and menu hierarchy
+ * - Navigation (NAV): Route definitions and menu hierarchy
  * - Core Constants: App metadata, directories, entity definitions
  * - Entity Configurations: Database schema and UI definitions for each entity
  * - Theme: Colors, typography, layout
  * - AI/LLM: Provider configs, models, prompts
  * - Auth: Security settings, roles, permissions
- * - Integrations: WhatsApp, Gmail, Printing, etc.
+ * - INTEGRATION: WhatsApp, Gmail, Printing, etc.
  * - System: Feature flags, behavior settings
  */
 
@@ -48,7 +48,7 @@ const DEFAULT_AGENT_URL = isDev ? `http://localhost:${DEFAULT_AGENT_PORT}` : 'ht
 // SYSTEM ROLES & PERMISSIONS (Enterprise Level 8)
 // ============================================================================
 
-export const COMMON_COLORS = {
+export const COMMON_COLOR = {
   blue: '#3b82f6',
   indigo: '#4f46e5',
   emerald: '#10b981',
@@ -61,43 +61,44 @@ export const COMMON_COLORS = {
   gray: '#6b7280'
 } as const;
 
-export const COMMON_STATUSES = {
-  active: { label: { ro: 'Activ', en: 'Active' }, value: 'active', color: COMMON_COLORS.emerald },
-  archived: { label: { ro: 'Arhivat', en: 'Archived' }, value: 'archived', color: COMMON_COLORS.amber },
-  deleted: { label: { ro: 'Șters', en: 'Deleted' }, value: 'deleted', color: COMMON_COLORS.red },
-  planning: { label: { ro: 'În Planificare', en: 'Planning' }, value: 'planning', color: COMMON_COLORS.indigo },
-  blocked: { label: { ro: 'Blocat', en: 'Blocked' }, value: 'blocked', color: COMMON_COLORS.red },
-  completed: { label: { ro: 'Finalizat', en: 'Completed' }, value: 'completed', color: COMMON_COLORS.slate },
-  lead: { label: { ro: 'Lead', en: 'Lead' }, value: 'lead', color: COMMON_COLORS.blue },
-  customer: { label: { ro: 'Client', en: 'Customer' }, value: 'customer', color: COMMON_COLORS.emerald },
-  partner: { label: { ro: 'Partener', en: 'Partner' }, value: 'partner', color: COMMON_COLORS.violet },
-  vendor: { label: { ro: 'Furnizor', en: 'Vendor' }, value: 'vendor', color: COMMON_COLORS.amber },
-  todo: { label: { ro: 'De făcut', en: 'To Do' }, value: 'todo', color: COMMON_COLORS.slate },
-  in_progress: { label: { ro: 'În lucru', en: 'In Progress' }, value: 'in_progress', color: COMMON_COLORS.blue },
-  done: { label: { ro: 'Gata', en: 'Done' }, value: 'done', color: COMMON_COLORS.emerald },
+export const COMMON_STATUS = {
+  active: { label: { ro: 'Activ', en: 'Active' }, value: 'active', color: COMMON_COLOR.emerald },
+  archived: { label: { ro: 'Arhivat', en: 'Archived' }, value: 'archived', color: COMMON_COLOR.amber },
+  deleted: { label: { ro: 'Șters', en: 'Deleted' }, value: 'deleted', color: COMMON_COLOR.red },
+  planning: { label: { ro: 'În Planificare', en: 'Planning' }, value: 'planning', color: COMMON_COLOR.indigo },
+  blocked: { label: { ro: 'Blocat', en: 'Blocked' }, value: 'blocked', color: COMMON_COLOR.red },
+  completed: { label: { ro: 'Finalizat', en: 'Completed' }, value: 'completed', color: COMMON_COLOR.slate },
+  lead: { label: { ro: 'Lead', en: 'Lead' }, value: 'lead', color: COMMON_COLOR.blue },
+  customer: { label: { ro: 'Client', en: 'Customer' }, value: 'customer', color: COMMON_COLOR.emerald },
+  partner: { label: { ro: 'Partener', en: 'Partner' }, value: 'partner', color: COMMON_COLOR.violet },
+  vendor: { label: { ro: 'Furnizor', en: 'Vendor' }, value: 'vendor', color: COMMON_COLOR.amber },
+  todo: { label: { ro: 'De făcut', en: 'To Do' }, value: 'todo', color: COMMON_COLOR.slate },
+  in_progress: { label: { ro: 'În lucru', en: 'In Progress' }, value: 'in_progress', color: COMMON_COLOR.blue },
+  done: { label: { ro: 'Gata', en: 'Done' }, value: 'done', color: COMMON_COLOR.emerald },
 } as const;
 
-export const COMMON_PRIORITIES = {
-  low: { label: { ro: 'Scăzută', en: 'Low' }, value: 'low', color: COMMON_COLORS.slate },
-  medium: { label: { ro: 'Medie', en: 'Medium' }, value: 'medium', color: COMMON_COLORS.amber },
-  high: { label: { ro: 'Urgentă', en: 'High' }, value: 'high', color: COMMON_COLORS.red },
+export const COMMON_PRIORITY = {
+  low: { label: { ro: 'Scăzută', en: 'Low' }, value: 'low', color: COMMON_COLOR.slate },
+  medium: { label: { ro: 'Medie', en: 'Medium' }, value: 'medium', color: COMMON_COLOR.amber },
+  high: { label: { ro: 'Urgentă', en: 'High' }, value: 'high', color: COMMON_COLOR.red },
 } as const;
 
-export const SYSTEM_ROLES = {
+export const SYSTEM_ROLE = {
   superadmin: {
     label: { ro: 'SuperAdmin', en: 'SuperAdmin' },
-    color: COMMON_COLORS.red,
+    color: COMMON_COLOR.red,
     description: { ro: 'Acces total la sistem și configurări globale', en: 'Full system access and global configurations' },
-    permissions: ['*'],
+    permission: ['*'],
+    allowedPage: ['*'],
   },
   workspace_owner: {
     label: { ro: 'Proprietar', en: 'Workspace Owner' },
-    color: COMMON_COLORS.indigo,
+    color: COMMON_COLOR.indigo,
     description: { ro: 'Control total asupra workspace-ului curent', en: 'Full control over the current workspace' },
-    permissions: [
+    permission: [
       'workspace:manage',
       'workspace:members:manage',
-      'workspace:settings:edit',
+      'workspace:setting:edit',
       'workspace:data:export',
       'contact:create',
       'contact:read',
@@ -105,47 +106,52 @@ export const SYSTEM_ROLES = {
       'contact:delete',
       'file:manage',
     ],
+    allowedPage: ['dashboard', 'monitoring', 'setting', 'profile', 'entity', 'worker'],
   },
   workspace_admin: {
     label: { ro: 'Administrator', en: 'Workspace Admin' },
-    color: COMMON_COLORS.violet,
+    color: COMMON_COLOR.violet,
     description: { ro: 'Gestionare membri și configurări de bază', en: 'Manage members and basic settings' },
-    permissions: [
+    permission: [
       'workspace:members:manage',
-      'workspace:settings:view',
+      'workspace:setting:view',
       'contact:create',
       'contact:read',
       'contact:update',
       'file:manage',
     ],
+    allowedPage: ['dashboard', 'monitoring', 'setting', 'profile', 'entity', 'worker'],
   },
   member: {
     label: { ro: 'Membru', en: 'Member' },
-    color: COMMON_COLORS.emerald,
+    color: COMMON_COLOR.emerald,
     description: { ro: 'Utilizator activ cu acces la datele de business', en: 'Active user with access to business data' },
-    permissions: [
+    permission: [
       'contact:read',
       'contact:create',
       'contact:update',
       'file:upload',
       'workspace:view',
     ],
+    allowedPage: ['dashboard', 'profile', 'entity', 'worker'],
   },
   agent: {
     label: { ro: 'Agent', en: 'Agent' },
-    color: COMMON_COLORS.orange,
+    color: COMMON_COLOR.orange,
     description: { ro: 'Acces limitat pentru colaboratori externi sau AI', en: 'Limited access for external collaborators or AI' },
-    permissions: [
+    permission: [
       'contact:read',
       'interaction:create',
       'interaction:read',
     ],
+    allowedPage: ['dashboard', 'profile'],
   },
   guest: {
     label: { ro: 'Fără permisiuni', en: 'No Permissions' },
-    color: COMMON_COLORS.gray,
+    color: COMMON_COLOR.gray,
     description: { ro: 'Utilizator fără permisiuni de acces în sistem', en: 'User with no access permissions' },
-    permissions: [],
+    permission: [],
+    allowedPage: [],
   },
 } as const;
 
@@ -153,29 +159,30 @@ export const SYSTEM_ROLES = {
 // NAVIGATION STRUCTURE (TEMPLATE)
 // ============================================================================
 
-export const NAV_STRUCTURE = {
+export const NAV = {
   main: [
     { id: 'dashboard', label: { ro: 'Tablou de bord', en: 'Dashboard' }, icon: 'Layout', path: '/', priority: 1, category: 'main_menu' },
   ],
-  workers: [],
-  shortcuts: [
+  worker: [],
+  SHORTCUT: [
     { id: 'blueprint-architect', label: { ro: 'Arhitect Blueprint', en: 'Blueprint Architect' }, icon: 'Sparkles', path: '/superadmin?tab=ai-architect', priority: 1 },
-    { id: 'cloud-status', label: { ro: 'Status Cloudflare', en: 'Cloudflare Status' }, icon: 'Cloud', path: '/monitoring?tab=cloudflare', priority: 2 },
-    { id: 'local-agent', label: { ro: 'Agent Local', en: 'Local Agent' }, icon: 'HardDrive', path: '/monitoring?tab=agent', priority: 3 },
+    { id: 'cloud-status', label: { ro: 'Status Cloudflare', en: 'Cloudflare Status' }, icon: 'Cloud', path: '/monitoring?tab=cloudflare', priority: 2, localAgentOnly: true },
+    { id: 'local-agent', label: { ro: 'Agent Local', en: 'Local Agent' }, icon: 'HardDrive', path: '/monitoring?tab=agent', priority: 3, localAgentOnly: true },
   ],
   admin: [
-    { id: 'settings', label: { ro: 'Setări', en: 'Settings' }, icon: 'Settings', path: '/settings', priority: 100, category: 'administration' },
+    { id: 'monitoring', label: { ro: 'Monitorizare', en: 'Monitoring' }, icon: 'Activity', path: '/monitoring', priority: 90, category: 'administration', localAgentOnly: true },
+    { id: 'setting', label: { ro: 'Setări Generale', en: 'General Settings' }, icon: 'Settings', path: '/settings', priority: 100, category: 'administration' },
     { id: 'superadmin', label: { ro: 'SuperAdmin', en: 'SuperAdmin' }, icon: 'Shield', path: '/superadmin', priority: 110, category: 'administration' }
   ],
   user: [
     { id: 'profile', label: { ro: 'Profil', en: 'Profile' }, icon: 'User', path: '/profile' },
-    { id: 'settings', label: { ro: 'Setări', en: 'Settings' }, icon: 'Settings', path: '/settings' }
+    { id: 'setting', label: { ro: 'Setări Generale', en: 'General Settings' }, icon: 'Settings', path: '/settings' }
   ],
-  entities: [], // Dynamically populated
+  entity: [], // Dynamically populated
   auth: [],
 } as const;
 
-export const SHORTCUTS = [
+export const SHORTCUT = [
   { action: 'open-search', key: 'k', ctrlKey: true, label: { ro: 'Căutare Globală', en: 'Global Search' } },
   { action: 'open-search-ai', key: 'j', ctrlKey: true, label: { ro: 'Căutare AI / Chat', en: 'AI Search / Chat' } },
   { action: 'open-search-file', key: '.', ctrlKey: true, label: { ro: 'Căutare Fișiere', en: 'File Search' } },
@@ -184,7 +191,7 @@ export const SHORTCUTS = [
   { action: 'list:contact', key: 'l', ctrlKey: true, label: { ro: 'Listă Contacte (Full)', en: 'contact List (Full)' } },
   { action: 'new:contact', key: 'n', ctrlKey: true, label: { ro: 'Adăugare Contact Nou', en: 'Add New Contact' } },
   { action: 'nav:dashboard', key: 'd', ctrlKey: true, label: { ro: 'Navigare Tablou Bord', en: 'Navigate Dashboard' } },
-  { action: 'nav:settings', key: 's', ctrlKey: true, label: { ro: 'Navigare Setări', en: 'Navigate Settings' } },
+  { action: 'nav:setting', key: 's', ctrlKey: true, label: { ro: 'Navigare Setări', en: 'Navigate Settings' } },
   { action: 'nav:superadmin', key: 'a', ctrlKey: true, label: { ro: 'Navigare SuperAdmin', en: 'Navigate SuperAdmin' } },
   { action: 'nav:superadmin?tab=ai-architect', key: 'b', ctrlKey: true, shiftKey: true, label: { ro: 'Deschide Arhitect AI', en: 'Open AI Architect' } },
   { action: 'go-help', key: '/', ctrlKey: true, label: { ro: 'Asistent AI / Ajutor', en: 'AI Assistant / Help' } },
@@ -195,7 +202,7 @@ export const SHORTCUTS = [
 // CORE CONSTANTS (TEMPLATE)
 // ============================================================================
 
-export const CORE_CONSTANTS = {
+export const CONSTANT = {
   app: {
     name: 'Studio App v2',
     version: '2.0.0',
@@ -211,7 +218,7 @@ export const CORE_CONSTANTS = {
     logsDir: './logs',
     tempDir: './temp',
   },
-  coreEntities: [
+  coreEntity: [
     'contact',
     'workspace',
     'workspace_user',
@@ -220,8 +227,53 @@ export const CORE_CONSTANTS = {
     'entity_attachment',
     'entity_note',
     'system_setting',
-    'entity_definition'
+    'entity_definition',
+    'audit_log',
+    'config_version',
+    '_ai_prompt',
+    'user',
+    'role'
   ],
+  globalEntity: [
+    'workspace', 
+    'workspace_setting',
+    'system_setting', 
+    'entity_definition', 
+    'config_version', 
+    'audit_log', 
+    '_ai_prompt',
+    'user',
+    'role'
+  ],
+  auditExclusion: [
+    'audit_log',
+    'session',
+    'config_version'
+  ],
+  aiPromptCategory: [
+    'system', 
+    'global', 
+    'workspaceTemplates', 
+    'language_instruction'
+  ],
+  namespaceMapping: {
+    'ai': 'AI_CONFIG',
+    'ai_config': 'AI_CONFIG',
+    'theme': 'THEME',
+    'ui': 'THEME',
+    'uiconfig': 'THEME',
+    'ui_config': 'THEME',
+    'auth': 'AUTH_CONFIG',
+    'auth_config': 'AUTH_CONFIG',
+    'nav': 'NAV',
+    'system': 'SYSTEM_SETTING',
+    'system_setting': 'SYSTEM_SETTING',
+    'constants': 'CONSTANTS',
+    'integration': 'INTEGRATION',
+    'i18n': 'I18N_CONFIG',
+    'general': 'GENERAL',
+    'root': 'GENERAL'
+  },
   pagination: {
     defaultLimit: 20,
     maxLimit: 100,
@@ -238,13 +290,13 @@ export const CORE_CONSTANTS = {
   }
 } as const;
 
-export const MARKETPLACE_TEMPLATES = [
+export const MARKETPLACE_TEMPLATE = [
   {
     id: 'project-management-enterprise',
     name: { ro: 'Project 360 Enterprise', en: 'Project 360 Enterprise' },
     description: { ro: 'Management de proiect complex cu Proiecte, Etape, Task-uri și resurse.', en: 'Complex project management with Project, Milestones, task, and Resource tracking.' },
     icon: 'Briefcase',
-    entities: [
+    entity: [
       { 
         id: 'project', 
         label: { ro: 'Proiect', en: 'Project' }, 
@@ -255,10 +307,10 @@ export const MARKETPLACE_TEMPLATES = [
             type: 'enum', 
             label: { ro: 'Status', en: 'Status' }, 
             options: [
-              COMMON_STATUSES.planning,
-              COMMON_STATUSES.active,
-              COMMON_STATUSES.blocked,
-              COMMON_STATUSES.completed
+              COMMON_STATUS.planning,
+              COMMON_STATUS.active,
+              COMMON_STATUS.blocked,
+              COMMON_STATUS.completed
             ]
           },
           client_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' } },
@@ -275,8 +327,8 @@ export const MARKETPLACE_TEMPLATES = [
           title: { type: 'text', label: { ro: 'Titlu Task', en: 'Task Title' }, required: true },
           project_id: { type: 'relation', label: { ro: 'Proiect', en: 'Project' }, relation: { target: 'project', field: 'name' }, required: true },
           assignee_id: { type: 'relation', label: { ro: 'Responsabil', en: 'Assignee' }, relation: { target: 'contact', field: 'name' } },
-          priority: { type: 'enum', label: { ro: 'Prioritate', en: 'Priority' }, options: [COMMON_PRIORITIES.low, COMMON_PRIORITIES.medium, COMMON_PRIORITIES.high] },
-          status: { type: 'enum', label: { ro: 'Status', en: 'Status' }, options: [COMMON_STATUSES.todo, COMMON_STATUSES.in_progress, COMMON_STATUSES.done] }
+          priority: { type: 'enum', label: { ro: 'Prioritate', en: 'Priority' }, options: [COMMON_PRIORITY.low, COMMON_PRIORITY.medium, COMMON_PRIORITY.high] },
+          status: { type: 'enum', label: { ro: 'Status', en: 'Status' }, options: [COMMON_STATUS.todo, COMMON_STATUS.in_progress, COMMON_STATUS.done] }
         }
       }
     ]
@@ -286,7 +338,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Clinică Medicală & Pacienți', en: 'Medical Clinic & Patients' },
     description: { ro: 'Gestiune pacienți, programări, consultații și fișe medicale.', en: 'Patient management, appointments, consultations and medical records.' },
     icon: 'HeartPulse',
-    entities: [
+    entity: [
       {
         id: 'patient',
         label: { ro: 'Pacient', en: 'Patient' },
@@ -316,7 +368,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Imobiliare Pro', en: 'Real Estate Pro' },
     description: { ro: 'Gestiune proprietăți, vizionări, agenți și contracte.', en: 'Property management, viewings, agents and contracts.' },
     icon: 'Home',
-    entities: [
+    entity: [
       {
         id: 'property',
         label: { ro: 'Proprietate', en: 'Property' },
@@ -346,7 +398,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Inventar & Logistică', en: 'Inventory & Logistics' },
     description: { ro: 'Control stocuri, depozite, furnizori și mișcări de marfă.', en: 'Stock control, warehouses, vendors and product movements.' },
     icon: 'Package',
-    entities: [
+    entity: [
       {
         id: 'product',
         label: { ro: 'Produs', en: 'Product' },
@@ -375,7 +427,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Resurse Umane & Salariați', en: 'HR & Employees' },
     description: { ro: 'Dosare angajați, contracte, concedii și evaluări.', en: 'Employee files, contracts, leave management and evaluations.' },
     icon: 'Users2',
-    entities: [
+    entity: [
       {
         id: 'employee',
         label: { ro: 'Angajat', en: 'Employee' },
@@ -405,7 +457,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Support & Ticketing', en: 'Support & Ticketing' },
     description: { ro: 'Gestionare cereri suport, tichete, SLA și satisfacție clienți.', en: 'Support requests, tickets, SLA tracking and customer satisfaction.' },
     icon: 'LifeBuoy',
-    entities: [
+    entity: [
       {
         id: 'ticket',
         label: { ro: 'Tichet', en: 'Ticket' },
@@ -424,7 +476,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Flotă Auto', en: 'Fleet Management' },
     description: { ro: 'Monitorizare vehicule, asigurări, rca, km și mentenanță.', en: 'Vehicle monitoring, insurance, RCA, mileage and maintenance.' },
     icon: 'Car',
-    entities: [
+    entity: [
       {
         id: 'vehicle',
         label: { ro: 'Vehicul', en: 'Vehicle' },
@@ -443,7 +495,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Bază de Cunoștințe (KB)', en: 'Knowledge Base (KB)' },
     description: { ro: 'Documentație internă, tutoriale și articole de ajutor.', en: 'Internal documentation, tutorials and help articles.' },
     icon: 'BookOpen',
-    entities: [
+    entity: [
       {
         id: 'article',
         label: { ro: 'Articol', en: 'Article' },
@@ -461,7 +513,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Vânzări B2B Pipeline', en: 'B2B Sales Pipeline' },
     description: { ro: 'Oportunități, oferte comerciale și urmărire vânzări.', en: 'Opportunities, commercial offers and sales tracking.' },
     icon: 'TrendingUp',
-    entities: [
+    entity: [
       {
         id: 'deal',
         label: { ro: 'Oportunitate', en: 'Deal' },
@@ -480,7 +532,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Juridic & Contracte', en: 'Legal & Contracts' },
     description: { ro: 'Management dosare juridice, termene de judecată și contracte.', en: 'Legal case management, court dates and contracts.' },
     icon: 'Gavel',
-    entities: [
+    entity: [
       {
         id: 'legal_case',
         label: { ro: 'Dosar Juridic', en: 'Legal Case' },
@@ -498,7 +550,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Restaurant & POS', en: 'Restaurant & POS' },
     description: { ro: 'Gestiune meniu, mese, comenzi și facturare rapidă.', en: 'Menu management, tables, orders and quick billing.' },
     icon: 'Utensils',
-    entities: [
+    entity: [
       {
         id: 'menu_item',
         label: { ro: 'Element Meniu', en: 'Menu Item' },
@@ -516,7 +568,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Beauty & Salon Pro', en: 'Beauty & Salon Pro' },
     description: { ro: 'Gestiune programări salon, servicii, stiliști și abonamente.', en: 'Salon appointments, services, stylists and member plans.' },
     icon: 'Sparkles',
-    entities: [
+    entity: [
       {
         id: 'salon_service',
         label: { ro: 'Serviciu Salon', en: 'Salon Service' },
@@ -545,7 +597,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Fitness & Gym Management', en: 'Fitness & Gym Management' },
     description: { ro: 'Management abonamente sală, antrenori personali și acces.', en: 'Gym memberships, personal trainers and entry logs.' },
     icon: 'Dumbbell',
-    entities: [
+    entity: [
       {
         id: 'gym_membership',
         label: { ro: 'Abonament Fit', en: 'Fitness Membership' },
@@ -564,7 +616,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Șantier & Construcții', en: 'Construction & Site Log' },
     description: { ro: 'Jurnal de șantier, utilaje, materiale și rapoarte zilnice.', en: 'Site diary, machinery, materials and daily reports.' },
     icon: 'HardHat',
-    entities: [
+    entity: [
       {
         id: 'site_report',
         label: { ro: 'Raport Zilnic', en: 'Daily Report' },
@@ -583,7 +635,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Educație & Academie LMS', en: 'Education & Academy LMS' },
     description: { ro: 'Gestiune cursuri, studenți, înscrieri și progres.', en: 'Course management, students, enrollments and progress tracking.' },
     icon: 'GraduationCap',
-    entities: [
+    entity: [
       {
         id: 'course',
         label: { ro: 'Curs', en: 'Course' },
@@ -611,7 +663,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Event Planner OS', en: 'Event Planner OS' },
     description: { ro: 'Management evenimente, locații, speakeri și bilete.', en: 'Comprehensive event management, venues, speakers and tickets.' },
     icon: 'Calendar',
-    entities: [
+    entity: [
       {
         id: 'event',
         label: { ro: 'Eveniment', en: 'Event' },
@@ -630,7 +682,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'MRP & Producție', en: 'MRP & Manufacturing' },
     description: { ro: 'Gestiune producție, Bill of Materials (BOM) și comenzi lucru.', en: 'Production management, Bill of Materials (BOM) and work orders.' },
     icon: 'Factory',
-    entities: [
+    entity: [
       {
         id: 'work_order',
         label: { ro: 'Comandă Lucru', en: 'Work Order' },
@@ -649,7 +701,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'SaaS Billing & Subscriptions', en: 'SaaS Billing & Subscriptions' },
     description: { ro: 'Management abonamente SaaS, facturare și status plăți.', en: 'SaaS subscription management, invoicing and payment status.' },
     icon: 'CreditCard',
-    entities: [
+    entity: [
       {
         id: 'subscription',
         label: { ro: 'Abonament SaaS', en: 'SaaS Subscription' },
@@ -668,7 +720,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Service Auto (Garage)', en: 'Automotive Service (Garage)' },
     description: { ro: 'Gestiune programări service, vehicule și istoric reparații.', en: 'Vehicle service appointments, history and repair logs.' },
     icon: 'Wrench',
-    entities: [
+    entity: [
       {
         id: 'service_order',
         label: { ro: 'Comandă Service', en: 'Service Order' },
@@ -687,7 +739,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Contabilitate & Registru Casă', en: 'Accounting & Cash Book' },
     description: { ro: 'Gestiune bugete, venituri, cheltuieli și investiții cu documente atașate.', en: 'Budget management, income, expenses, and investments with attachments.' },
     icon: 'Wallet',
-    entities: [
+    entity: [
       {
         id: 'budget_item',
         label: { ro: 'Tranzacție Financiara', en: 'Financial Transaction' },
@@ -721,7 +773,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Catalog Produse & Inventar', en: 'Product Catalog & Inventory' },
     description: { ro: 'Gestiune mărfuri fizice și produse digitale (Cărți/GDrive).', en: 'Physical goods and digital products management.' },
     icon: 'Box',
-    entities: [
+    entity: [
       {
         id: 'service_product',
         label: { ro: 'Produs Service', en: 'Service Product' },
@@ -764,7 +816,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Service Desk & Tichete', en: 'Service Desk & Ticketing' },
     description: { ro: 'Sistem de tichete reparații cu istoric media și note interne.', en: 'Repair ticketing system with media history and internal notes.' },
     icon: 'Tool',
-    entities: [
+    entity: [
       {
         id: 'repair_ticket',
         label: { ro: 'Tichet Reparație', en: 'Repair Ticket' },
@@ -788,7 +840,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Gestiune Comenzi Produse', en: 'Product Order Management' },
     description: { ro: 'Urmărire comenzi clienți, avansuri și status livrare.', en: 'Client order tracking, advances, and delivery status.' },
     icon: 'ShoppingCart',
-    entities: [
+    entity: [
       {
         id: 'product_order',
         label: { ro: 'Comandă Produs', en: 'Product Order' },
@@ -810,7 +862,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Garanții & Post-Vânzare', en: 'Warranty & After-Sales' },
     description: { ro: 'Monitorizare perioade garanție și reclamații clienți.', en: 'Warranty period monitoring and customer claims.' },
     icon: 'Award',
-    entities: [
+    entity: [
       {
         id: 'warranty_record',
         label: { ro: 'Garanție', en: 'Warranty' },
@@ -830,7 +882,7 @@ export const MARKETPLACE_TEMPLATES = [
     name: { ro: 'Reîncărcări Consumabile', en: 'Printer & Refill Service' },
     description: { ro: 'Sistem rapid pentru gestionarea reîncărcărilor de cartușe.', en: 'Fast entry system for cartridge refill management.' },
     icon: 'Printer',
-    entities: [
+    entity: [
       {
         id: 'refill_item',
         label: { ro: 'Reîncărcare', en: 'Refill' },
@@ -973,8 +1025,8 @@ export interface EntityMenuConfig {
   path?: string; // Optional override
 }
 
-export interface EntityPermissions {
-  roles: Record<string, string[] | { read: boolean; write: boolean; delete: boolean }>; 
+export interface EntityPermission {
+  role: Record<string, string[] | { read: boolean; write: boolean; delete: boolean }>; 
   ownerOnly?: boolean;
 }
 
@@ -1053,7 +1105,7 @@ export interface EntityDefinition {
   isSystem?: boolean;
   fields: Record<string, FieldDefinition>;
   menuConfig?: EntityMenuConfig;
-  permissions?: EntityPermissions;
+  permission?: EntityPermission;
   features?: EntityFeatures;
   dashboardConfig?: EntityDashboardConfig;
   layout?: EntityLayout;
@@ -1129,10 +1181,10 @@ export const ENTITY_CONFIG = {
       status: { 
         type: 'enum', 
         options: [
-          COMMON_STATUSES.lead,
-          COMMON_STATUSES.customer,
-          COMMON_STATUSES.partner,
-          COMMON_STATUSES.vendor
+          COMMON_STATUS.lead,
+          COMMON_STATUS.customer,
+          COMMON_STATUS.partner,
+          COMMON_STATUS.vendor
         ],
         defaultValue: 'lead',
         ui: { width: 6 }
@@ -1140,12 +1192,12 @@ export const ENTITY_CONFIG = {
       role: { 
         type: 'enum', 
         options: [
-          { value: 'superadmin', label: SYSTEM_ROLES.superadmin.label, color: SYSTEM_ROLES.superadmin.color },
-          { value: 'workspace_owner', label: SYSTEM_ROLES.workspace_owner.label, color: SYSTEM_ROLES.workspace_owner.color },
-          { value: 'workspace_admin', label: SYSTEM_ROLES.workspace_admin.label, color: SYSTEM_ROLES.workspace_admin.color },
-          { value: 'member', label: SYSTEM_ROLES.member.label, color: SYSTEM_ROLES.member.color },
-          { value: 'agent', label: SYSTEM_ROLES.agent.label, color: SYSTEM_ROLES.agent.color },
-          { value: 'guest', label: SYSTEM_ROLES.guest.label, color: COMMON_COLORS.gray }
+          { value: 'superadmin', label: SYSTEM_ROLE.superadmin.label, color: SYSTEM_ROLE.superadmin.color },
+          { value: 'workspace_owner', label: SYSTEM_ROLE.workspace_owner.label, color: SYSTEM_ROLE.workspace_owner.color },
+          { value: 'workspace_admin', label: SYSTEM_ROLE.workspace_admin.label, color: SYSTEM_ROLE.workspace_admin.color },
+          { value: 'member', label: SYSTEM_ROLE.member.label, color: SYSTEM_ROLE.member.color },
+          { value: 'agent', label: SYSTEM_ROLE.agent.label, color: SYSTEM_ROLE.agent.color },
+          { value: 'guest', label: SYSTEM_ROLE.guest.label, color: COMMON_COLOR.gray }
         ],
         defaultValue: 'guest',
         ui: { width: 6 }
@@ -1156,7 +1208,7 @@ export const ENTITY_CONFIG = {
         ui: { width: 12, icon: 'Tag' },
         description: { ro: 'Categorii și etichete asociate contactului', en: 'Categories and tag associated with the contact' }
       },
-      permissions: {
+      permission: {
         type: 'json',
         hidden: true,
         description: { ro: 'Permisiuni specifice utilizatorului', en: 'User specific permissions' }
@@ -1232,7 +1284,7 @@ export const ENTITY_CONFIG = {
         ui: { width: 12, icon: 'Image' }, 
         description: { ro: 'Logo-ul sau imaginea de profil a workspace-ului', en: 'The logo or profile image of the workspace' } 
       },
-      settings: { 
+      setting: { 
         type: 'json', 
         ui: { width: 12, icon: 'Settings' }, 
         description: { ro: 'Configurări avansate specifice workspace-ului', en: 'Advanced workspace-specific settings' } 
@@ -1240,8 +1292,8 @@ export const ENTITY_CONFIG = {
       status: { 
         type: 'enum', 
         options: [
-          COMMON_STATUSES.archived,
-          COMMON_STATUSES.deleted
+          COMMON_STATUS.archived,
+          COMMON_STATUS.deleted
         ],
         defaultValue: 'active',
         ui: { width: 6 }
@@ -1369,7 +1421,6 @@ export const ENTITY_CONFIG = {
     tableName: 'interaction',
     displayField: 'subject',
     sortField: 'createdAt',
-    isSystem: true,
     fields: {
       id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
@@ -1396,15 +1447,14 @@ export const ENTITY_CONFIG = {
     description: { ro: 'Sarcini și activități de rezolvat', en: 'Tasks and activities to resolve' },
     tableName: 'task',
     displayField: 'title',
-    isSystem: true,
     fields: {
       id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       contactId: { type: 'relation', relation: { target: 'contact', field: 'name' } },
       title: { type: 'string', required: true, searchable: true },
       description: { type: 'text' },
-      status: { type: 'enum', options: [COMMON_STATUSES.todo, COMMON_STATUSES.in_progress, COMMON_STATUSES.done], defaultValue: 'todo' },
-      priority: { type: 'enum', options: [COMMON_PRIORITIES.low, COMMON_PRIORITIES.medium, COMMON_PRIORITIES.high], defaultValue: 'medium' },
+      status: { type: 'enum', options: [COMMON_STATUS.todo, COMMON_STATUS.in_progress, COMMON_STATUS.done], defaultValue: 'todo' },
+      priority: { type: 'enum', options: [COMMON_PRIORITY.low, COMMON_PRIORITY.medium, COMMON_PRIORITY.high], defaultValue: 'medium' },
       dueDate: { type: 'datetime' },
       assignedTo: { type: 'relation', relation: { target: 'contact', field: 'name' } },
       createdAt: { type: 'datetime', generated: 'now' },
@@ -1423,7 +1473,6 @@ export const ENTITY_CONFIG = {
     description: { ro: 'Potențiale vânzări sau proiecte comerciale', en: 'Potential sales or commercial projects' },
     tableName: 'deal',
     displayField: 'title',
-    isSystem: true,
     fields: {
       id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
@@ -1448,7 +1497,6 @@ export const ENTITY_CONFIG = {
     icon: 'Bell',
     tableName: 'notification',
     displayField: 'title',
-    isSystem: true,
     fields: {
       id: { type: 'uuid', primaryKey: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
@@ -1532,7 +1580,7 @@ export const ENTITY_CONFIG = {
     label: { ro: 'Setare Sistem', en: 'System Setting' },
     labelPlural: { ro: 'Setări Sistem', en: 'System Settings' },
     icon: 'Settings',
-    tableName: 'system_setting',
+    tableName: 'SYSTEM_SETTING',
     displayField: 'key',
     isSystem: true,
     features: {
@@ -1556,7 +1604,7 @@ export const ENTITY_CONFIG = {
       description: { type: 'text', ui: { width: 12 } },
     },
     menuConfig: {
-      showInMainMenu: true,
+      showInMainMenu: false,
       category: 'administration',
       icon: 'Settings',
       priority: 100
@@ -1621,7 +1669,7 @@ export const ENTITY_CONFIG = {
       name: { type: 'string', required: true, ui: { width: 6 } },
       color: { type: 'color', ui: { width: 6 } },
       description: { type: 'text', ui: { width: 12 } },
-      permissions: { type: 'json', ui: { width: 12 } },
+      permission: { type: 'json', ui: { width: 12 } },
     },
     menuConfig: {
       showInMainMenu: true,
@@ -1667,7 +1715,7 @@ export const ENTITY_CONFIG = {
         defaultValue: 'user',
         ui: { width: 6 } 
       },
-      permissions: { type: 'json', hidden: true },
+      permission: { type: 'json', hidden: true },
     },
     menuConfig: {
       showInMainMenu: false,
@@ -1704,6 +1752,91 @@ export const ENTITY_CONFIG = {
       category: 'administration',
       icon: 'User',
       priority: 80
+    }
+  },
+  session: {
+    label: { ro: 'Sesiune', en: 'Session' },
+    labelPlural: { ro: 'Sesiuni', en: 'Sessions' },
+    icon: 'Key',
+    tableName: 'session',
+    isSystem: true,
+    features: { auditable: false, deletable: true },
+    fields: {
+      id: { type: 'uuid', primaryKey: true },
+      userId: { type: 'string', required: true },
+      token: { type: 'string', required: true, unique: true },
+      expiresAt: { type: 'datetime', required: true },
+      ipAddress: { type: 'string' },
+      userAgent: { type: 'string' }
+    }
+  },
+  account: {
+    label: { ro: 'Cont Extern', en: 'External Account' },
+    labelPlural: { ro: 'Conturi Externe', en: 'External Accounts' },
+    icon: 'Fingerprint',
+    tableName: 'account',
+    isSystem: true,
+    features: { auditable: false, deletable: true },
+    fields: {
+      id: { type: 'uuid', primaryKey: true },
+      userId: { type: 'string', required: true },
+      providerId: { type: 'string', required: true },
+      accountId: { type: 'string', required: true },
+      accessToken: { type: 'string' },
+      refreshToken: { type: 'string' },
+      idToken: { type: 'string' },
+      expiresAt: { type: 'datetime' },
+      password: { type: 'password' }
+    }
+  },
+  verification: {
+    label: { ro: 'Verificare', en: 'Verification' },
+    labelPlural: { ro: 'Verificări', en: 'Verifications' },
+    icon: 'ShieldCheck',
+    tableName: 'verification',
+    isSystem: true,
+    features: { auditable: false, deletable: true },
+    fields: {
+      id: { type: 'uuid', primaryKey: true },
+      identifier: { type: 'string', required: true },
+      value: { type: 'string', required: true },
+      expiresAt: { type: 'datetime', required: true }
+    }
+  },
+  config_version: {
+    label: { ro: 'Versiune Config', en: 'Config Version' },
+    labelPlural: { ro: 'Versiuni Config', en: 'Config Versions' },
+    icon: 'History',
+    tableName: 'config_version',
+    isSystem: true,
+    features: { auditable: false, deletable: true },
+    fields: {
+      id: { type: 'uuid', primaryKey: true },
+      namespace: { type: 'string', required: true },
+      key: { type: 'string', required: true },
+      configJson: { type: 'json' },
+      changedBy: { type: 'string' },
+      description: { type: 'string' }
+    }
+  },
+  _ai_prompt: {
+    label: { ro: 'Prompt AI', en: 'AI Prompt' },
+    labelPlural: { ro: 'Prompturi AI', en: 'AI Prompts' },
+    icon: 'MessageSquare',
+    tableName: '_ai_prompt',
+    isSystem: true,
+    features: { auditable: true, deletable: true },
+    fields: {
+      id: { type: 'uuid', primaryKey: true },
+      name: { type: 'string', required: true, unique: true },
+      systemPrompt: { type: 'text' },
+      userPromptTemplate: { type: 'text' },
+      model: { type: 'string' },
+      inputContext: { type: 'json' },
+      outputField: { type: 'string' },
+      category: { type: 'string' },
+      description: { type: 'string' },
+      isLocked: { type: 'boolean', defaultValue: false }
     }
   },
   workspace_invitation: {
@@ -1809,7 +1942,6 @@ export const ENTITY_CONFIG = {
     icon: 'Target',
     tableName: 'lead',
     displayField: 'title',
-    isSystem: true,
     fields: {
       id: { type: 'uuid', primaryKey: true, hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
@@ -1832,7 +1964,6 @@ export const ENTITY_CONFIG = {
     icon: 'Bug',
     tableName: 'bug_report',
     displayField: 'title',
-    isSystem: true,
     fields: {
       id: { type: 'uuid', primaryKey: true, hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
@@ -1856,7 +1987,6 @@ export const ENTITY_CONFIG = {
     icon: 'History',
     tableName: 'changelog',
     displayField: 'version',
-    isSystem: true,
     fields: {
       id: { type: 'uuid', primaryKey: true, hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
@@ -1900,7 +2030,7 @@ export const ENTITY_CONFIG = {
       id: { type: 'uuid', primaryKey: true, hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       category: { type: 'string' },
-      settings: { type: 'json' },
+      setting: { type: 'json' },
       workspaceName: { type: 'string' },
       timezone: { type: 'string' },
       logoUrl: { type: 'string' },
@@ -1914,7 +2044,7 @@ export const ENTITY_CONFIG = {
 // DASHBOARD CONFIGURATION
 // ============================================================================
 
-export const DASHBOARD_CONFIG = {
+export const DASHBOARD = {
   welcomeMessage: {
     ro: "Bine ai venit în Studio App v2",
     en: "Welcome to Studio App v2"
@@ -1945,7 +2075,7 @@ export const DASHBOARD_CONFIG = {
 // THEME CONFIGURATION
 // ============================================================================
 
-export const THEME_CONFIG = {
+export const THEME = {
   defaultTheme: 'light',
   storageKey: 'studio-theme',
   brand: {
@@ -2088,7 +2218,7 @@ export const AI_CONFIG = {
   },
 } as any;
 
-export const AI_PROMPTS = {
+export const AI_PROMPT = {
   // SYSTEM PROMPTS: Essential for logic, NOT deletable, ONLY editable content.
   system: [
     { 
@@ -2214,14 +2344,14 @@ export const AUTH_CONFIG = {
     methods: ['totp', 'sms'],
     required: false,
   },
-  roles: SYSTEM_ROLES,
+  role: SYSTEM_ROLE,
 } as const;
 
 // ============================================================================
-// INTEGRATIONS
+// INTEGRATION
 // ============================================================================
 
-export const INTEGRATIONS = {
+export const INTEGRATION = {
   whatsapp: {
     enabled: true,
     provider: 'twilio',
@@ -2251,7 +2381,7 @@ export const INTEGRATIONS = {
 // EMAIL TEMPLATES
 // ============================================================================
 
-export const EMAIL_TEMPLATES = {
+export const EMAIL_TEMPLATE = {
   workspace_invitation: {
     subject: {
       ro: "Invitație Workspace - {{workspaceName}}",
@@ -2393,8 +2523,9 @@ export const I18N_CONFIG = {
 // SYSTEM SETTINGS & FEATURE FLAGS
 // ============================================================================
 
-export const system_setting = {
-  enable_workers: false, // Master switch for all background processes (V2)
+export const SYSTEM_SETTING = {
+  use_local_agent: false, // Use Local Node.js Agent (WhatsApp, Hardware, etc)
+  enable_worker: false, // Master switch for all background processes (V2)
   worker_whatsapp_enabled: false,
   worker_gmail_enabled: false,
   worker_print_enabled: false,
@@ -2577,7 +2708,7 @@ export const WORKER_CONFIG = {
   enabled: true,
   concurrency: 4,
   timeout: 300000,
-  workers: {
+  worker: {
     emailWorker: {
       enabled: true,
       queue: 'email',
@@ -2638,8 +2769,8 @@ export const I18N = {
   en: {
     common: {
       dashboard: "Dashboard",
-      contact: "contact",
-      workspace: "workspace",
+      contact: "Contact",
+      workspace: "Workspace",
       settings: "Settings",
       superadmin: "SuperAdmin",
       save: "Save",
@@ -2726,7 +2857,7 @@ export const I18N = {
       no_records_in: "No records found in {{label}}",
       select: "Select",
       choose: "Choose",
-      roles: {
+      role: {
         superadmin: "Super Admin",
         workspace_owner: "Owner",
         workspace_admin: "Admin",
@@ -2773,7 +2904,7 @@ export const I18N = {
     dashboard: {
       welcome: "Welcome back!",
       subtitle: "Here's what's happening.",
-      manage_entities: "Manage {{label}}",
+      manage_entity: "Manage {{label}}",
       system_health: "System Health",
       activity_flow: "Activity Flow",
       view_edit_desc: "View and edit the database for {{label}}.",
@@ -2827,8 +2958,8 @@ export const I18N = {
       navigation: {
         main_nav: "Main Navigation Orchestration",
         worker_apps: "Apps & Workers",
-        admin_shortcuts: "Admin Shortcuts",
-        sidebar_entities: "Data Entities in Sidebar",
+        admin_SHORTCUT: "Admin SHORTCUT",
+        sidebar_entity: "Data Entities in Sidebar",
         commit_dna: "Save Navigation Structure",
         commit_success: "Navigation structure saved successfully!"
       }
@@ -2847,18 +2978,18 @@ export const I18N = {
       updated: "Profile updated successfully",
       error: "Error updating profile"
     },
-    settings: {
+    setting: {
       title: "Settings",
       workspace: "Workspace Settings",
       appearance: "Appearance",
       notification: "notification",
       security: "Security",
       theme_saved_success: "Theme settings saved",
-      enable_workers: "Background Workers",
+      enable_worker: "Background Workers",
       advanced_ui_config: "Advanced UI Configuration",
       theme_presets_label: "Theme Presets",
       theme_custom_colors: "Custom Colors",
-      theme_shortcuts: "Keyboard Shortcuts",
+      theme_SHORTCUT: "Keyboard SHORTCUT",
       theme_sidebar: "Navigation Customization",
       theme_mode: "Display Mode",
       mode_light: "Light",
@@ -2882,27 +3013,27 @@ export const I18N = {
       shadows: "Shadow Effects",
       scrollbar: "Custom Scrollbar",
       preview: "Live Preview",
-      theme_sidebar_desc: "Pin entities or system tools to the global shortcuts section of your sidebar.",
-      users: {
+      theme_sidebar_desc: "Pin entities or system tools to the global SHORTCUT section of your sidebar.",
+      user: {
         invite_title: "Invite Member",
         invite_desc: "Send an email invitation to a new team member",
         role: "Member Role",
-        permissions_title: "Entity Permissions",
-        permissions_desc: "Configure granular access controls for {{name}}",
-        permissions_disclaimer: "* Changes apply immediately after saving. System DNA overrides have precedence.",
-        permissions_updated: "Permissions updated successfully"
+        permission_title: "Entity Permissions",
+        permission_desc: "Configure granular access controls for {{name}}",
+        permission_disclaimer: "* Changes apply immediately after saving. System DNA overrides have precedence.",
+        permission_updated: "Permission updated successfully"
       }
     },
     sidebar: {
       main_menu: "Main Menu",
-      apps_workers: "Apps & Workers",
-      data_systems: "Data Systems",
-      administration: "Administration",
-      shortcuts: "Quick Shortcuts",
+      app_worker: "Apps & Workers",
+      data_system: "Data Systems",
+      administration: "System Settings",
+      SHORTCUT: "Quick Shortcuts",
       dashboard: "Dashboard",
-      contact: "contact",
+      contact: "Contact",
       profile: "My Profile",
-      settings: "System Settings",
+      setting: "General Settings",
       logout: "Log Out",
       theme_editor: "Appearance",
       v2_label: "v2 Core"
@@ -2925,8 +3056,8 @@ export const I18N = {
   ro: {
     common: {
       dashboard: "Tablou de bord",
-      contact: "Contacte",
-      workspace: "Spații de lucru",
+      contact: "Contact",
+      workspace: "Workspace",
       settings: "Setări",
       superadmin: "SuperAdmin",
       save: "Salvează",
@@ -3013,7 +3144,7 @@ export const I18N = {
       no_records_in: "Nicio înregistrare găsită în {{label}}",
       select: "Selectează",
       choose: "Alege",
-      roles: {
+      role: {
         superadmin: "Super Admin",
         workspace_owner: "Proprietar",
         workspace_admin: "Administrator",
@@ -3060,7 +3191,7 @@ export const I18N = {
     dashboard: {
       welcome: "Bine ai revenit!",
       subtitle: "Iată ce se întâmplă în studioul tău.",
-      manage_entities: "Gestionează {{label}}",
+      manage_entity: "Gestionează {{label}}",
       system_health: "Stare Sistem",
       activity_flow: "Flux de Activitate",
       view_edit_desc: "Vizualizează și editează baza de date pentru {{label}}.",
@@ -3114,8 +3245,8 @@ export const I18N = {
       navigation: {
         main_nav: "Orchestrare Navigare Principală",
         worker_apps: "Aplicații & Workeri",
-        admin_shortcuts: "Scurtături Admin",
-        sidebar_entities: "Entități Date în Sidebar",
+        admin_SHORTCUT: "Scurtături Admin",
+        sidebar_entity: "Entități Date în Sidebar",
         commit_dna: "Salvează Structura Navigării",
         commit_success: "Structura Navigării a fost salvată cu succes!"
       }
@@ -3134,18 +3265,18 @@ export const I18N = {
       updated: "Profil actualizat cu succes",
       error: "Eroare la actualizarea profilului"
     },
-    settings: {
+    setting: {
       title: "Setări",
       workspace: "Setări Workspace",
       appearance: "Aspect Vizual",
       notification: "Notificări",
       security: "Securitate",
       theme_saved_success: "Setările au fost salvate",
-      enable_workers: "Procesare Fundal",
+      enable_worker: "Procesare Fundal",
       advanced_ui_config: "Configurare Avansată Interfață",
       theme_presets_label: "Preselecții Temă",
       theme_custom_colors: "Culori Personalizate",
-      theme_shortcuts: "Scurtături Tastatură",
+      theme_SHORTCUT: "Scurtături Tastatură",
       theme_sidebar: "Personalizare Navigație",
       theme_mode: "Mod Afișare",
       mode_light: "Luminos",
@@ -3170,26 +3301,26 @@ export const I18N = {
       scrollbar: "Scrollbar Personalizat",
       preview: "Previzualizare Live",
       theme_sidebar_desc: "Fixează entități sau unelte de sistem în secțiunea de scurtături globale din sidebar.",
-      users: {
+      user: {
         invite_title: "Invită Membru",
         invite_desc: "Trimite o invitație pe email unui nou membru al echipei",
         role: "Rol Membru",
-        permissions_title: "Permisiuni Entități",
-        permissions_desc: "Configurează controlul accesului granular pentru {{name}}",
-        permissions_disclaimer: "* Modificările se aplică imediat. Specificațiile System DNA au prioritate.",
-        permissions_updated: "Permisiuni actualizate cu succes"
+        permission_title: "Permisiuni Entități",
+        permission_desc: "Configurează controlul accesului granular pentru {{name}}",
+        permission_disclaimer: "* Modificările se aplică imediat. Specificațiile System DNA au prioritate.",
+        permission_updated: "Permisiuni actualizate cu succes"
       }
     },
     sidebar: {
       main_menu: "Meniu Principal",
-      apps_workers: "Aplicații & Workeri",
-      data_systems: "Module Personalizate",
-      administration: "Administrare Workspace",
-      shortcuts: "Scurtături Rapide",
+      app_worker: "Aplicații & Workeri",
+      data_system: "Module Personalizate",
+      administration: "Setări Sistem",
+      SHORTCUT: "Scurtături Rapide",
       dashboard: "Panou Control",
-      contact: "Contacte",
+      contact: "Contact",
       profile: "Profilul Meu",
-      settings: "Setări Sistem",
+      setting: "Setări Generale",
       logout: "Deconectare",
       theme_editor: "Aspect Vizual",
       v2_label: "v2 Core"
@@ -3211,42 +3342,42 @@ export const I18N = {
   }
 } as const;
 export const REGISTRY_BASELINE = {
-  __version__: CORE_CONSTANTS.app.version,
+  __version__: CONSTANT.app.version,
   __lastUpdated__: new Date().toISOString(),
   __environment__: safeEnv('NODE_ENV', 'development'),
 
   // Top-level Config (Visible in GENERAL)
-  appName: system_setting.workspace_name,
-  appLogo: system_setting.logo_url,
-  appVersion: CORE_CONSTANTS.app.version,
-  appDescription: CORE_CONSTANTS.app.description,
-  appUrl: CORE_CONSTANTS.directories.baseUrl,
+  appName: SYSTEM_SETTING.workspace_name,
+  appLogo: SYSTEM_SETTING.logo_url,
+  appVersion: CONSTANT.app.version,
+  appDescription: CONSTANT.app.description,
+  appUrl: CONSTANT.directories.baseUrl,
   language: I18N_CONFIG.defaultLanguage,
   timezone: I18N_CONFIG.timezone.default,
-  maintenanceMode: system_setting.app.maintenanceMode,
-  debugMode: system_setting.app.debugMode,
+  maintenanceMode: SYSTEM_SETTING.app.maintenanceMode,
+  debugMode: SYSTEM_SETTING.app.debugMode,
 
-  NAV: NAV_STRUCTURE,
-  SHORTCUTS: SHORTCUTS,
-  CONSTANTS: CORE_CONSTANTS,
-  ENTITY_CONFIGS: ENTITY_CONFIG,
-  roles: SYSTEM_ROLES,
-  DASHBOARD: DASHBOARD_CONFIG,
-  THEME: THEME_CONFIG,
-  AI_CONFIG: AI_CONFIG,
-  AI_PROMPTS: AI_PROMPTS,
-  AUTH_CONFIG: AUTH_CONFIG,
-  INTEGRATIONS: INTEGRATIONS,
-  EMAIL_TEMPLATES: EMAIL_TEMPLATES,
-  FILE_CONFIG: FILE_CONFIG,
-  I18N_CONFIG: I18N_CONFIG,
-  I18N: I18N,
-  system_setting: system_setting,
-  DATABASE_CONFIG: DATABASE_CONFIG,
-  SOCKET_CONFIG: SOCKET_CONFIG,
-  WORKER_CONFIG: WORKER_CONFIG,
-  API_CONFIG: API_CONFIG,
-  MARKETPLACE_TEMPLATES: MARKETPLACE_TEMPLATES,
+  NAV,
+  SHORTCUT,
+  CONSTANT,
+  ENTITY_CONFIG,
+  SYSTEM_ROLE,
+  DASHBOARD,
+  THEME,
+  AI_CONFIG,
+  AI_PROMPT,
+  AUTH_CONFIG,
+  INTEGRATION,
+  EMAIL_TEMPLATE,
+  FILE_CONFIG,
+  I18N_CONFIG,
+  I18N,
+  SYSTEM_SETTING,
+  DATABASE_CONFIG,
+  SOCKET_CONFIG,
+  WORKER_CONFIG,
+  API_CONFIG,
+  MARKETPLACE_TEMPLATE,
 } as const;
 
 export default REGISTRY_BASELINE;

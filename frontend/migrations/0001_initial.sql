@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS user (
     email TEXT UNIQUE NOT NULL,
     emailVerified INTEGER DEFAULT 0,
     image TEXT,
-    role TEXT DEFAULT 'user', -- admin, user
+    role TEXT DEFAULT 'user',
+    permission TEXT, -- Level 8: Granular User Permissions
     preferredLanguage TEXT DEFAULT 'ro',
     lastWorkspaceId TEXT, -- Current workspace context
     status TEXT DEFAULT 'active',
@@ -90,6 +91,8 @@ CREATE TABLE IF NOT EXISTS contact (
     email TEXT,
     phone TEXT,
     type TEXT DEFAULT 'personal', -- personal, business, etc.
+    role TEXT DEFAULT 'member', -- Individual role within context
+    permission TEXT, -- Granular individual permissions
     avatarUrl TEXT,
     tag TEXT DEFAULT '[]', -- JSON array of tag IDs
     metadata TEXT DEFAULT '{}',
@@ -112,7 +115,7 @@ CREATE TABLE IF NOT EXISTS workspace_user (
     workspaceId TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
     userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
     role TEXT DEFAULT 'user',
-    permissions TEXT, -- JSON array of granular permissions
+    permission TEXT, -- JSON array of granular permissions
     archived INTEGER DEFAULT 0,
     archivedAt DATETIME,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -128,7 +131,7 @@ CREATE TABLE IF NOT EXISTS role (
     id TEXT PRIMARY KEY,
     workspaceId TEXT NOT NULL,
     name TEXT NOT NULL,
-    permissions TEXT, -- JSON
+    permission TEXT, -- JSON
     archived INTEGER DEFAULT 0,
     archivedAt DATETIME,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -586,7 +589,7 @@ CREATE TABLE IF NOT EXISTS workspace_setting (
 CREATE TABLE IF NOT EXISTS workspace_rbac (
     id TEXT PRIMARY KEY, -- usually workspaceId
     workspaceId TEXT REFERENCES workspace(id) ON DELETE CASCADE,
-    permissions TEXT, -- JSON
+    permission TEXT, -- JSON
     archived INTEGER DEFAULT 0,
     archivedAt DATETIME,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -645,7 +648,7 @@ CREATE TABLE IF NOT EXISTS entity_definition (
     relationships TEXT, -- JSON
     uiConfig TEXT, -- JSON
     menuConfig TEXT,
-    permissions TEXT, -- JSON
+    permission TEXT, -- JSON
     features TEXT, -- JSON
     layout TEXT, -- JSON
     dashboardConfig TEXT, -- JSON
@@ -673,4 +676,4 @@ CREATE TABLE IF NOT EXISTS config_version (
 -- Default Data from Migration 0002
 INSERT OR IGNORE INTO _metadata (key, value, updatedAt) VALUES ('system_enums', '{"contactStatus":["lead","prospect","customer","archived"],"entityTypes":["contact","company","deal","task"],"priority":["low","medium","high","urgent"]}', CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO system_setting (id, namespace, key, value, dataType, updatedAt) VALUES ('ui_config', 'system', 'ui_config', '{"theme":"auto","sidebarCollapsed":false,"defaultLanguage":"ro"}', 'json', CURRENT_TIMESTAMP);
-INSERT OR REPLACE INTO _metadata (key, value, updatedAt) VALUES ('db_version', '110', CURRENT_TIMESTAMP);
+INSERT OR REPLACE INTO _metadata (key, value, updatedAt) VALUES ('db_version', '120', CURRENT_TIMESTAMP);

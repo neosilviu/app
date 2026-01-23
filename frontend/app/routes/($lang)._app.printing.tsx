@@ -189,7 +189,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
 export default function PrintingPage() {
     const { t } = useTranslation(['common', 'printing']);
-    const { user } = useAuth();
+    const { user, hasPageAccess } = useAuth();
     const { settings } = useSettings();
     const navigate = useNavigate();
     const { lang } = useParams();
@@ -1024,7 +1024,7 @@ const refreshAll = () => {
                                     <Printer className="h-3 w-3 mr-2 text-emerald-500" />
                                     {renderString(t('printing:hardware'), lang)}
                                 </TabsTrigger>
-                                {(['superadmin', 'workspace_owner', 'workspace_admin'].includes(user?.role || '')) && (
+                                {hasPageAccess('settings') && (
                                     <TabsTrigger value="settings" className="rounded-lg text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:text-primary shadow-sm px-4 py-2">
                                         <Settings2 className="h-3 w-3 mr-2 text-slate-500" />
                                         {renderString(t('common:settings'), lang)}
@@ -1109,7 +1109,7 @@ const refreshAll = () => {
                             <HardwareManager prices={prices} onPricesUpdate={setPrices} />
                         </TabsContent>
 
-                        {(['superadmin', 'workspace_owner', 'workspace_admin'].includes(user?.role || '')) && (
+                        {hasPageAccess('settings') && (
                             <TabsContent value="settings">
                                 <Card className="border-none shadow-lg bg-white/50 backdrop-blur-sm dark:bg-slate-900/50 overflow-hidden">
                                      <CardHeader className="border-b bg-slate-50/50 p-6 dark:bg-slate-800/50 flex flex-row items-center justify-between">

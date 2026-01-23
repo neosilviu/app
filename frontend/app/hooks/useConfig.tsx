@@ -16,16 +16,14 @@ import { normalizeEntity } from '../lib/entity-engine';
 interface NavItem {
     id?: string;
     path: string;
-    label: string;
+    label: any;
     icon?: string;
     priority?: number;
     hidden?: boolean;
     badge?: string;
-    superadminOnly?: boolean;
-    adminOnly?: boolean;
     permission?: string;
     workerName?: string;
-    roleRestriction?: string[];
+    localAgentOnly?: boolean;
 }
 
 const resolveNavIcons = (nav: NavItem[]) => {
@@ -56,7 +54,7 @@ const syncI18n = (i18nData: any) => {
         }
     });
 
-    console.log('[I18N] Registry translations synced');
+    // console.log('[I18N] Registry translations synced');
 };
 
 const deepMerge = (target: any, source: any) => {
@@ -79,12 +77,12 @@ const mergeConstantsIntoEntities = (ents: Record<string, any>, consts: Record<st
         const rawEntity = { ...ents[entityKey] };
         
         // Mark as baseline if it exists in static constants
-        if ((STATIC_CONSTANTS.ENTITY_CONFIGS as any)?.[entityKey] || (STATIC_CONSTANTS.ENTITY_CONFIG as any)?.[entityKey]) {
+        if ((STATIC_CONSTANTS.ENTITY_CONFIG as any)?.[entityKey] || (STATIC_CONSTANTS.ENTITY_CONFIG as any)?.[entityKey]) {
             rawEntity.__is_baseline = true;
         }
 
         // Apply Registry Overrides (if any)
-        const registryOverride = consts.ENTITY_CONFIGS?.[entityKey] || consts.ENTITY_CONFIG?.[entityKey] || {};
+        const registryOverride = consts.ENTITY_CONFIG?.[entityKey] || consts.ENTITY_CONFIG?.[entityKey] || {};
         Object.assign(rawEntity, registryOverride);
 
         // ENSURE NORMALIZATION (Enterprise Level 8)
@@ -96,7 +94,7 @@ const mergeConstantsIntoEntities = (ents: Record<string, any>, consts: Record<st
             entity.fields.forEach((field: any) => {
                 // 1. Map Options from Constants
                 if (field.type === 'select' || field.type === 'enum' || field.type === 'selection') {
-                    const lookupKey = field.optionsKey || `${entityKey.toUpperCase()}_STATUSES`;
+                    const lookupKey = field.optionsKey || `${entityKey.toUpperCase()}_STATUS`;
                     if (consts[lookupKey]) {
                         // Normalize options so labels are strings (pick current i18n language if label is an object)
                         const rawOptions = consts[lookupKey];
@@ -133,15 +131,15 @@ const mergeConstantsIntoEntities = (ents: Record<string, any>, consts: Record<st
 // --- INITIAL DEFAULTS (LAZY INIT TO AVOID PROXY WARNINGS) ---
 const getInitialConfig = () => {
     // Access Proxy only when called, not at module load
-    const nav = STATIC_CONSTANTS.NAV || { main: [], workers: [], admin: [], user: [], entities: [] };
+    const nav = STATIC_CONSTANTS.NAV || { main: [], worker: [], admin: [], user: [], entity: [] };
     
     return {
-        entities: STATIC_CONSTANTS.ENTITY_CONFIGS || STATIC_CONSTANTS.ENTITY_CONFIG || {},
+        entity: STATIC_CONSTANTS.ENTITY_CONFIG || STATIC_CONSTANTS.ENTITY_CONFIG || {},
         uiConfig: STATIC_CONSTANTS.THEME || {},
         navigation: {
             main: nav.main || [],
-            workers: nav.workers || [],
-            entities: nav.entities || [],
+            worker: nav.worker || [],
+            entity: nav.entity || [],
             admin: nav.admin || [],
             user: nav.user || [],
             shortcuts: nav.shortcuts || []
@@ -151,14 +149,14 @@ const getInitialConfig = () => {
 };
 
 interface ConfigContextType {
-    entities: Record<string, any>;
+    entity: Record<string, any>;
     constants: Record<string, any>;
     marketplace: any[];
     uiConfig: any;
     navigation: {
         main: NavItem[];
-        workers: NavItem[];
-        entities: NavItem[];
+        worker: NavItem[];
+        entity: NavItem[];
         admin: NavItem[];
         user: NavItem[];
         shortcuts: NavItem[];
@@ -173,7 +171,7 @@ interface ConfigContextType {
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
 export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
-    const [entities, setEntities] = useState<Record<string, any>>(() => getInitialConfig().entities);
+    const [entity, setEntity] = useState<Record<string, any>>(() => getInitialConfig().entity);
     const [constants, setConstants] = useState<Record<string, any>>(() => getInitialConfig().constants);
     const [marketplace, setMarketplace] = useState<any[]>([]);
     const [uiConfig, setUiConfig] = useState<any>(() => getInitialConfig().uiConfig);
@@ -223,12 +221,12 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 if (cachedEntities || cachedConstants || cachedUi) {
                     const mergedConstants = { ...STATIC_CONSTANTS, ...(cachedConstants?.data || {}) };
                     const ui = { ...initial.uiConfig, ...(cachedUi?.data || {}), ...(mergedConstants.THEME || {}) };
-                    const mergedEntities = mergeConstantsIntoEntities({ ...initial.entities, ...(cachedEntities?.data || {}) }, mergedConstants);
+                    const mergedEntities = mergeConstantsIntoEntities({ ...initial.entity, ...(cachedEntities?.data || {}) }, mergedConstants);
                     
-                    setEntities(mergedEntities);
+                    setEntity(mergedEntities);
                     setConstants(mergedConstants);
                     syncI18n(mergedConstants.I18N);
-                    setMarketplace(mergedConstants.MARKETPLACE_TEMPLATES || []);
+                    setMarketplace(mergedConstants.MARKETPLACE_TEMPLATE || []);
                     setUiConfig(ui);
                     
                     const dynamicNav = mergedConstants.NAV;
@@ -254,19 +252,19 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                         });
 
                     const baseMain = dynamicNav?.main || initial.navigation.main;
-                    const baseWorkers = dynamicNav?.workers || initial.navigation.workers;
+                    const baseWorker = dynamicNav?.worker || initial.navigation.worker;
                     const baseAdmin = dynamicNav?.admin || initial.navigation.admin;
                     const existingIds = new Set([
                         ...baseMain.map((i: any) => i.id),
-                        ...baseWorkers.map((i: any) => i.id),
+                        ...baseWorker.map((i: any) => i.id),
                         ...baseAdmin.map((i: any) => i.id)
                     ]);
                     const filteredEntities = entityNavItems.filter(item => !existingIds.has(item.id));
 
                     setNavigation({
                         main: applyNavOverrides(baseMain, ui.navOverrides?.main),
-                        workers: applyNavOverrides(baseWorkers, ui.navOverrides?.workers),
-                        entities: applyNavOverrides(filteredEntities, ui.navOverrides?.entities).map(i => ({ ...i, path: `/${i.id}` })),
+                        worker: applyNavOverrides(baseWorker, ui.navOverrides?.worker),
+                        entity: applyNavOverrides(filteredEntities, ui.navOverrides?.entity).map(i => ({ ...i, path: `/${i.id}` })),
                         admin: applyNavOverrides(baseAdmin, ui.navOverrides?.admin),
                         user: applyNavOverrides(dynamicNav?.user || initial.navigation.user, ui.navOverrides?.user),
                         shortcuts: applyNavOverrides(dynamicNav?.shortcuts || initial.navigation.shortcuts, ui.navOverrides?.shortcuts)
@@ -287,16 +285,8 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }, []);
 
     const refreshConfig = async (force = false) => {
-        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-        if (!token) {
-            // Level 8: Skip socket refresh if not authenticated, only use REST/Static
-            if (!import.meta.env.DEV) {
-                console.log('[CONFIG] No token found, skipping background refresh');
-                setLoading(false);
-                return;
-            }
-        }
-
+        // Build list of constants from session to ensure we have the latest use_local_agent
+        // For Enterprise Level 8, we bypass the short throttle (2000ms) if force=true
         if (isFetchingRef.current) {
             console.log('[CONFIG] Already fetching, skipping');
             return;
@@ -316,8 +306,15 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
             if (result && result.success !== false) {
                 const initial = getInitialConfig();
                 const mergedConstants = deepMerge(STATIC_CONSTANTS, result.constants || {});
+                
+                // CRITICAL: Ensure we merge the local storage/session state of uses_local_agent 
+                // into mergedConstants so navigation filters react immediately
+                if (result.constants?.SYSTEM_SETTING) {
+                    mergedConstants.SYSTEM_SETTING = { ...mergedConstants.SYSTEM_SETTING, ...result.constants.SYSTEM_SETTING };
+                }
+
                 const ui = deepMerge(initial.uiConfig, deepMerge(result.uiConfig || {}, mergedConstants.THEME || {}));
-                const mergedEntities = mergeConstantsIntoEntities(deepMerge(initial.entities, result.entities || {}), mergedConstants);
+                const mergedEntities = mergeConstantsIntoEntities(deepMerge(initial.entity, result.entity || {}), mergedConstants);
 
                 // Add dynamic shortcuts from entities
                 const entityShortcuts = Object.entries(mergedEntities)
@@ -328,13 +325,13 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                         label: `Navigare ${config.labelPlural || config.label}`
                     }));
 
-                const baseShortcuts = result.constants?.SHORTCUTS || mergedConstants.SHORTCUTS || [];
+                const baseShortcuts = result.constants?.SHORTCUT || mergedConstants.SHORTCUT || [];
                 ui.shortcuts = [...baseShortcuts, ...entityShortcuts];
 
-                setEntities(mergedEntities);
+                setEntity(mergedEntities);
                 setConstants(mergedConstants);
                 syncI18n(mergedConstants.I18N);
-                setMarketplace(mergedConstants.MARKETPLACE_TEMPLATES || []);
+                setMarketplace(mergedConstants.MARKETPLACE_TEMPLATE || []);
                 setUiConfig(ui);
 
                 const dynamicNav = result.constants?.NAV || mergedConstants.NAV;
@@ -360,38 +357,38 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
                 if (dynamicNav) {
                     const baseMain = dynamicNav.main || initial.navigation.main;
-                    const baseWorkers = dynamicNav.workers || initial.navigation.workers;
+                    const baseWorker = dynamicNav.worker || initial.navigation.worker;
                     const baseAdmin = dynamicNav.admin || initial.navigation.admin;
                     const existingIds = new Set([
                         ...(baseMain || []).map((i: any) => i.id),
-                        ...(baseWorkers || []).map((i: any) => i.id),
+                        ...(baseWorker || []).map((i: any) => i.id),
                         ...(baseAdmin || []).map((i: any) => i.id)
                     ]);
                     const filteredEntities = entityNavItems.filter(item => !existingIds.has(item.id));
 
                     setNavigation({
                         main: applyNavOverrides(baseMain, ui.navOverrides?.main),
-                        workers: applyNavOverrides(baseWorkers, ui.navOverrides?.workers),
-                        entities: applyNavOverrides(filteredEntities, ui.navOverrides?.entities).map(i => ({ ...i, path: `/${i.id}` })),
+                        worker: applyNavOverrides(baseWorker, ui.navOverrides?.worker),
+                        entity: applyNavOverrides(filteredEntities, ui.navOverrides?.entity).map(i => ({ ...i, path: `/${i.id}` })),
                         admin: applyNavOverrides(baseAdmin, ui.navOverrides?.admin),
                         user: applyNavOverrides(dynamicNav.user || initial.navigation.user, ui.navOverrides?.user),
                         shortcuts: applyNavOverrides(dynamicNav.shortcuts || initial.navigation.shortcuts, ui.navOverrides?.shortcuts)
                     });
                 } else {
                     const baseMain = initial.navigation.main;
-                    const baseWorkers = initial.navigation.workers;
+                    const baseWorker = initial.navigation.worker;
                     const baseAdmin = initial.navigation.admin;
                     const existingIds = new Set([
                         ...baseMain.map((i: any) => i.id),
-                        ...baseWorkers.map((i: any) => i.id),
+                        ...baseWorker.map((i: any) => i.id),
                         ...baseAdmin.map((i: any) => i.id)
                     ]);
                     const filteredEntities = entityNavItems.filter(item => !existingIds.has(item.id));
 
                     setNavigation({
                         main: applyNavOverrides(baseMain, ui.navOverrides?.main),
-                        workers: applyNavOverrides(baseWorkers, ui.navOverrides?.workers),
-                        entities: applyNavOverrides(filteredEntities, ui.navOverrides?.entities).map(i => ({ ...i, path: `/${i.id}` })),
+                        worker: applyNavOverrides(baseWorker, ui.navOverrides?.worker),
+                        entity: applyNavOverrides(filteredEntities, ui.navOverrides?.entity).map(i => ({ ...i, path: `/${i.id}` })),
                         admin: applyNavOverrides(baseAdmin, ui.navOverrides?.admin),
                         user: applyNavOverrides(initial.navigation.user, ui.navOverrides?.user),
                         shortcuts: applyNavOverrides(initial.navigation.shortcuts, ui.navOverrides?.shortcuts)
@@ -399,7 +396,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 }
 
                 // Cache to IndexedDB
-                await db.configs.put({ id: 'all_entities', data: result.entities, updatedAt: Date.now() });
+                await db.configs.put({ id: 'all_entities', data: result.entity, updatedAt: Date.now() });
                 await db.configs.put({ id: 'system_constants', data: result.constants, updatedAt: Date.now() });
                 if (result.uiConfig) {
                     await db.configs.put({ id: 'ui_config', data: result.uiConfig, updatedAt: Date.now() });
@@ -421,7 +418,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         const dynamicNav = constants.NAV;
         
         // --- Rebuild Navigation with Entities Sync ---
-        const entityNavItems: NavItem[] = Object.entries(entities)
+        const entityNavItems: NavItem[] = Object.entries(entity)
             .filter(([_, config]: [string, any]) => {
                 const menuConfig = config.menuConfig || {};
                 return menuConfig.showInMainMenu !== false;
@@ -440,19 +437,19 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
             });
 
         const baseMain = dynamicNav?.main || initial.navigation.main;
-        const baseWorkers = dynamicNav?.workers || initial.navigation.workers;
+        const baseWorker = dynamicNav?.worker || initial.navigation.worker;
         const baseAdmin = dynamicNav?.admin || initial.navigation.admin;
         const existingIds = new Set([
             ...baseMain.map((i: any) => i.id),
-            ...baseWorkers.map((i: any) => i.id),
+            ...baseWorker.map((i: any) => i.id),
             ...baseAdmin.map((i: any) => i.id)
         ]);
         const filteredEntities = entityNavItems.filter(item => !existingIds.has(item.id));
 
         setNavigation({
             main: applyNavOverrides(baseMain, updated.navOverrides?.main),
-            workers: applyNavOverrides(baseWorkers, updated.navOverrides?.workers),
-            entities: applyNavOverrides(filteredEntities, updated.navOverrides?.entities),
+            worker: applyNavOverrides(baseWorker, updated.navOverrides?.worker),
+            entity: applyNavOverrides(filteredEntities, updated.navOverrides?.entity),
             admin: applyNavOverrides(baseAdmin, updated.navOverrides?.admin),
             user: applyNavOverrides(dynamicNav?.user || initial.navigation.user, updated.navOverrides?.user),
             shortcuts: applyNavOverrides(dynamicNav?.shortcuts || initial.navigation.shortcuts, updated.navOverrides?.shortcuts)
@@ -476,7 +473,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
         // 3. Notify Local Agent (Socket)
         socket.emit('db:set', { 
-            collection: 'system_setting', 
+            collection: 'SYSTEM_SETTING', 
             id: 'ui_config', 
             data: { namespace: 'ui', key: 'config', value: updated, dataType: 'json' } 
         });
@@ -504,7 +501,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         socket.on('ui:updated', handleUpdate);
         
         const handleInitialConnect = () => {
-            if (Object.keys(entities).length === 0 || Object.keys(constants).length === 0) {
+            if (Object.keys(entity).length === 0 || Object.keys(constants).length === 0) {
                 handleUpdate();
             }
         };
@@ -520,7 +517,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }, [autoRefreshEnabled, canAutoRefresh]);
 
     return (
-        <ConfigContext.Provider value={{ entities, constants, marketplace, uiConfig, navigation, loading, isInitialized, buildInfo: buildInfo as any, refreshConfig, updateUiConfig }}>
+        <ConfigContext.Provider value={{ entity, constants, marketplace, uiConfig, navigation, loading, isInitialized, buildInfo: buildInfo as any, refreshConfig, updateUiConfig }}>
             {children}
         </ConfigContext.Provider>
     );

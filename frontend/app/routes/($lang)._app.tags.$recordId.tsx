@@ -5,27 +5,16 @@ import { api, socketRequest, cn } from '~/lib/core';
 import { Card, CardContent } from '~/components/ui/card';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { 
-  Tag as TagIcon, 
-  Mail, 
-  Users, 
-  HardDrive, 
-  Search, 
-  ChevronRight,
-  ArrowLeft,
-  X,
-  Plus,
-  Edit2
-} from 'lucide-react';
+import { Tag as TagIcon, Mail, Users, HardDrive, Search, ChevronRight, ArrowLeft, X, Plus, Edit2 } from 'lucide-react';
 import { useConfig } from '~/hooks/useConfig';
 
-import { DynamicEntityDetail } from '~/components/entities/DynamicEntityDetail';
+import { DynamicEntityDetail } from '~/components/entity/DynamicEntityDetail';
 
 export default function TagDetailPage() {
   const { recordId: tagId, lang, entity: entityParam } = useParams();
-  const { t } = useTranslation(['common', 'gmail', 'entities']);
+  const { t } = useTranslation(['common', 'gmail', 'entity']);
   const navigate = useNavigate();
-  const { entities } = useConfig();
+  const { entity: configMap } = useConfig();
   const [tag, setTag] = useState<any>(null);
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +22,7 @@ export default function TagDetailPage() {
 
   // Use DynamicEntityDetail for "new" tag
   if (tagId === 'new') {
-    return <DynamicEntityDetail entityId="tag" recordId="new" config={entities['tag']} />;
+    return <DynamicEntityDetail entityId="tag" recordId="new" config={configMap?.['tag']} />;
   }
 
   useEffect(() => {
@@ -78,7 +67,7 @@ export default function TagDetailPage() {
         >
           <X className="w-5 h-5 text-slate-500" />
         </Button>
-        <DynamicEntityDetail entityId="tag" recordId={tagId!} config={entities['tag']} />
+        <DynamicEntityDetail entityId="tag" recordId={tagId!} config={configMap?.['tag']} />
       </div>
     );
   }
@@ -93,7 +82,7 @@ export default function TagDetailPage() {
   };
 
   const getEntityLabel = (type: string) => {
-    const config = entities[type] || entities[type + (type.endsWith('s') ? '' : 's')];
+    const config = configMap?.[type] || configMap?.[type + (type.endsWith('s') ? '' : 's')];
     return config?.label || type.toUpperCase();
   };
 
@@ -125,7 +114,7 @@ export default function TagDetailPage() {
               )}
             </div>
             <p className="text-sm text-gray-500 font-medium mt-1">
-              {t('entities:results_for_tag', { tag: tag?.name })}
+              {t('entity:results_for_tag', { tag: tag?.name })}
             </p>
           </div>
         </div>

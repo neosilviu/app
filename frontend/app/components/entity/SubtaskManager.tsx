@@ -1,21 +1,12 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { useEntity } from '~/hooks/useEntity';
 import { useConfig } from '~/hooks/useConfig';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
-import { 
-  Plus, 
-  CheckCircle2, 
-  Circle, 
-  Trash2, 
-  ChevronRight,
-  Clock,
-  User,
-  Tag as TagIcon
-} from 'lucide-react';
+import { Plus, CheckCircle2, Circle, Trash2, ChevronRight, Clock, User, Tag as TagIcon } from 'lucide-react';
 import { cn, renderString } from '~/lib/utils';
 import { toast } from 'sonner';
 
@@ -26,8 +17,8 @@ interface SubtaskManagerProps {
 
 export function SubtaskManager({ parentTaskId, workspaceId }: SubtaskManagerProps) {
   const { lang } = useParams();
-  const { t } = useTranslation(['common', 'entities']);
-  const { entities } = useConfig();
+  const { t } = useTranslation(['common', 'entity']);
+  const { entity } = useConfig();
   const { data: allTasks, create, update, remove, refresh } = useEntity('todo');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -48,7 +39,7 @@ export function SubtaskManager({ parentTaskId, workspaceId }: SubtaskManagerProp
       });
       setNewSubtaskTitle('');
       setIsAdding(false);
-      toast.success(renderString(t('entities:subtask_added'), lang));
+      toast.success(renderString(t('entity:subtask_added'), lang));
       refresh();
     } catch (error) {
       toast.error(renderString(t('common:error_generic'), lang));
@@ -75,7 +66,7 @@ export function SubtaskManager({ parentTaskId, workspaceId }: SubtaskManagerProp
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
           <ChevronRight size={14} className="text-indigo-500" />
-          {renderString(t('entities:subtasks'), lang)} ({subtasks.length})
+          {renderString(t('entity:subtasks'), lang)} ({subtasks.length})
         </h3>
         {!isAdding && (
           <Button 
@@ -139,7 +130,7 @@ export function SubtaskManager({ parentTaskId, workspaceId }: SubtaskManagerProp
             <Input 
               value={newSubtaskTitle}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewSubtaskTitle(e.target.value)}
-              placeholder={renderString(t('entities:subtask_placeholder'), lang)}
+              placeholder={renderString(t('entity:subtask_placeholder'), lang)}
               className="h-9 text-sm rounded-xl focus-visible:ring-indigo-500"
               autoFocus
             />
@@ -163,7 +154,7 @@ export function SubtaskManager({ parentTaskId, workspaceId }: SubtaskManagerProp
         {subtasks.length === 0 && !isAdding && (
           <div className="text-center py-6 px-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
-              {renderString(t('entities:no_subtasks'), lang)}
+              {renderString(t('entity:no_subtasks'), lang)}
             </p>
           </div>
         )}

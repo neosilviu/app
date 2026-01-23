@@ -64,7 +64,7 @@ export interface EntityDefinition {
     };
     [key: string]: any;
   };
-  permissions: {
+  permission: {
     roles: Record<string, { read: boolean; write: boolean; delete: boolean } | string[]>;
     ownerOnly?: boolean;
   };
@@ -152,10 +152,10 @@ export function normalizeEntity(raw: any): EntityDefinition {
     ...feat
   };
 
-  // 4. Permissions Normalization
-  const perm = safeParse(raw.permissions, {});
-  const permissions = {
-    roles: {},
+  // 4. Permission Normalization
+  const perm = safeParse(raw.permission, {});
+  const permission = {
+    role: {},
     ownerOnly: false,
     ...perm
   };
@@ -185,7 +185,11 @@ export function normalizeEntity(raw: any): EntityDefinition {
   const fieldsMap = fields.reduce((acc: any, f) => ({ ...acc, [f.name]: f }), {});
 
   // Enterprise Level 8: Ensure we parse recursively for translations in top-level fields
-  const parseStr = (val: any) => (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) ? safeParse(val, val) : val;
+  // Added protection against "[object Object]" corruption
+  const parseStr = (val: any) => {
+    if (val === '[object Object]') return null;
+    return (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) ? safeParse(val, val) : val;
+  };
 
   // Enterprise Level 8: Natural Language Label Generation (Auto-generate if missing)
   const humanize = (s: string) => {
@@ -225,7 +229,7 @@ export function normalizeEntity(raw: any): EntityDefinition {
     fieldsMap, // This is the Object/Map
     uiConfig,
     features,
-    permissions,
+    permission,
     menuConfig,
     dashboardConfig,
     relationships,

@@ -51,7 +51,7 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-black italic tracking-tight">{providers?.cloudflare?.status || t('common:offline')}</div>
-                        <p className="text-[9px] text-amber-600/60 mt-1 uppercase font-black">{t("monitoring:ai.workers_ai")}</p>
+                        <p className="text-[9px] text-amber-600/60 mt-1 uppercase font-black">{t("monitoring:ai.worker_ai")}</p>
                     </CardContent>
                 </GlassCard>
 

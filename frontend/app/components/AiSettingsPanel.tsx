@@ -8,7 +8,7 @@ import { CardContent, CardHeader, CardTitle, CardDescription } from '~/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { Badge } from '~/components/ui/badge';
 import { GlassCard } from '~/components/ui/GlassCard';
-import { Settings as SettingsIcon, Save, RefreshCw, Sparkles, Cloud, Plus, Trash, Shield, Database, MessageSquare } from 'lucide-react';
+import { Settings as Save, RefreshCw, Sparkles, Cloud, Plus, Trash, Shield, Database, MessageSquare } from 'lucide-react';
 import { cn } from '~/lib/utils';
 import { toast } from 'sonner';
 import { useConfig } from '~/hooks/useConfig';
@@ -40,7 +40,7 @@ export function AiSettingsPanel() {
         cloudflare: { accountId: '', apiToken: '' }
     });
 
-    const [aiPrompts, setAiPrompts] = useState(constants.AI_PROMPTS || {
+    const [aiPrompts, setAiPrompts] = useState(constants.AI_PROMPT || {
         system: [],
         global: [],
         workspaceTemplates: []
@@ -64,8 +64,8 @@ export function AiSettingsPanel() {
                 agentPersonality: cfg.agentPersonality || 'professional'
             });
         }
-        if (constants.AI_PROMPTS) {
-            setAiPrompts(constants.AI_PROMPTS);
+        if (constants.AI_PROMPT) {
+            setAiPrompts(constants.AI_PROMPT);
         }
     }, [constants]);
 
@@ -95,10 +95,10 @@ export function AiSettingsPanel() {
         setIsSaving(true);
         try {
             const promises = [];
-            if (aiPrompts.system) promises.push(api.brain.post('registry/save', { namespace: 'AI_PROMPTS', key: 'system', value: aiPrompts.system }));
-            if (aiPrompts.global) promises.push(api.brain.post('registry/save', { namespace: 'AI_PROMPTS', key: 'global', value: aiPrompts.global }));
-            if (aiPrompts.workspaceTemplates) promises.push(api.brain.post('registry/save', { namespace: 'AI_PROMPTS', key: 'workspaceTemplates', value: aiPrompts.workspaceTemplates }));
-            if (aiPrompts.language_instruction) promises.push(api.brain.post('registry/save', { namespace: 'AI_PROMPTS', key: 'language_instruction', value: aiPrompts.language_instruction }));
+            if (aiPrompts.system) promises.push(api.brain.post('registry/save', { namespace: 'AI_PROMPT', key: 'system', value: aiPrompts.system }));
+            if (aiPrompts.global) promises.push(api.brain.post('registry/save', { namespace: 'AI_PROMPT', key: 'global', value: aiPrompts.global }));
+            if (aiPrompts.workspaceTemplates) promises.push(api.brain.post('registry/save', { namespace: 'AI_PROMPT', key: 'workspaceTemplates', value: aiPrompts.workspaceTemplates }));
+            if (aiPrompts.language_instruction) promises.push(api.brain.post('registry/save', { namespace: 'AI_PROMPT', key: 'language_instruction', value: aiPrompts.language_instruction }));
 
             if (promises.length > 0) {
                 await Promise.all(promises);
@@ -337,7 +337,7 @@ export function AiSettingsPanel() {
             </GlassCard>
 
             <div className="text-center text-[10px] text-slate-500 font-bold uppercase tracking-widest pb-8">
-                Registry Storage Source: D1 [system_setting]
+                Registry Storage Source: D1 [SYSTEM_SETTING]
             </div>
         </div>
     );

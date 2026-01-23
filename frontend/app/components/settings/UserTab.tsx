@@ -4,27 +4,17 @@ import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
 import { Badge } from '~/components/ui/badge';
-import { useNavigate, useParams } from 'react-router';
-import { 
-    Users, UserPlus, Shield, X, Check, Search, 
-    Settings2, Trash2, ShieldCheck, ShieldAlert,
-    ChevronDown, Lock, RefreshCw
-} from 'lucide-react';
+import { useParams } from 'react-router';
+import { Users, UserPlus, Shield, X, Check, Settings2, Trash2, ShieldCheck, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn, renderString } from '~/lib/core';
 import { ScrollArea } from '~/components/ui/scroll-area';
-import { 
-    Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
-} from "~/components/ui/select";
-import { 
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription 
-} from "~/components/ui/dialog";
-import { Switch } from '~/components/ui/switch';
-import { Checkbox } from '~/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "~/components/ui/dialog";
 import { Separator } from '~/components/ui/separator';
 
-interface UsersTabProps {
-    users: any[];
+interface UserTabProps {
+    userList: any[];
     loading: boolean;
     inviteEmail: string;
     setInviteEmail: (s: string) => void;
@@ -33,15 +23,15 @@ interface UsersTabProps {
     handleInvite: (e?: React.FormEvent) => void;
     handleUpdateRole: (userId: string, role: string) => void;
     handleRemoveUser: (userId: string) => void;
-    entities: any;
+    entity: any;
     workspaceId: string;
     api: any;
     toast: any;
     roles: Record<string, any>;
 }
 
-export const UsersTab: React.FC<UsersTabProps> = ({
-    users,
+export const UserTab: React.FC<UserTabProps> = ({
+    userList,
     loading,
     inviteEmail,
     setInviteEmail,
@@ -50,7 +40,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
     handleInvite,
     handleUpdateRole,
     handleRemoveUser,
-    entities,
+    entity,
     workspaceId,
     api,
     toast,
@@ -70,7 +60,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
         }))
         .filter(r => r.id !== 'superadmin'); // Only hide superadmin from workspace views
 
-    const entityList = Object.entries(entities || {}).map(([id, cfg]: [string, any]) => ({
+    const entityList = Object.entries(entity || {}).map(([id, cfg]: [string, any]) => ({
         id,
         label: renderString(cfg.label || id, lang),
         icon: cfg.icon
@@ -79,14 +69,14 @@ export const UsersTab: React.FC<UsersTabProps> = ({
     const openPermissions = async (user: any) => {
         setEditingPermissions(user);
         try {
-            const res = await api.brain.get(`workspace/user-permissions?userId=${user.userId || user.id}&workspaceId=${workspaceId}`);
+            const res = await api.brain.get(`workspace/user-permission?userId=${user.userId || user.id}&workspaceId=${workspaceId}`);
             if (res.success) {
-                setUserPermissions(res.permissions || {});
+                setUserPermissions(res.permission || {});
             } else {
                 setUserPermissions({});
             }
         } catch (e) {
-            console.error("Failed to fetch user permissions", e);
+            console.error("Failed to fetch user permission", e);
             setUserPermissions({});
         }
     };
@@ -105,13 +95,13 @@ export const UsersTab: React.FC<UsersTabProps> = ({
         if (!editingPermissions) return;
         setSaving(true);
         try {
-            const res = await api.brain.post(`workspace/update-user-permissions`, {
+            const res = await api.brain.post(`workspace/update-user-permission`, {
                 workspaceId,
                 userId: editingPermissions.userId || editingPermissions.id,
-                permissions: userPermissions
+                permission: userPermissions
             });
             if (res.success) {
-                toast.success(t('settings:users.permissions_updated'));
+                toast.success(t('settings:user.permission_updated'));
                 setEditingPermissions(null);
             } else {
                 toast.error(res.error || t('common:error_saving'));
@@ -128,8 +118,8 @@ export const UsersTab: React.FC<UsersTabProps> = ({
             {/* Invite Section */}
             <Card className="border-none shadow-xl shadow-slate-200/50 rounded-3xl overflow-hidden bg-white/70 backdrop-blur-md">
                 <CardHeader className="bg-slate-50/50">
-                    <CardTitle className="text-sm font-black uppercase italic tracking-widest">{t('settings:users.invite_title')}</CardTitle>
-                    <CardDescription className="text-[10px] uppercase font-medium mt-1">{t('settings:users.invite_desc')}</CardDescription>
+                    <CardTitle className="text-sm font-black uppercase italic tracking-widest">{t('settings:user.invite_title')}</CardTitle>
+                    <CardDescription className="text-[10px] uppercase font-medium mt-1">{t('settings:user.invite_desc')}</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-6">
                     <form onSubmit={handleInvite} className="flex flex-col md:flex-row gap-4">
@@ -143,7 +133,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                             />
                         </div>
                         <div className="md:w-48 space-y-2">
-                            <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 italic">{t('settings:users.role')}</Label>
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 italic">{t('settings:user.role')}</Label>
                             <Select value={inviteRole} onValueChange={setInviteRole}>
                                 <SelectTrigger className="h-12 rounded-2xl bg-slate-50 border-none">
                                     <SelectValue />
@@ -160,7 +150,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                         <div className="flex items-end">
                             <Button type="submit" className="h-12 w-full md:w-auto px-8 rounded-2xl bg-slate-900 font-black uppercase italic tracking-widest text-[10px]">
                                 <UserPlus className="mr-2 h-4 w-4" />
-                                {t('settings:users.send_invite')}
+                                {t('settings:user.send_invite')}
                             </Button>
                         </div>
                     </form>
@@ -171,10 +161,10 @@ export const UsersTab: React.FC<UsersTabProps> = ({
             <Card className="border-none shadow-xl shadow-slate-200/50 rounded-3xl overflow-hidden bg-white/70 backdrop-blur-md">
                 <CardHeader className="bg-slate-50/50 flex flex-row items-center justify-between">
                     <div>
-                        <CardTitle className="text-sm font-black uppercase italic tracking-widest">{t('settings:users.team_members')}</CardTitle>
-                        <CardDescription className="text-[10px] uppercase font-medium mt-1">{t('settings:users.members_desc')}</CardDescription>
+                        <CardTitle className="text-sm font-black uppercase italic tracking-widest">{t('settings:user.team_members')}</CardTitle>
+                        <CardDescription className="text-[10px] uppercase font-medium mt-1">{t('settings:user.members_desc')}</CardDescription>
                     </div>
-                    <Badge variant="outline" className="border-slate-200 font-black uppercase text-[9px]">{users.length} {t('settings:users.active_users')}</Badge>
+                    <Badge variant="outline" className="border-slate-200 font-black uppercase text-[9px]">{userList.length} {t('settings:user.active_users')}</Badge>
                 </CardHeader>
                 <CardContent className="p-0">
                     <div className="divide-y divide-slate-100">
@@ -182,12 +172,12 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                             <div className="p-12 text-center text-slate-400 font-bold uppercase italic text-xs animate-pulse">
                                 Loading team members...
                             </div>
-                        ) : users.length === 0 ? (
+                        ) : userList.length === 0 ? (
                             <div className="p-12 text-center text-slate-400 font-bold uppercase italic text-xs">
                                 No members found.
                             </div>
                         ) : (
-                            users.map((member) => (
+                            userList.map((member) => (
                                 <div key={member.id} className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
                                     <div className="flex items-center gap-4">
                                         <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-slate-100 to-white border border-slate-200 flex items-center justify-center text-slate-400 overflow-hidden shadow-sm">
@@ -257,10 +247,10 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                             </div>
                             <div>
                                 <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
-                                    {t('settings:users.permissions_title')}
+                                    {t('settings:user.permission_title')}
                                 </DialogTitle>
                                 <DialogDescription className="text-white/60 font-medium text-xs">
-                                    {t('settings:users.permissions_desc', { name: editingPermissions?.name || editingPermissions?.email })}
+                                    {t('settings:user.permission_desc', { name: editingPermissions?.name || editingPermissions?.email })}
                                 </DialogDescription>
                             </div>
                         </div>
@@ -298,7 +288,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                                                                 onClick={() => handleTogglePermission(entity.id, action)}
                                                             >
                                                                 {perms[action] ? <Check size={12} className="stroke-[3]" /> : <X size={12} />}
-                                                                <span className="text-[10px] font-black uppercase italic tracking-widest">{t(`common:permissions.${action}`)}</span>
+                                                                <span className="text-[10px] font-black uppercase italic tracking-widest">{t(`common:permission.${action}`)}</span>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -315,7 +305,7 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                     
                     <DialogFooter className="p-6 bg-slate-50/50 flex items-center justify-between">
                         <p className="text-[9px] font-bold text-slate-400 uppercase italic tracking-tight">
-                            {t('settings:users.permissions_disclaimer')}
+                            {t('settings:user.permission_disclaimer')}
                         </p>
                         <div className="flex gap-3">
                             <Button variant="ghost" onClick={() => setEditingPermissions(null)} className="rounded-xl font-black uppercase italic text-[10px]">

@@ -20,8 +20,7 @@ import {
   RefreshCw, 
   BookOpen, 
   History, 
-  X, 
-  ChevronRight, 
+  X,  
   BadgeCheck, 
   Bug, 
   Zap, 
@@ -52,7 +51,7 @@ export function HelpDialog({ id, trigger, onOpen }: HelpDialogProps) {
   const fetchHelp = async (force = false) => {
     setLoading(true);
     try {
-      const response = await api.brain.get(`/api/help?id=${id}&lang=${i18n.language}${force ? '&force=true' : ''}`);
+      const response = await api.brain.get(`help?id=${id}&lang=${i18n.language}${force ? '&force=true' : ''}`);
       if (response.success) {
         setHelp(response.data);
       }
@@ -161,7 +160,7 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   const [loading, setLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDraft, setGeneratedDraft] = useState<Partial<ChangelogEntry> | null>(null);
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -231,7 +230,7 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
             </div>
           </div>
           <div className="flex items-center gap-2 mr-8">
-            {user?.role === 'superadmin' && (
+            {hasPermission('*') && (
               <Button 
                 onClick={handleGenerate}
                 disabled={isGenerating}

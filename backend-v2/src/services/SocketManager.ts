@@ -82,17 +82,30 @@ export class SocketManager {
 
       socket.on('system:info', (data, callback) => {
         if (typeof callback === 'function') {
+          const nets = os.networkInterfaces();
+          const localIps: string[] = [];
+          for (const name of Object.keys(nets)) {
+            for (const net of nets[name]!) {
+              if (net.family === 'IPv4' && !net.internal) {
+                localIps.push(net.address);
+              }
+            }
+          }
+
           callback({
             success: true,
-            platform: os.platform(),
-            arch: os.arch(),
-            cpus: os.cpus().length,
-            memory: {
-              free: os.freemem(),
-              total: os.totalmem()
-            },
-            uptime: os.uptime(),
-            nodeVersion: process.version
+            info: {
+              platform: os.platform(),
+              arch: os.arch(),
+              cpus: os.cpus().length,
+              memory: {
+                free: os.freemem(),
+                total: os.totalmem()
+              },
+              uptime: os.uptime(),
+              nodeVersion: process.version,
+              localIps
+            }
           });
         }
       });
@@ -122,7 +135,7 @@ export class SocketManager {
               this.io?.emit('system:settings-updated', { key, value });
               
               // Trigger worker refresh if it's a worker-related setting
-              if (key === 'enable_workers' || key.startsWith('worker_') || key.startsWith('system.enable_workers')) {
+              if (key === 'enable_worker' || key === 'enable_workers' || key.startsWith('worker_') || key.startsWith('system.enable_worker') || key.startsWith('system.enable_workers')) {
                 WorkerManager.getInstance().refreshState().catch(err => {
                   logger.error('Failed to refresh workers after setting update', err);
                 });

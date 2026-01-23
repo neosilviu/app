@@ -1,120 +1,93 @@
 import { type Route } from "../../.react-router/types/app/routes/+types/($lang)._app.settings";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate, useParams } from 'react-router';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '~/components/ui/card';
 import { Button } from '~/components/ui/button';
-import { Input } from '~/components/ui/input';
-import { Label } from '~/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { ScrollArea, ScrollBar } from "~/components/ui/scroll-area";
-import { 
-    socket,
-    api,
-    cn,
-    socketRequest,
-    debounce,
-    renderString
-} from '~/lib/core';
+import { socket, api, socketRequest, debounce, renderString, getRegistry } from '~/lib/core';
 import { useAuth } from '~/hooks/useAuth';
 import { useConfig } from '~/hooks/useConfig'; 
 import { useTheme } from '~/hooks/useTheme'; 
 import { toast } from 'sonner';
-import { 
-    Building, Globe, Bell, MessageSquare, Zap, ShieldCheck, Lock, 
-    Plus, RefreshCw, Mail, ExternalLink, Settings, Clock, Sparkles, 
-    Brain, Bot, CheckCheck, Trash2, AlertTriangle, X, Database, 
-    Cloud, RefreshCcw, Search, ChevronLeft, ChevronRight, UserPlus, 
-    Save, Code, Users, Briefcase, User, Activity, ShieldAlert, 
-    Rocket, Layers, Palette, Sun, Moon, Laptop, Send, 
-    Settings2, LogOut, LayoutDashboard
-} from 'lucide-react';
+import { Building, Sparkles, Users, Save, Settings, ChevronLeft, ChevronRight, Cloud } from 'lucide-react';
 import { ThemeEditor } from '~/components/ThemeSystem';
-import { Badge } from "~/components/ui/badge";
-import { GlassCard } from '~/components/ui/GlassCard';
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-} from "~/components/ui/accordion";
-import { 
-    Dialog, DialogContent, DialogHeader, DialogTitle, 
-    DialogTrigger, DialogFooter, DialogDescription 
-} from "~/components/ui/dialog";
-import { 
-    Select, SelectContent, SelectGroup, SelectItem, 
-    SelectLabel, SelectSeparator, SelectTrigger, SelectValue 
-} from "~/components/ui/select";
-import { Switch } from "~/components/ui/switch";
-import { Textarea } from "~/components/ui/textarea";
-import { Separator } from "~/components/ui/separator";
-import { ConfirmDestructiveAction } from '~/components/AppModals';
 import { useTranslation } from 'react-i18next';
 import { verifyAuth } from '~/lib/auth-core.server';
 import { getDb } from '~/lib/d1.server';
-import { REGISTRY_BASELINE } from '~/lib/core';
 
 // --- SUB-COMPONENTS (OPTIMIZED) ---
 import { GeneralTab } from '~/components/settings/GeneralTab';
 import { AITab } from '~/components/settings/AITab';
-import { CommsTab } from '~/components/settings/CommsTab';
-import { UsersTab } from '~/components/settings/UsersTab';
-import { BufferedInput, BufferedTextarea } from '~/components/ui/BufferedInput';
+import { UserTab } from '~/components/settings/UserTab';
+import { CloudTab } from '~/components/monitoring/CloudTab';
+import { AIInsights } from '~/components/monitoring/AIInsights';
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
     const env = (context as any).cloudflare?.env || (process as any).env;
     const user = await verifyAuth(request, env);
     
-    if (!user) return { lang: params.lang, permissions: [] };
+    if (!user) return { lang: params.lang, permission: [] };
 
     const db = getDb(env);
     
+    // Level 8: Always load registry for baseline defaults
+    const registry = await getRegistry(db);
+    
     // Fetch data in parallel to optimize load time (Enterprise Level 8)
     let workspace = null;
-    let rbacData = null;
-    let workspacesList: any[] = [];
-    let systemSettings: Record<string, any> = {};
+    
+    // Enterprise Level 8: Initialize with Baseline values as defaults
+    let systemSettings: Record<string, any> = { 
+        ...registry.SYSTEM_SETTING,
+        // Map common namespaces for UI components
+        ai: registry.AI_CONFIG,
+        theme: registry.THEME,
+        auth: registry.AUTH_CONFIG,
+        whatsapp: registry.whatsapp || registry.INTEGRATION?.whatsapp,
+        gmail: registry.gmail || registry.INTEGRATION?.gmail,
+        SYSTEM_SETTING: registry.SYSTEM_SETTING
+    };
+
+    const userRoleDef = (registry?.SYSTEM_ROLE || {})[user.role];
+    const isGlobal = userRoleDef?.permission?.includes('*');
 
     try {
         // Use Promise.all for parallel fetches
         const promises: any[] = [
-            db.get("workspace", user.workspaceId),
-            db.get("workspace_rbac", user.workspaceId),
-            user.role === 'superadmin' 
-                ? db.list("workspace", { archived: 0 })
-                : db.get("workspace", user.workspaceId).then(ws => ws ? [ws] : [])
+            db.get("workspace", user.workspaceId)
         ];
 
-        if (user.role === 'superadmin') {
-            promises.push(db.query('SELECT namespace, key, value, dataType FROM system_setting'));
+        if (isGlobal) {
+            promises.push(db.query('SELECT namespace, key, value, dataType FROM SYSTEM_SETTING'));
         }
 
         const results = await Promise.allSettled(promises);
 
         workspace = results[0].status === 'fulfilled' ? (results[0].value as any) : null;
-        rbacData = results[1].status === 'fulfilled' ? (results[1].value as any) : null;
-        workspacesList = results[2].status === 'fulfilled' ? (results[2].value || []) : [];
 
-        if (user.role === 'superadmin' && results[3]?.status === 'fulfilled') {
-            const sysRows = (results[3].value as any) || [];
+        if (isGlobal && results[1]?.status === 'fulfilled') {
+            const sysRows = (results[1].value as any) || [];
             sysRows.forEach((row: any) => {
-                const rawNs = row.namespace || 'system_setting';
+                const rawNs = row.namespace || 'SYSTEM_SETTING';
                 const ns = rawNs.toLowerCase(); // Lowercase for UI consistency (gmail, whatsapp, etc.)
                 if (!systemSettings[ns]) systemSettings[ns] = {};
                 
                 let value = row.value;
                 try {
-                    value = (row.dataType === 'json' || (typeof row.value === 'string' && (row.value.startsWith('{') || row.value.startsWith('['))))
-                        ? JSON.parse(row.value)
-                        : row.value;
+                    if (row.dataType === 'json' || (typeof row.value === 'string' && (row.value.startsWith('{') || row.value.startsWith('[')))) {
+                        value = JSON.parse(row.value);
+                    } else if (row.dataType === 'boolean' || value === 'true' || value === 'false') {
+                        value = value === 'true' || value === '1' || value === 1;
+                    } else if (row.dataType === 'number' || (!isNaN(Number(value)) && String(value).trim() !== '')) {
+                        value = Number(value);
+                    }
                 } catch (e) {
                     value = row.value;
                 }
 
                 systemSettings[ns][row.key] = value;
                 
-                // For backward compatibility and UI simplicity, map system_setting/GENERAL to root
-                if (rawNs === 'system_setting' || rawNs === 'GENERAL') {
+                // For backward compatibility and UI simplicity, map core namespaces to root (Enterprise Level 8)
+                if (ns === 'system_setting' || ns === 'general' || ns === 'system') {
                     systemSettings[row.key] = value;
                 }
             });
@@ -123,9 +96,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
         console.error("[SETTINGS-LOADER] Error fetching data:", e);
     }
 
-    const settings = workspace?.settings ? (typeof workspace.settings === 'string' ? JSON.parse(workspace.settings) : workspace.settings) : {};
-
-    const rbac = (rbacData as any)?.permissions || { admin: ['view', 'add', 'edit', 'delete'], user: ['view', 'add', 'edit'], guest: ['view'] };
+    const setting = workspace?.setting ? (typeof workspace.setting === 'string' ? JSON.parse(workspace.setting) : workspace.setting) : {};
 
     return {
         lang: params.lang,
@@ -135,45 +106,34 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
             id: workspace?.id,
             workspaceId: workspace?.id,
             workspaceName: workspace?.name,
-            ...settings
-        },
-        initialRbac: rbac,
-        initialWorkspaces: (workspacesList as any[]).filter(Boolean),
-        permissions: [
-            { id: 'view', category: 'Core' },
-            { id: 'add', category: 'Core' },
-            { id: 'edit', category: 'Core' },
-            { id: 'delete', category: 'Core' },
-            { id: 'view_whatsapp', category: 'Messaging' },
-            { id: 'view_gmail', category: 'Messaging' },
-            { id: 'manage_auto_reply', category: 'Messaging' },
-            { id: 'view_archive', category: 'System' },
-            { id: 'view_print_queue', category: 'System' },
-            { id: 'view_audit_logs', category: 'System' },
-            { id: 'manage_users', category: 'Admin' },
-            { id: 'manage_settings', category: 'Admin' },
-            { id: 'manage_all_workspaces', category: 'Superadmin' },
-            { id: '*', category: 'Superadmin' }
-        ]
+            ...setting
+        }
     };
 }
 
 export default function SettingsPage({ loaderData }: Route.ComponentProps) {
     const navigate = useNavigate();
     const { lang } = useParams();
-    const { permissions = [], initialSettings, initialRbac, systemSettings: initialSystemSettings = {} } = loaderData || {};
-    const { user, hasPermission, switchWorkspace, users, usersLoading, fetchUsers } = useAuth();
+    const { initialSettings, systemSettings: initialSystemSettings = {} } = loaderData || {};
+    const { user, hasPermission, hasPageAccess, switchWorkspace, userList, userLoading, fetchUserList } = useAuth();
     const { refreshConfig, constants: registry } = useConfig();
     const { t, i18n } = useTranslation(["common", "settings", "auth"]);
+    
+    // Security check: Role-based page access
+    useEffect(() => {
+        if (user && !hasPageAccess('settings')) {
+            navigate('/');
+        }
+    }, [user, hasPageAccess, navigate]);
+
     const [searchParams, setSearchParams] = useSearchParams();
 
     const [settings, setSettings] = useState<any>(initialSettings || {});
     const [systemSettings, setSystemSettings] = useState<any>(initialSystemSettings || {});
-    const [rbac, setRbac] = useState<any>(initialRbac || null);
     const [whatsappState, setWhatsappState] = useState<{status: string, qr?: string}>({ status: 'INITIALIZING' });
 
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab ] = useState(searchParams.get("tab") || "general");
+    const [activeTab, setActiveTab ] = useState(searchParams.get("tab") || "local-agent");
     const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
 
     // --- OPTIMISTIC AUTO-SAVE ENGINE ---
@@ -213,8 +173,8 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
     }, [settings, debouncedSave]);
 
     useEffect(() => {
-        // Request initial status when tab is comms
-        if (activeTab === 'comms') {
+        // Request initial status when tab is local-agent
+        if (activeTab === 'local-agent') {
             socket.emit('whatsapp:qr');
         }
 
@@ -239,11 +199,9 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
 
     const allTabs = useMemo(() => {
         const base = [
-            'profile', 'general', 'workspace', 'localization', 'notification', 
-            'comms', 'appearance', 'ai'
+            'local-agent', 'ai', 'cloudflare'
         ];
-        if (hasPermission('manage_users')) base.push('users');
-        if (hasPermission('manage_roles')) base.push('roles');
+        if (hasPermission('workspace:members:manage') || hasPermission('manage_user')) base.push('user');
         return base;
     }, [hasPermission]);
 
@@ -275,58 +233,55 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             }, { replace: true });
         }
     }, [activeTab]);
-    const [refreshing, setRefreshing] = useState(false);
-
-    // Profile Tab State
-    const [profileData, setProfileData] = useState({
-        name: "",
-        email: "",
-        phone: "",
-        company: "",
-    });
-    const [profileSaving, setProfileSaving] = useState(false);
 
     // Users Tab State
-    const [discoverableContacts, setDiscoverableContacts] = useState<any[]>([]);
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteRole, setInviteRole] = useState("member");
-    const [selectedContactId, setSelectedContactId] = useState("");
-    const [editingPermissions, setEditingPermissions] = useState<any>(null);
-    const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
-    const [isGlobalPerms, setIsGlobalPerms] = useState(false);
 
-    // Registry Tab State - Moved to Superadmin
-
-    // Prompts Tab State - Moved to Superadmin
-
-    const [aiStats, setAiStats] = useState({ latency: 245, accuracy: "98.2", status: "online", engine: "cloudflare" });
     const [systemInfo, setSystemInfo] = useState<any>(null);
+    const [cloudflareStats, setCloudflareStats] = useState<any>(null);
+    const [aiStats, setAiStats] = useState<any>(null);
+    const [isAIOperating, setIsAIOperating] = useState(false);
+    const [aiTestOutput, setAiTestOutput] = useState<string | null>(null);
 
     const updateSystemSetting = useCallback((key: string, value: any, namespace?: string) => {
         setSystemSettings((prev: any) => {
             const next = { ...prev };
-            if (namespace) {
-                const ns = namespace.toLowerCase();
-                next[ns] = { ...(next[ns] || {}), [key]: value };
-                
-                // Root mirror for core settings
-                if (ns === 'system_setting' || ns === 'general') {
-                    next[key] = value;
-                }
-            } else {
+            // Ensure namespace exists in state
+            const ns = (namespace || 'SYSTEM_SETTING').toLowerCase();
+            if (!next[ns]) next[ns] = {};
+            next[ns][key] = value;
+            
+            // Root mirror for core settings (Enterprise Level 8 Consistency)
+            if (ns === 'system_setting' || ns === 'general' || ns === 'system') {
                 next[key] = value;
             }
             return next;
         });
 
-        socketRequest('system:update-setting', { key, value, namespace }).then((res: any) => {
-            if (res.success) toast.success(t('common:saved'));
-            else toast.error(res.error || t('common:error_saving'));
+        // Enterprise Level 8: Always save system settings via Brain API (DB) 
+        // because socket connection depends on the setting itself (Catch-22).
+        api.brain.post('registry/save', { 
+            namespace: namespace || 'SYSTEM_SETTING', 
+            key, 
+            value,
+            dataType: typeof value === 'boolean' ? 'boolean' : (typeof value === 'object' ? 'json' : 'string')
+        }).then((res: any) => {
+            if (res.success) {
+                toast.success(t('common:saved'));
+                if (key === 'use_local_agent' || key === 'enable_worker') {
+                    // Force refresh config to update navigation / sidebar guards
+                    refreshConfig(true);
+                }
+            } else toast.error(res.error || t('common:error_saving'));
+        }).catch(err => {
+            console.error("[SETTINGS] Registry save failed:", err);
+            toast.error(t('common:error_saving'));
         });
-    }, [t]);
+    }, [t, refreshConfig]);
 
     useEffect(() => {
-        if (activeTab === 'maintenance' || activeTab === 'general') {
+        if (activeTab === 'maintenance' || activeTab === 'local-agent') {
             socketRequest('system:info').then((res: any) => {
                 if (res?.success) setSystemInfo(res.info || null);
             });
@@ -336,33 +291,42 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                 }
             });
         }
+        if (activeTab === 'cloudflare') {
+            api.brain.get("monitoring/cloudflare").then(res => setCloudflareStats(res.data || res)).catch(() => {});
+        }
+        if (activeTab === 'ai') {
+            api.brain.get("monitoring/ai").then(res => setAiStats(res.data || res)).catch(() => {});
+        }
     }, [activeTab]);
 
-    useEffect(() => {
-        if (user) {
-            setProfileData({
-                name: user.name || "",
-                email: user.email || "",
-                phone: user.phone || "",
-                company: user.company || "",
-            });
-        }
-    }, [user]);
-
-    const fetchDiscoverableContacts = async () => {
+    const handleSyncRAG = async () => {
+        setIsAIOperating(true);
         try {
-            const response = await api.brain.get(`workspace/search-contact`);
-            if (response.success) {
-                setDiscoverableContacts(Array.isArray(response.data) ? response.data : []);
-            }
-        } catch (error) {
-            console.error("Failed to fetch discoverable contact", error);
+            const res = await api.brain.post("monitoring/ai/sync-rag", {});
+            if (res.success) toast.success("Knowledge base re-indexed");
+        } catch (e) {
+            toast.error("RAG Sync failed");
+        } finally {
+            setIsAIOperating(false);
+        }
+    };
+
+    const handleTestAIQuality = async () => {
+        setAiTestOutput("");
+        setIsAIOperating(true);
+        try {
+            const res = await socketRequest("ai:test-quality");
+            if (!res.success) toast.error("AI Quality test failed");
+        } catch (e) {
+            toast.error("AI Quality test failed");
+        } finally {
+            setIsAIOperating(false);
         }
     };
 
     const handleUpdateRole = async (userId: string, newRole: string) => {
         try {
-            const userToUpdate = users.find(u => u.userId === userId || u.id === userId);
+            const userToUpdate = userList.find(u => u.userId === userId || u.id === userId);
             const response = await api.brain.post(`workspace/add-user`, {
                 workspaceId: user?.workspaceId,
                 userId,
@@ -370,11 +334,11 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                 email: userToUpdate?.email
             });
             if (response.success) {
-                toast.success(t('settings:users.user_role_updated'));
-                fetchUsers(true);
+                toast.success(t('settings:user.user_role_updated'));
+                fetchUserList(true);
             }
         } catch (error) {
-            toast.error(t('settings:users.failed_update_role'));
+            toast.error(t('settings:user.failed_update_role'));
         }
     };
 
@@ -389,73 +353,23 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                 role: inviteRole
             });
             if (response.success) {
-                toast.success(t('settings:users.user_added_success'));
+                toast.success(t('settings:user.user_added_success'));
                 setInviteEmail("");
-                setSelectedContactId("");
-                fetchUsers(true);
+                fetchUserList(true);
             }
         } catch (error) {
-            toast.error(t('settings:users.failed_add_user'));
+            toast.error(t('settings:user.failed_add_user'));
         }
     };
 
-    const handleSaveUserPermissions = async () => {
-        if (!editingPermissions) return;
-
-        try {
-            const response = await api.brain.post(`workspace/update-user-permissions`, {
-                workspaceId: user?.workspaceId,
-                userId: editingPermissions.userId || editingPermissions.id,
-                permissions: selectedPerms,
-                isGlobal: isGlobalPerms
-            });
-
-            if (response.success) {
-                toast.success(t('settings:users.permissions_updated'));
-                setEditingPermissions(null);
-                fetchUsers(true);
-            }
-        } catch (error) {
-            toast.error(t('settings:users.failed_update_permissions'));
-        }
-    };
-
-    const handleSaveProfile = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setProfileSaving(true);
-
-        try {
-            const response = await api.brain.post(`auth/update-profile`, { 
-                displayName: profileData.name,
-                phone: profileData.phone,
-                company: profileData.company
-            });
-            if (response.success) {
-                toast.success(t('auth:profile.updated_success'));
-            } else {
-                toast.error(response.error || t('auth:profile.update_error'));
-            }
-        } catch (error: any) {
-            toast.error(error.response?.data?.error || t('auth:profile.update_error'));
-        } finally {
-            setProfileSaving(false);
-        }
-    };
-
-    const translatedPermissions = useMemo(() => {
-        return (permissions || []).map((p: any) => {
-          const labelKey = p.id === '*' ? 'wildcard' : p.id.replace('view_', '');
-          return {
-            ...p,
-            label: t(`settings:users.perm_${labelKey}`, p.id)
-          };
-        });
-    }, [t, permissions]);
+    /**
+     * CLEANUP: Removed handleSaveUserPermissions and translatedPermissions 
+     * as UsersTab handles its own logic now.
+     */
 
     useEffect(() => {
-        if (activeTab === 'users') {
-            fetchUsers();
-            fetchDiscoverableContacts();
+        if (activeTab === 'user') {
+            fetchUserList();
         }
         
         // Sync tab with URL
@@ -473,9 +387,8 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
         // Removed redundant fetchSettings, fetchRbac, fetchWorkspaces that were hitting the Brain API
         // which the loader already provides. This prevents a request storm on page load.
         
-        if (activeTab === 'users') {
-            fetchUsers();
-            fetchDiscoverableContacts();
+        if (activeTab === 'user') {
+            fetchUserList();
         }
         
         // Finalize loading state immediately if we have data or after a short delay
@@ -512,68 +425,6 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
         }
     };
 
-    const handleSaveRbac = async () => {
-        try {
-            const response = await api.brain.post(`workspace/update-rbac`, {
-                workspaceId: user?.workspaceId,
-                userRoles: rbac?.userRoles || []
-            });
-            if (response.success) {
-                toast.success(t('settings:perms_updated'));
-            } else {
-                toast.error(response.error || t('settings:failed_update_perms'));
-            }
-        } catch (error) {
-            toast.error(t('settings:failed_update_perms'));
-        }
-    };
-
-    const togglePermission = (role: string, permission: string) => {
-        const currentPerms = rbac[role] || [];
-        const newPerms = currentPerms.includes(permission)
-            ? currentPerms.filter((p: string) => p !== permission)
-            : [...currentPerms, permission];
-        
-        setRbac({
-            ...rbac,
-            [role]: newPerms
-        });
-    };
-
-    const requestBrowserNotification = async () => {
-        if (!("Notification" in window)) {
-            toast.error(t('settings:browser_notifs_not_supported'));
-            return false;
-        }
-
-        if (Notification.permission === "granted") return true;
-
-        const permission = await Notification.requestPermission();
-        if (permission === "granted") {
-            toast.success(t('settings:browser_notifs_enabled'));
-            return true;
-        } else {
-            toast.error(t('settings:browser_notifs_denied'));
-            return false;
-        }
-    };
-
-    const allAvailablePermissions = useMemo(() => [
-        { id: 'view', label: t('settings:permissions.view') },
-        { id: 'add', label: t('settings:permissions.add') },
-        { id: 'edit', label: t('settings:permissions.edit') },
-        { id: 'delete', label: t('settings:permissions.delete') },
-        { id: 'view_whatsapp', label: t('settings:permissions.view_whatsapp') },
-        { id: 'view_gmail', label: t('settings:permissions.view_gmail') },
-        { id: 'manage_auto_reply', label: t('settings:permissions.manage_auto_reply') },
-        { id: 'manage_users', label: t('settings:permissions.manage_users') },
-        { id: 'manage_roles', label: t('settings:permissions.manage_roles') },
-        { id: 'manage_settings', label: t('settings:permissions.manage_settings') },
-        { id: 'view_audit_logs', label: t('settings:permissions.view_audit_logs') },
-        { id: 'view_archive', label: t('settings:permissions.view_archive') },
-        { id: 'view_print_queue', label: t('settings:permissions.view_print_queue') },
-    ], [t]);
-
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -591,10 +442,10 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             <div className="flex items-center justify-between mb-2">
                 <div>
                    <h1 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900 dark:text-white leading-none">
-                       {renderString(t('settings:settings_title', 'Configuration'), lang)}
+                       {renderString(t('settings:settings_title'), lang)}
                    </h1>
                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                       {renderString(t('settings:settings_desc', 'Manage your workspace environment and global settings'), lang)}
+                       {renderString(t('settings:settings_desc'), lang)}
                    </p>
                 </div>
                 
@@ -612,11 +463,11 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="h-auto p-1 bg-slate-100/50 rounded-2xl grid grid-cols-2 md:grid-cols-4 gap-1 mb-8">
                     {[
-                        { id: 'general', label: renderString(t('settings:tabs.general'), lang), icon: Building },
+                        { id: 'local-agent', label: renderString(t('settings:tabs.local_agent'), lang), icon: Building },
                         { id: 'ai', label: renderString(t('settings:tabs.ai'), lang), icon: Sparkles },
-                        { id: 'comms', label: renderString(t('settings:tabs.comms'), lang), icon: MessageSquare },
-                        { id: 'users', label: renderString(t('settings:tabs.users'), lang), icon: Users },
-                    ].map((tab) => (
+                        { id: 'cloudflare', label: renderString(t('settings:tabs.cloudflare'), lang), icon: Cloud },
+                        { id: 'user', label: renderString(t('settings:tabs.user'), lang), icon: Users },
+                    ].filter(tabItem => allTabs.includes(tabItem.id)).map((tab) => (
                         <TabsTrigger 
                             key={tab.id} 
                             value={tab.id}
@@ -628,7 +479,7 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                     ))}
                 </TabsList>
 
-                <TabsContent value="general" className="mt-0 focus-visible:outline-none focus:ring-0">
+                <TabsContent value="local-agent" className="mt-0 focus-visible:outline-none focus:ring-0">
                     <GeneralTab 
                         settings={settings}
                         setSettings={setSettings}
@@ -637,6 +488,7 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                         updateSystemSetting={updateSystemSetting}
                         systemInfo={systemInfo}
                         handleSave={handleSave}
+                        whatsappState={whatsappState}
                     />
                 </TabsContent>
 
@@ -647,24 +499,23 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                         systemSettings={systemSettings}
                         setSystemSettings={setSystemSettings}
                         updateSystemSetting={updateSystemSetting}
+                        aiStats={aiStats}
+                        cloudflareStats={cloudflareStats}
+                        isAIOperating={isAIOperating}
+                        aiTestOutput={aiTestOutput}
+                        handleSyncRAG={handleSyncRAG}
+                        handleTestAIQuality={handleTestAIQuality}
                     />
                 </TabsContent>
 
-                <TabsContent value="comms" className="mt-0 focus-visible:outline-none focus:ring-0">
-                    <CommsTab 
-                        settings={settings}
-                        setSettings={setSettings}
-                        systemSettings={systemSettings}
-                        setSystemSettings={setSystemSettings}
-                        updateSystemSetting={updateSystemSetting}
-                        whatsappState={whatsappState}
-                    />
+                <TabsContent value="cloudflare" className="mt-0 focus-visible:outline-none focus:ring-0">
+                    <CloudTab cloudflareStats={cloudflareStats} />
                 </TabsContent>
 
-                <TabsContent value="users" className="mt-0 focus-visible:outline-none focus:ring-0">
-                    <UsersTab 
-                        users={users}
-                        loading={usersLoading}
+                <TabsContent value="user" className="mt-0 focus-visible:outline-none focus:ring-0">
+                    <UserTab 
+                        userList={userList}
+                        loading={userLoading}
                         inviteEmail={inviteEmail}
                         setInviteEmail={setInviteEmail}
                         inviteRole={inviteRole}
@@ -672,18 +523,18 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                         handleInvite={handleInvite}
                         handleUpdateRole={handleUpdateRole}
                         handleRemoveUser={async (uId) => {
-                            if (confirm(t('settings:users.remove_confirm'))) {
+                            if (confirm(t('settings:user.remove_confirm'))) {
                                 try {
                                     const res = await api.brain.delete(`workspace/remove-user?userId=${uId}&workspaceId=${user?.workspaceId}`);
                                     if (res.success) {
-                                        toast.success(t('settings:users.user_removed_success'));
-                                        fetchUsers(true);
+                                        toast.success(t('settings:user.user_removed_success'));
+                                        fetchUserList(true);
                                     }
-                                } catch (e) { toast.error(t('settings:users.failed_remove_user')); }
+                                } catch (e) { toast.error(t('settings:user.failed_remove_user')); }
                             }
                         }}
-                        entities={registry?.ENTITY_CONFIGS || {}}
-                        roles={registry?.AUTH_CONFIG?.roles || {}}
+                        entity={registry?.ENTITY_CONFIG || {}}
+                        roles={registry?.SYSTEM_ROLE || registry?.AUTH_CONFIG?.role || {}}
                         workspaceId={user?.workspaceId || ""}
                         api={api}
                         toast={toast}

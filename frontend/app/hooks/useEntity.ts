@@ -42,18 +42,18 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const skipNextSocketUpdate = useRef<string | null>(null);
-  const { user } = useAuth();
-  const { entities } = useConfig();
+  const { user, hasPermission } = useAuth();
+  const { entity } = useConfig();
   const { autoRefreshEnabled, canAutoRefresh } = useTheme();
   const params = useParams();
   const lang = (params.lang as string) || 'ro';
 
   const isKnownEntity = useMemo(() => {
     if (!entityName || entityName === 'undefined') return false;
-    return !!entities[entityName] || 
+    return !!entity[entityName] || 
            LOCAL_FALLBACK_ENTITIES.includes(entityName) || 
-           ['workspace', 'user', 'system_setting', 'entity_definition'].includes(entityName);
-  }, [entityName, entities]);
+           ['workspace', 'user', 'SYSTEM_SETTING', 'entity_definition'].includes(entityName);
+  }, [entityName, entity]);
 
   // Selection helpers
   const getPk = useCallback((item: any) => {
@@ -91,7 +91,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         .toArray();
       
       // Filter by workspace if user is loaded and not a superadmin
-      let filtered = (user?.workspaceId && user.role !== 'superadmin')
+      let filtered = (user?.workspaceId && !hasPermission('*'))
         ? cached.filter((c: any) => c.workspaceId === user.workspaceId).map((c: any) => c.data)
         : cached.map((c: any) => c.data);
 
@@ -120,7 +120,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     }
 
     const filters = { ...options.filters };
-    const GLOBAL_ENTITIES = ['workspace', 'user', 'role', 'system_setting', 'entity_definition', 'audit_log', '_ai_prompt', 'workspace_user', 'workspace_invitation', 'workspace_setting'];
+    const GLOBAL_ENTITIES = ['workspace', 'user', 'role', 'SYSTEM_SETTING', 'entity_definition', 'audit_log', '_ai_prompt', 'workspace_user', 'workspace_invitation', 'workspace_setting'];
     const isGlobal = GLOBAL_ENTITIES.includes(entityName);
     
     // Handle archived items
@@ -557,7 +557,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
                   const toImport: any[] = [];
                   
                   // Get entity config to apply default values for missing columns
-                  const entityDef = (entities as any)[entityName];
+                  const entityDef = (entity as any)[entityName];
                   const fieldDefaults: Record<string, any> = {};
                   if (entityDef?.fields) {
                     Object.entries(entityDef.fields).forEach(([fieldName, fieldConfig]: [string, any]) => {
@@ -741,7 +741,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     const toastId = toast.loading('AI is parsing data...');
     try {
       // Enterprise Level 8: Always use the central normalizer
-      const config = entities[entityName];
+      const config = entity[entityName];
       const normalized = normalizeEntity(config);
       
       const schema: Record<string, string> = {};
@@ -804,7 +804,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         toast.loading(`Importăm ${items.length} elemente noi...`, { id: toastId });
         
         // Final cleaning and mapping of values
-        const config = entities[entityName];
+        const config = entity[entityName];
         const normalized = normalizeEntity(config);
         const cleanedItems = items.map((item: any) => {
           const newItem = { ...item };

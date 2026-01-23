@@ -1,9 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { 
-  Search, Sparkles, Command, ArrowRight, Loader2, X, MessageSquare, Bot, User, 
-  Activity, Settings, LayoutGrid, Users, Briefcase, CheckCircle2, Bug, Tag,
-  Send, Minus, Maximize2, HardDrive, FileText, Layout
-} from "lucide-react";
+import { Search, Sparkles, Command, ArrowRight, X, MessageSquare, Bot, User, Activity, Settings, LayoutGrid, Users, Briefcase, CheckCircle2, Bug, Tag, Send, Minus, Maximize2, HardDrive, FileText } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { cn, getLocalizedPath, api, renderString } from "~/lib/core";
@@ -42,8 +38,8 @@ export function AiCommandBar() {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { lang } = useParams();
-  const { entities, constants, navigation, uiConfig } = useConfig();
-  const settings = constants.system_setting;
+  const { entity, constants, navigation, uiConfig } = useConfig();
+  const settings = constants.SYSTEM_SETTING;
   const { t } = useTranslation(['common', 'ai']);
 
   const searchShortcut = (uiConfig.shortcuts || []).find((s: any) => s.action === 'open-search');
@@ -123,7 +119,7 @@ export function AiCommandBar() {
 
     // . = File search (only if printing/indexer worker is active in navigation)
     if (startsWithDot) {
-      const isSearchActive = navigation?.workers?.some((w: any) => w.id === 'printing' || w.id === 'indexer');
+      const isSearchActive = navigation?.worker?.some((w: any) => w.id === 'printing' || w.id === 'indexer');
       
       if (!isSearchActive) {
         setResults([]);
@@ -253,7 +249,7 @@ export function AiCommandBar() {
                     <div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">{renderString(t('ai:quick_access'), lang)}</p>
                         <div className="grid grid-cols-2 gap-1 px-1">
-                            {Object.entries(entities).filter(([id]) => id !== 'audit_log').map(([id, config]: [string, any]) => {
+                            {Object.entries(entity).filter(([id]) => id !== 'audit_log').map(([id, config]: [string, any]) => {
                                 const Icon = config.icon ? resolveIcon(config.icon) : LayoutGrid;
                                 return (
                                     <button

@@ -1,12 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router';
-import { 
-    Save, ArrowLeft, Trash2, Shield, Clock, 
-    History, CheckCircle2, AlertCircle, Info,
-    X, Plus, Search, ExternalLink, RefreshCw,
-    MessageCircle, Phone, Send, Brain, Sparkles, Mail,
-    HelpCircle, RotateCcw
-} from 'lucide-react';
+import { Save, ArrowLeft, Trash2, Shield, Clock, History, CheckCircle2, X, Plus, ExternalLink, RefreshCw, MessageCircle, Phone, Send, Brain, Sparkles, Mail, HelpCircle, RotateCcw } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
@@ -15,29 +9,14 @@ import { IconPicker } from '~/components/ui/IconPicker';
 import { ColorPicker } from '~/components/ui/ColorPicker';
 import { DatePicker } from '~/components/ui/DatePicker';
 import { FileUploader } from '~/components/ui/file-uploader';
-import { 
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue 
-} from '~/components/ui/select';
-import { 
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter
-} from '~/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
+import { Dialog, DialogContent, DialogHeader,  DialogTitle, DialogDescription, DialogFooter } from '~/components/ui/dialog';
 import { GlassCard } from '~/components/ui/GlassCard';
 import { api, cn, socket, renderString, getLocalizedPath } from '~/lib/core';
 import { normalizeEntity } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
-import i18next from 'i18next';
 import { useConfig } from '~/hooks/useConfig';
 import { toast } from 'sonner';
-import { IconMap } from '~/lib/icons';
 
 interface DynamicEntityDetailProps {
     entityId: string;
@@ -47,10 +26,10 @@ interface DynamicEntityDetailProps {
 
 export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntityDetailProps) {
     const { lang } = useParams();
-    const { t } = useTranslation(['common', 'entities', 'superadmin']);
+    const { t } = useTranslation(['common', 'entity', 'superadmin']);
     const navigate = useNavigate();
     const location = useLocation();
-    const { constants, entities } = useConfig();
+    const { constants, entity } = useConfig();
     
     // Normalize fields (Enterprise Level 8) - use the central Lens
     const fieldsList = React.useMemo(() => {
@@ -150,7 +129,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
 
         // Enterprise Level 8: Fetch Children Records (Inbound Relations)
         if (!isNew && recordId) {
-            const allEntitiesRes = await api.brain.get('entities');
+            const allEntitiesRes = await api.brain.get('entity');
             if (allEntitiesRes.success) {
                 const potentialChildren = allEntitiesRes.data.filter((e: any) => {
                     const normalized = normalizeEntity(e);
@@ -168,7 +147,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                     let endpoint = `db/${normalized.name}?${fieldName}=${recordId}`;
                     if (normalized.name === 'contact' && entityId === 'workspace') {
                         // Use the optimized 'users' endpoint which handles role filtering and hierarchy sorting
-                        endpoint = `workspace/users?workspaceId=${recordId}`;
+                        endpoint = `workspace/member?workspaceId=${recordId}`;
                     }
 
                     const res = await api.brain.get(endpoint);
@@ -356,7 +335,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         if (!confirm("Sigur doriți să restaurați această versiune? Datele actuale vor fi suprascrise.")) return;
         try {
             // Enterprise Level 8: Unified Action Endpoint
-            const res = await api.brain.post(`actions/undo/${auditId}`);
+            const res = await api.brain.post(`action/undo/${auditId}`);
             if (res.success) {
                 toast.success("Date restaurate cu succes!");
                 fetchRecord();
@@ -598,7 +577,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                                     return !current.includes(String(item.id));
                                                 })
                                                 .map((item: any, idx) => {
-                                                    const targetDef = entities[targetEntity];
+                                                    const targetDef = entity[targetEntity];
                                                     const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
                                                     
                                                     return (
@@ -622,7 +601,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 </SelectTrigger>
                                 <SelectContent className="rounded-2xl border-none shadow-2xl">
                                     {(relatedData[targetEntity] || []).map((item: any, idx) => {
-                                        const targetDef = entities[targetEntity];
+                                        const targetDef = entity[targetEntity];
                                         const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
                                         
                                         return (

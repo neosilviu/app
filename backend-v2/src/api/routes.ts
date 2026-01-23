@@ -16,9 +16,9 @@ router.get('/config', (req, res) => {
     res.json({ 
       success: true, 
       constants: registry.constants,
-      entities: registry.entities,
+      entity: registry.entity,
       uiConfig: registry.uiConfig || {},
-      roles: registry.roles || {},
+      role: registry.role || {},
       user: (req as any).user || null
     });
   } catch (error: any) {
@@ -30,7 +30,7 @@ router.get('/config', (req, res) => {
 router.get('/health', (req, res) => { res.json({ status: 'ok', service: 'backend-v2' }); });
 
 router.use('/registry', registryRouter);
-router.use('/entities', entityRouter);
+router.use('/entity', entityRouter);
 router.use('/audit', auditRouter);
 router.use('/printing', printingRouter);
 router.use('/system', systemRouter);

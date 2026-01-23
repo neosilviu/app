@@ -64,13 +64,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        <AuthProvider>
-          <SystemProvider>
-            <ThemeProvider 
-              defaultTheme={(REGISTRY_BASELINE?.THEME?.defaultTheme) || "light"} 
-              storageKey={(REGISTRY_BASELINE?.THEME?.storageKey) || "studio-theme"}
-            >
-              <ConfigProvider>
+        <ConfigProvider>
+          <AuthProvider>
+            <SystemProvider>
+              <ThemeProvider 
+                defaultTheme={(REGISTRY_BASELINE?.THEME?.defaultTheme) || "light"} 
+                storageKey={(REGISTRY_BASELINE?.THEME?.storageKey) || "studio-theme"}
+              >
                 <SettingsProvider>
                   <SuperAdminGate>
                     {children}
@@ -84,10 +84,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     duration={4000}
                   />
                 </SettingsProvider>
-              </ConfigProvider>
-            </ThemeProvider>
-          </SystemProvider>
-        </AuthProvider>
+              </ThemeProvider>
+            </SystemProvider>
+          </AuthProvider>
+        </ConfigProvider>
         <ScrollRestoration />
         <Scripts />
       </body>

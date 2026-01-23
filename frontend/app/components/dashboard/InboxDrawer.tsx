@@ -1,22 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Bell, Check, Printer, Trash2, X, FileText, 
-  Archive, MessageSquare, 
-  User, Calendar, Clock,
-  Loader2,
-  ChevronRight,
-  Settings
-} from 'lucide-react';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger,
-  DialogDescription,
-  DialogPortal,
-  DialogOverlay
-} from "~/components/ui/dialog";
+import { Bell, Printer, Trash2, X, FileText, Archive, MessageSquare, Loader2, Settings } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { socket, socketRequest } from '~/lib/core';
 import { Badge } from "~/components/ui/badge";

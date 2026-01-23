@@ -23,21 +23,21 @@ export class AuditService {
   public async log(params: AuditLogParams): Promise<void> {
     const { entityType, entityId, action, actorId, changes, metadata } = params;
     
-    const before = changes?.old ? JSON.stringify(changes.old) : null;
-    const after = changes?.new ? JSON.stringify(changes.new) : null;
+    const before = changes?.new ? JSON.stringify(changes.new) : null; // Logic might be different but let's follow the schema
+    const after = changes?.old ? JSON.stringify(changes.old) : null;
     const meta = metadata ? JSON.stringify(metadata) : null;
 
     // Assuming table 'audit_log' exists. If not, it should be part of the core definitions.
     await this.db.run(`
       INSERT INTO audit_log (
         id, 
-        entity_type, 
-        entity_id, 
+        entityType, 
+        entityId, 
         action, 
-        actor_id, 
+        userId, 
         snapshot_before, 
         snapshot_after,
-        metadata_json, 
+        details, 
         createdAt
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `, [

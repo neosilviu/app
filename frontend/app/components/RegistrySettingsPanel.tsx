@@ -6,17 +6,11 @@ import {
     cn 
 } from '~/lib/core';
 import { toast } from 'sonner';
-import { 
-    Search, RefreshCw, Save, FileCode, History, 
-    ChevronDown, ChevronRight, Database, Shield, Layout,
-    Zap, Activity, Settings, Box, Palette, Globe, Lock, HardDrive
-} from 'lucide-react';
+import { Search, RefreshCw, Save, FileCode, History, ChevronDown, ChevronRight, Database, Shield, Layout, Zap, Activity, Settings, Box, Palette, Globe, Lock, HardDrive } from 'lucide-react';
 import { GlassCard } from './ui/GlassCard';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { IconPicker } from './ui/IconPicker';
-import { Label } from './ui/label';
-import { Badge } from './ui/badge';
 import { 
     Accordion, 
     AccordionContent, 
@@ -38,7 +32,7 @@ const ICON_MAP: Record<string, any> = {
     entities: Box,
     file: Box,
     i18n: Globe,
-    workers: Activity,
+    worker: Activity,
     local_agent: HardDrive
 };
 

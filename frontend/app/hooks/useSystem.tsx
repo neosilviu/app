@@ -57,10 +57,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
                 }
             });
             setWorkerStatuses(normalized);
-        } else if (payload.workers && Array.isArray(payload.workers)) {
+        } else if (payload.worker && Array.isArray(payload.worker)) {
             // Fallback for legacy format if any
             const statuses: Record<string, WorkerStatus> = {};
-            payload.workers.forEach((w: any) => {
+            payload.worker.forEach((w: any) => {
             statuses[w.name] = typeof w.status === 'object' ? w.status.status : w.status;
             });
             setWorkerStatuses(prev => ({ ...prev, ...statuses }));

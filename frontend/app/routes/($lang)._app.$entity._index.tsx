@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useConfig } from '~/hooks/useConfig';
-import { DynamicEntityList } from '~/components/entities/DynamicEntityList';
+import { DynamicEntityList } from '~/components/entity/DynamicEntityList';
 import { ErrorBoundary } from '~/components/ControlGates';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '~/components/ui/dialog';
 import { DynamicForm } from '~/components/EntitySystem';
@@ -41,7 +41,7 @@ export async function action({ request, params }: any) {
 
 export default function EntityIndexPage() {
     const { entity, lang } = useParams();
-    const { entities, isInitialized } = useConfig();
+    const { entity: configMap, isInitialized } = useConfig();
     const [searchParams, setSearchParams] = useSearchParams();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
 
@@ -66,7 +66,7 @@ export default function EntityIndexPage() {
         );
     }
     
-    const config = entities[entity as string];
+    const config = configMap[entity as string];
     if (!config) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">

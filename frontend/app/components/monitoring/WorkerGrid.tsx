@@ -65,10 +65,10 @@ export const WorkerGrid: React.FC<WorkerGridProps> = ({
                             </TableRow>
                         ) : (
                             Object.entries(workerStats?.workerStatus || {}).map(([name, data]: [string, any]) => {
-                                const status = typeof data === 'object' ? data.status : data;
-                                const memory = typeof data === 'object' ? data.memory : null;
-                                const restriction = typeof data === 'object' ? data.restriction : null;
-                                const isRunning = status === 'running' || status === 'READY';
+                                const status = (data && typeof data === 'object') ? data.status : (data || 'unknown');
+                                const memory = (data && typeof data === 'object') ? data.memory : null;
+                                const restriction = (data && typeof data === 'object') ? data.restriction : null;
+                                const isRunning = status === 'running' || status === 'READY' || status === 'CONNECTED';
 
                                 return (
                                     <TableRow key={name} className="hover:bg-slate-50/50 border-slate-50/50 transition-colors group">

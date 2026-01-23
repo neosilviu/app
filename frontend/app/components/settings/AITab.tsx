@@ -1,27 +1,19 @@
 import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '~/components/ui/card';
+import { Card, CardTitle, CardDescription } from '~/components/ui/card';
 import { Label } from '~/components/ui/label';
 import { Switch } from '~/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
-import { 
-    Brain, Sparkles, Bot, Zap, ShieldAlert, Cpu, Database, Network, 
-    MessageSquareQuote, Plus, Trash, ShieldCheck 
-} from 'lucide-react';
+import { Sparkles, Bot, Cpu, Plus, Trash, ShieldCheck, MessageSquareQuote } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { REGISTRY_BASELINE } from '~/lib/core';
 import { BufferedInput, BufferedTextarea } from '~/components/ui/BufferedInput';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '~/components/ui/accordion';
 import { useConfig } from '~/hooks/useConfig';
 import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
+import { AIInsights } from '~/components/monitoring/AIInsights';
 
-import { renderString } from '~/lib/utils';
-
-const getLang = () => {
-    if (typeof window === 'undefined') return 'ro';
-    const parts = window.location.pathname.split('/');
-    return parts[1] && parts[1].length === 2 ? parts[1] : 'ro';
-};
+import { useParams } from 'react-router';
+import { renderString } from '~/lib/core';
 
 interface AITabProps {
     settings: any; // Workspace Settings
@@ -29,6 +21,13 @@ interface AITabProps {
     systemSettings: any; // System Settings (SuperAdmin)
     setSystemSettings: (s: any) => void;
     updateSystemSetting: (key: string, value: any, namespace?: string) => void;
+    // Monitoring Props
+    aiStats?: any;
+    cloudflareStats?: any;
+    isAIOperating?: boolean;
+    aiTestOutput?: string | null;
+    handleSyncRAG?: () => void;
+    handleTestAIQuality?: () => void;
 }
 
 export const AITab: React.FC<AITabProps> = ({ 
@@ -36,11 +35,17 @@ export const AITab: React.FC<AITabProps> = ({
     setSettings, 
     systemSettings, 
     setSystemSettings,
-    updateSystemSetting 
+    updateSystemSetting,
+    aiStats,
+    cloudflareStats,
+    isAIOperating = false,
+    aiTestOutput = null,
+    handleSyncRAG = () => {},
+    handleTestAIQuality = () => {}
 }) => {
-    const { t } = useTranslation(['settings', 'common']);
+    const { t } = useTranslation(['settings', 'common', 'monitoring']);
     const { constants } = useConfig();
-    const lang = getLang();
+    const { lang } = useParams();
 
     // Registry Source (SuperAdmin Definitions)
     const globalConfig = constants.AI_CONFIG ?? {};
@@ -80,7 +85,102 @@ export const AITab: React.FC<AITabProps> = ({
 
     return (
         <div className="space-y-6">
-            <Accordion type="multiple" defaultValue={["model_pref", "ws_prompts"]} className="space-y-6">
+            {/* AI Monitoring & Insights (Moved from Monitoring) */}
+            {aiStats && (
+                <AIInsights 
+                    aiStats={aiStats}
+                    cloudflareStats={cloudflareStats}
+                    isAIOperating={isAIOperating}
+                    aiTestOutput={aiTestOutput}
+                    handleSyncRAG={handleSyncRAG}
+                    handleTestAIQuality={handleTestAIQuality}
+                    localStats={null}
+                />
+            )}
+
+            <Accordion type="multiple" defaultValue={["model_pref", "ws_prompts", "ai_providers"]} className="space-y-6">
+                {/* 0. Providers Config (SuperAdmin) */}
+                {(systemSettings?.ai || systemSettings?.SYSTEM_SETTING) && (
+                    <AccordionItem value="ai_providers" className="border-none">
+                        <Card className="border-none shadow-xl shadow-slate-100 rounded-[2rem] overflow-hidden bg-white/50 backdrop-blur-sm">
+                            <AccordionTrigger className="px-6 py-5 hover:no-underline group">
+                                <div className="flex items-center gap-4">
+                                    <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-500 group-hover:scale-110 transition-transform">
+                                        <Bot className="h-6 w-6" />
+                                    </div>
+                                    <div className="flex flex-col items-start gap-1 text-left">
+                                        <CardTitle className="text-sm font-black uppercase italic tracking-widest">{t('monitoring:ai.providers')}</CardTitle>
+                                        <CardDescription className="text-[10px] uppercase font-bold text-slate-400">Configure Global AI Engines & API Keys</CardDescription>
+                                    </div>
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="px-6 pb-6 pt-2 space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Gemini */}
+                                    <div className="p-6 rounded-[2rem] bg-indigo-50/30 border border-indigo-100 flex flex-col gap-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-10 w-10 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                                                    <Sparkles className="h-5 w-5 text-indigo-500" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-black italic text-slate-700">Google Gemini</p>
+                                                    <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-tighter">Pro & Flash Engine</p>
+                                                </div>
+                                            </div>
+                                            <Switch 
+                                                checked={!!systemSettings?.ai?.gemini_enabled}
+                                                onCheckedChange={(v) => updateSystemSetting('gemini_enabled', v, 'ai')}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-[9px] font-black uppercase italic text-slate-400 ml-2">Google AI Studio API Key</Label>
+                                            <BufferedInput 
+                                                type="password"
+                                                value={systemSettings?.ai?.gemini_api_key || ''}
+                                                onChange={(v) => updateSystemSetting('gemini_api_key', v, 'ai')}
+                                                placeholder="AIzaSy..."
+                                                className="h-11 rounded-2xl border-none bg-white shadow-sm font-mono text-xs"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Cloudflare AI */}
+                                    <div className="p-6 rounded-[2rem] bg-orange-50/30 border border-orange-100 flex flex-col gap-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-10 w-10 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                                                    <Cpu className="h-5 w-5 text-orange-500" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-black italic text-slate-700">Cloudflare AI</p>
+                                                    <p className="text-[9px] font-bold text-orange-400 uppercase tracking-tighter">Workers AI Runtime</p>
+                                                </div>
+                                            </div>
+                                            <Badge className="bg-orange-500 text-white border-none rounded-lg text-[9px] font-black uppercase italic px-2 h-5">NATIVE</Badge>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-[9px] font-black uppercase italic text-slate-400 ml-2">AI Status</Label>
+                                            <div className="h-11 rounded-2xl flex items-center px-4 bg-white shadow-sm">
+                                                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse mr-2" />
+                                                <span className="text-[10px] font-black uppercase italic text-slate-600">Active (System Bound)</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Placeholder for Future Providers */}
+                                    <div className="p-6 rounded-[2rem] border border-dashed border-slate-200 flex items-center justify-center group opacity-50">
+                                        <div className="text-center">
+                                            <Plus className="h-6 w-6 text-slate-300 mx-auto mb-1 group-hover:scale-110 transition-transform" />
+                                            <p className="text-[9px] font-black uppercase italic text-slate-400 tracking-widest">Add More Providers</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </AccordionContent>
+                        </Card>
+                    </AccordionItem>
+                )}
+
                 {/* 1. Workspace Model Preference */}
                 <AccordionItem value="model_pref" className="border-none">
                     <Card className="border-none shadow-xl shadow-slate-100 rounded-[2rem] overflow-hidden bg-white/50 backdrop-blur-sm">

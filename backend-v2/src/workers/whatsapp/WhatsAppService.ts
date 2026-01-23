@@ -1,6 +1,4 @@
 import { Client, LocalAuth } from 'whatsapp-web.js';
-import { RegistryManager } from '../../core/registry';
-import { DatabaseDriver } from '../../db/driver';
 import { SocketManager } from '../../services/SocketManager';
 import { QRHandler } from './QRHandler';
 import { MessageHandler } from './MessageHandler';

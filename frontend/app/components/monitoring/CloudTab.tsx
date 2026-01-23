@@ -63,10 +63,10 @@ export const CloudTab: React.FC<CloudTabProps> = ({ cloudflareStats }) => {
                             <div className="space-y-8">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                                     {[
-                                        { label: t("monitoring:cloudflare.requests_today"), val: d1Usage.requestsToday || 0, limit: '100k', color: 'text-slate-900' },
-                                        { label: t("monitoring:cloudflare.total_requests"), val: d1Usage.totalRequests || 0, color: 'text-blue-500' },
-                                        { label: t("monitoring:cloudflare.cpu_time"), val: d1Usage.cpuTime || 0, color: 'text-orange-500' },
-                                        { label: t("monitoring:cloudflare.db_storage"), val: `${((cloudflareStats.usage.storage_bytes || 0) / 1024 / 1024).toFixed(2)} MB`, color: 'text-emerald-500' }
+                                        { label: t("monitoring:cloudflare.requests_today"), val: d1Usage?.requestsToday || 0, limit: '100k', color: 'text-slate-900' },
+                                        { label: t("monitoring:cloudflare.total_requests"), val: d1Usage?.totalRequests || 0, color: 'text-blue-500' },
+                                        { label: t("monitoring:cloudflare.cpu_time"), val: d1Usage?.cpuTime || 0, color: 'text-orange-500' },
+                                        { label: t("monitoring:cloudflare.db_storage"), val: `${((cloudflareStats?.usage?.storage_bytes || 0) / 1024 / 1024).toFixed(2)} MB`, color: 'text-emerald-500' }
                                     ].map((stat, i) => (
                                         <div key={i} className="space-y-1 group">
                                             <p className="text-[10px] font-black uppercase italic tracking-tighter text-slate-400 group-hover:text-slate-600 transition-colors">{stat.label}</p>
@@ -83,14 +83,14 @@ export const CloudTab: React.FC<CloudTabProps> = ({ cloudflareStats }) => {
                                             <div className="h-4 w-4 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
                                             <span className="text-[10px] font-black uppercase italic tracking-widest text-blue-600">{t("monitoring:cloudflare.read_rows")}</span>
                                         </div>
-                                        <span className="font-black italic text-slate-700">{cloudflareStats.usage.read_rows?.toLocaleString() || 0}</span>
+                                        <span className="font-black italic text-slate-700">{cloudflareStats?.usage?.read_rows?.toLocaleString() || 0}</span>
                                     </div>
                                     <div className="flex items-center justify-between p-5 rounded-3xl bg-orange-50/50 border border-orange-100">
                                         <div className="flex items-center gap-3">
                                             <div className="h-4 w-4 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
                                             <span className="text-[10px] font-black uppercase italic tracking-widest text-orange-600">{t("monitoring:cloudflare.write_rows")}</span>
                                         </div>
-                                        <span className="font-black italic text-slate-700">{cloudflareStats.usage.write_rows?.toLocaleString() || 0}</span>
+                                        <span className="font-black italic text-slate-700">{cloudflareStats?.usage?.write_rows?.toLocaleString() || 0}</span>
                                     </div>
                                 </div>
                             </div>

@@ -33,7 +33,8 @@ export class WorkerManager {
     const isPrimary = instanceId === 0;
     const registry = RegistryManager.getInstance();
     
-    const enableWorkers = registry.get('system.enable_workers') === true;
+    // Level 8: Check both singular and plural for backward compatibility
+    const enableWorkers = registry.get('system.enable_worker') === true || registry.get('system.enable_workers') === true;
     
     logger.info(`Refreshing worker states (Enabled: ${enableWorkers}, Primary: ${isPrimary})`);
 

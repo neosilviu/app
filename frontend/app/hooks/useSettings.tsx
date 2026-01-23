@@ -31,7 +31,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       // Enterprise Level 8: Skip backend fetch if we are in Setup phase (No Admin)
       // or if Registry is not yet ready.
       if (isAdminExists === false) {
-          const registrySettings = constants?.system_setting || {};
+          const registrySettings = constants?.SYSTEM_SETTING || {};
           setSettings(registrySettings);
           setLoading(false);
           return;
@@ -48,7 +48,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       if (response?.success && response?.settings) {
         setSettings(response.settings);
       } else if (isInitialized) {
-        const registrySettings = constants?.system_setting || {};
+        const registrySettings = constants?.SYSTEM_SETTING || {};
         setSettings(registrySettings);
       }
     } catch (err: any) {

@@ -7,13 +7,7 @@ import {
     normalizeEntity
 } from '~/lib/core';
 import { toast } from 'sonner';
-import { 
-    Search, Plus, Save, Trash2, Edit2, X,
-    Box, Columns, Code, Layout, Settings,
-    RefreshCw, ChevronRight, HelpCircle,
-    Menu, LayoutGrid, Eye, EyeOff,
-    LayoutDashboard, Zap
-} from 'lucide-react';
+import { Search, Plus, Save, Trash2, Edit2, X, Box, Columns, Code, Layout, Settings, RefreshCw, ChevronRight, HelpCircle, Menu, LayoutGrid, Eye, EyeOff, LayoutDashboard, Zap } from 'lucide-react';
 import { GlassCard } from '~/components/ui/GlassCard';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
@@ -29,10 +23,10 @@ import {
 import { Switch } from '~/components/ui/switch';
 
 export function EntityDefinitionsPanel() {
-    const { entities: configEntities, refreshConfig } = useConfig();
+    const { entity: configEntities, refreshConfig } = useConfig();
     const { t } = useTranslation(['common', 'superadmin']);
     
-    const [entities, setEntities] = useState<any[]>([]);
+    const [entityData, setEntityData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingEntity, setEditingEntity] = useState<any | null>(null);
     const [saving, setSaving] = useState(false);
@@ -44,7 +38,7 @@ export function EntityDefinitionsPanel() {
         const list = Object.entries(configEntities).map(([key, entity]: [string, any]) => {
             return normalizeEntity({ ...entity, name: entity.name || key });
         });
-        setEntities(list);
+        setEntityData(list);
         setLoading(false);
     }, [configEntities]);
 
@@ -53,7 +47,7 @@ export function EntityDefinitionsPanel() {
         
         setSaving(true);
         try {
-            const res = await api.brain.post('entities/save', editingEntity);
+            const res = await api.brain.post('entity/save', editingEntity);
             if (res.success) {
                 toast.success(`Entity ${editingEntity.name} saved!`);
                 setEditingEntity(null);
@@ -72,7 +66,7 @@ export function EntityDefinitionsPanel() {
         if (!confirm("Are you sure you want to delete this entity definition? This won't delete the database table, but it will remove it from the UI configuration.")) return;
         
         try {
-            const res = await api.brain.post('entities/delete', { id });
+            const res = await api.brain.post('entity/delete', { id });
             if (res.success) {
                 toast.success("Entity deleted");
                 await refreshConfig(true);
@@ -97,7 +91,7 @@ export function EntityDefinitionsPanel() {
         });
     };
 
-    const filteredEntities = entities.filter(entity =>
+    const filteredEntities = entityData.filter(entity =>
         entity.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         entity.label?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         entity.description?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -111,7 +105,7 @@ export function EntityDefinitionsPanel() {
                         <Box className="text-primary" />
                         Entity Builder
                     </h3>
-                    <p className="text-xs text-slate-500 font-medium">Define new database modules and UI structures dynamically. {entities.length} {entities.length === 1 ? 'entity' : 'entities'} available.</p>
+                    <p className="text-xs text-slate-500 font-medium">Define new database modules and UI structures dynamically. {entityData.length} {entityData.length === 1 ? 'entity' : 'entity'} available.</p>
                 </div>
                 <Button 
                     onClick={startNew}

@@ -1,5 +1,5 @@
 import { verifyAuth } from './auth-core.server';
-import { hasPermission } from './registry';
+import { hasPermission, getRegistry } from './registry';
 import { D1Driver } from './d1.server';
 
 /**
@@ -25,10 +25,17 @@ export async function checkPermission(
     workspaceId?: string
 ): Promise<{ allowed: boolean; error?: string; role?: string }> {
     try {
+        const registry = await getRegistry(db);
+        const roles = registry.SYSTEM_ROLE || {};
         const user = await db.get('contact', userId);
-        if (user && user.role === 'superadmin') return { allowed: true, role: 'superadmin' };
+        
+        if (user) {
+            const roleDef = roles[user.role];
+            if (roleDef?.permission?.includes('*')) return { allowed: true, role: user.role };
+        }
+
         if (!workspaceId) return { allowed: false, error: 'Workspace ID required' };
-        const workspaceUsers = await db.list('workspace_users', { userId, workspaceId });
+        const workspaceUsers = await db.list('workspace_user', { userId, workspaceId });
         if (!workspaceUsers || workspaceUsers.length === 0) return { allowed: false, error: 'User not in workspace' };
         const role = workspaceUsers[0].role;
         if (hasPermission(role, requiredPermission)) return { allowed: true, role };

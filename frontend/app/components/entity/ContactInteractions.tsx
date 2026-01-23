@@ -1,19 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { 
-    MessageSquare, 
-    Mail, 
-    Printer, 
-    History, 
-    FileText, 
-    ExternalLink,
-    Clock,
-    User,
-    ArrowRight,
-    Star,
-    Pin,
-    Tag
-} from 'lucide-react';
+import { MessageSquare, Mail, Printer, History, FileText,  ExternalLink, Clock, ArrowRight, Star, Pin } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';

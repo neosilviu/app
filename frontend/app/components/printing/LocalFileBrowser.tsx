@@ -1,37 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
-import { 
-    Folder, 
-    File, 
-    ChevronRight, 
-    ChevronLeft, 
-    Download, 
-    Trash2, 
-    RefreshCcw, 
-    Search,
-    HardDrive,
-    Activity,
-    Server,
-    FileText,
-    FileImage,
-    FileArchive,
-    FileSpreadsheet,
-    Presentation,
-    SearchX,
-    ArrowUpDown,
-    Plus,
-    Square,
-    MessageSquare,
-    LayoutGrid,
-    User,
-    MoreVertical, 
-    ArrowLeft, 
-    RefreshCw,
-    X,
-    Tag,
-    Printer,
-    Eye
-} from 'lucide-react';
+import { Folder, File, ChevronRight, ChevronLeft, Download, Trash2, RefreshCcw, Search, HardDrive, Activity, Server, FileText, FileImage, FileArchive, FileSpreadsheet, Presentation, SearchX, ArrowUpDown, Plus, Square, MessageSquare, LayoutGrid, User, MoreVertical, ArrowLeft, RefreshCw, X, Tag, Printer, Eye } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';

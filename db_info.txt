@@ -1,0 +1,19 @@
+
+ Γ¢à∩╕Å wrangler 4.54.0 (update available 4.60.0)
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+Resource location: local 
+
+Use --remote if you want to access the remote instance.
+
+≡ƒîÇ Executing on local database DB (local-dev-id) from ./frontend\.wrangler\state\v3\d1:
+≡ƒîÇ To execute on your remote database, add a --remote flag to your wrangler command.
+≡ƒÜú 1 command executed successfully.
+[
+  {
+    "results": [],
+    "success": true,
+    "meta": {
+      "duration": 0
+    }
+  }
+]

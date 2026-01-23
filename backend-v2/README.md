@@ -84,16 +84,16 @@ Base URL: `http://localhost:4001/api/v2`
 
 ### Registry
 - `GET /registry` - Get full merged registry (Baseline + DB).
-- `GET /registry/:namespace` - Get specific namespace (e.g., `entities`, `system`).
+- `GET /registry/:namespace` - Get specific namespace (e.g., `entity`, `system`).
 
 ### Entities (exclude `system_*`)
-- `GET /entities` - List all entity definitions.
-- `GET /entities/:name` - List records for an entity (supports query params).
-- `POST /entities/:name` - Create a new record (Auto-Audited).
-- `PUT /entities/:name/:id` - Update a record (Auto-Audited).
+- `GET /entity` - List all entity definitions.
+- `GET /entity/:name` - List records for an entity (supports query params).
+- `POST /entity/:name` - Create a new record (Auto-Audited).
+- `PUT /entity/:name/:id` - Update a record (Auto-Audited).
 
 ### Audit
-- `GET /audit/logs` - Retrieve audit trail.
+- `GET /audit/log` - Retrieve audit trail.
 
 ---
 

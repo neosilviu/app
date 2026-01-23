@@ -1,62 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { useConfig } from '~/hooks/useConfig';
 import { useTranslation } from 'react-i18next';
-import i18next from 'i18next';
-import { 
-    api, 
-    cn,
-    socket,
-    renderString,
-    normalizeEntity,
-    getThemeClasses
-} from '~/lib/core';
+import { api, cn, socket, renderString, normalizeEntity, getThemeClasses } from '~/lib/core';
 import { toast } from 'sonner';
-import { 
-    Search, Plus, Save, Trash2, Edit2, X,
-    Box, Columns, Code, Layout, Settings,
-    RefreshCw, ChevronRight, HelpCircle,
-    Menu, LayoutGrid, Eye, EyeOff,
-    LayoutDashboard, Zap, Shield, Link, Sparkles, CircleDollarSign, Info,
-    ArrowUp, ArrowDown, Copy
-} from 'lucide-react';
+import { Search, Plus, Save, Trash2, X, Box, Columns, Code, RefreshCw, HelpCircle, Menu, LayoutGrid, Eye, EyeOff, LayoutDashboard, Zap, Shield, Link, Sparkles, CircleDollarSign, Info, ArrowUp, ArrowDown, Copy } from 'lucide-react';
 import { GlassCard } from './ui/GlassCard';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { IconPicker } from './ui/IconPicker';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
-import { 
-    Tabs, 
-    TabsContent, 
-    TabsList, 
-    TabsTrigger 
-} from './ui/tabs';
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-} from "./ui/accordion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { Switch } from './ui/switch';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader,  DialogTitle, } from "./ui/dialog";
 import { Checkbox } from "./ui/checkbox";
 
 export function EntityDefinitionsPanel() {
-    const { entities: configEntities, refreshConfig, constants } = useConfig();
-    const { t } = useTranslation(['common', 'superadmin']);
+    const { entity: configEntities, refreshConfig, constants } = useConfig();
+    const { t, i18n } = useTranslation(['common', 'superadmin']);
+    const lang = i18n.language || 'ro';
     
     const [entities, setEntities] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingEntity, setEditingEntity] = useState<any | null>(null);
     const [saving, setSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [activeTab, setActiveTab] = useState<'all' | 'system' | 'custom'>('all');
 
     // Delete confirmation state
     const [deleteDialog, setDeleteDialog] = useState<{ open: boolean, entity: any | null }>({ open: false, entity: null });
@@ -68,7 +38,7 @@ export function EntityDefinitionsPanel() {
         setLoading(true);
         try {
             // Get entities from Brain API (Now uses the unified normalizer)
-            const res = await api.brain.get('entities');
+            const res = await api.brain.get('entity');
             
             if (res.success && Array.isArray(res.data)) {
                 // Enterprise Level 8: Normalize everything through the central lens
@@ -98,7 +68,7 @@ export function EntityDefinitionsPanel() {
         console.log("[ENTITY-BUILDER] Saving entity:", editingEntity.name, editingEntity);
 
         try {
-            const res = await api.brain.post('entities/save', editingEntity);
+            const res = await api.brain.post('entity/save', editingEntity);
             console.log("[ENTITY-BUILDER] Save result:", res);
 
             if (res.success || res.status === 'synced' || (Array.isArray(res) && res.length > 0)) {
@@ -134,9 +104,9 @@ export function EntityDefinitionsPanel() {
         );
 
         if (dependents.length > 0) {
-            const dependentNames = dependents.map(d => renderString(d.label || d.name)).join(', ');
+            const dependentNames = dependents.map(d => renderString(d.label || d.name, lang)).join(', ');
             return toast.error(
-                `Cannot delete ${renderString(entity.label)}: The following entities depend on it: ${dependentNames}`,
+                `Cannot delete ${renderString(entity.label, lang)}: The following entities depend on it: ${dependentNames}`,
                 { duration: 5000 }
             );
         }
@@ -152,7 +122,7 @@ export function EntityDefinitionsPanel() {
         if (!entity) return;
 
         try {
-            const res = await api.brain.post('entities/delete', { 
+            const res = await api.brain.post('entity/delete', { 
                 id: entity.id, 
                 name: entity.name,
                 dropDatabase,
@@ -225,16 +195,22 @@ export function EntityDefinitionsPanel() {
                 form: { sections: [] }
             },
             dashboardConfig: { enabled: false, widgetType: 'stats' },
-            permissions: { roles: {} },
+            permission: { role: {} },
             features: { auditable: true, creatable: true, editable: true, deletable: true }
         });
     };
 
-    const filteredEntities = entities.filter(entity =>
-        (entity.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (renderString(entity.label) || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (renderString(entity.description) || '').toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredEntities = entities.filter(entity => {
+        const matchesSearch = (entity.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (renderString(entity.label, lang) || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (renderString(entity.description, lang) || '').toLowerCase().includes(searchQuery.toLowerCase());
+        
+        if (!matchesSearch) return false;
+        
+        if (activeTab === 'system') return !!entity.isSystem;
+        if (activeTab === 'custom') return !entity.isSystem;
+        return true;
+    });
 
     return (
         <div className="h-full overflow-hidden flex flex-col">
@@ -245,7 +221,7 @@ export function EntityDefinitionsPanel() {
                         <Box className="text-primary" />
                         Entity Builder
                     </h3>
-                    <p className="text-xs text-slate-500 font-medium">{entities.length} {entities.length === 1 ? 'entity' : 'entities'} available</p>
+                    <p className="text-xs text-slate-500 font-medium">{entities.length} {entities.length === 1 ? 'entity' : 'entity'} available</p>
                 </div>
                 <Button 
                     onClick={startNew}
@@ -277,6 +253,26 @@ export function EntityDefinitionsPanel() {
                                 <X className="h-4 w-4" />
                             </button>
                         )}
+                    </div>
+
+                    {/* Tabs for Filtering */}
+                    <div className="flex p-1 bg-slate-100/50 rounded-xl">
+                        {(['all', 'system', 'custom'] as const).map((tab) => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab)}
+                                className={cn(
+                                    "flex-1 py-1.5 text-[10px] font-black uppercase tracking-tighter rounded-lg transition-all",
+                                    activeTab === tab 
+                                        ? "bg-white text-primary shadow-sm" 
+                                        : "text-slate-400 hover:text-slate-600"
+                                )}
+                            >
+                                {tab === 'all' ? (lang === 'ro' ? 'Toate' : 'All') : 
+                                 tab === 'system' ? (lang === 'ro' ? 'Sistem' : 'System') : 
+                                 (lang === 'ro' ? 'Custom' : 'Custom')}
+                            </button>
+                        ))}
                     </div>
 
                     {/* Entity List */}
@@ -316,15 +312,15 @@ export function EntityDefinitionsPanel() {
                                             <Box size={14} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-sm text-slate-900 truncate">{renderString(entity.label)}</p>
-                                            <p className="text-[10px] text-slate-500 font-mono uppercase">{renderString(entity.name)}</p>
+                                            <p className="font-bold text-sm text-slate-900 truncate">{renderString(entity.label, lang)}</p>
+                                            <p className="text-[10px] text-slate-500 font-mono uppercase">{renderString(entity.name, lang)}</p>
                                             <div className="flex items-center gap-1.5 mt-1">
                                                 {entity.isSystem && (
                                                     <Badge variant="outline" className="px-1 py-0 h-3.5 text-[7px] font-black uppercase tracking-tighter bg-slate-50 text-slate-500 border-slate-200">
                                                         SYSTEM
                                                     </Badge>
                                                 )}
-                                                <p className="text-[9px] text-slate-400 line-clamp-1">{renderString(entity.description)}</p>
+                                                <p className="text-[9px] text-slate-400 line-clamp-1">{renderString(entity.description, lang)}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -403,7 +399,7 @@ export function EntityDefinitionsPanel() {
                                     <TabsTrigger value="display" className="text-[9px] font-bold uppercase"><Eye size={11} /></TabsTrigger>
                                     <TabsTrigger value="menu" className="text-[9px] font-bold uppercase"><Menu size={11} /></TabsTrigger>
                                     <TabsTrigger value="dashboard" className="text-[9px] font-bold uppercase"><LayoutDashboard size={11} /></TabsTrigger>
-                                    <TabsTrigger value="permissions" className="text-[9px] font-bold uppercase"><Shield size={11} /></TabsTrigger>
+                                    <TabsTrigger value="permission" className="text-[9px] font-bold uppercase"><Shield size={11} /></TabsTrigger>
                                     <TabsTrigger value="features" className="text-[9px] font-bold uppercase"><Zap size={11} /></TabsTrigger>
                                 </TabsList>
 
@@ -427,7 +423,7 @@ export function EntityDefinitionsPanel() {
                                         <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Display Label</Label>
                                         <Input 
                                             placeholder="e.g. Inventory Products" 
-                                            value={renderString(editingEntity.label)}
+                                            value={renderString(editingEntity.label, lang)}
                                             onChange={(e) => setEditingEntity({ ...editingEntity, label: e.target.value })}
                                             className="h-12 rounded-2xl border-slate-200 font-medium focus:ring-primary/20"
                                         />
@@ -452,7 +448,7 @@ export function EntityDefinitionsPanel() {
                                         <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Description</Label>
                                         <textarea 
                                             placeholder="Describe what this entity represents..." 
-                                            value={renderString(editingEntity.description)}
+                                            value={renderString(editingEntity.description, lang)}
                                             onChange={(e) => setEditingEntity({ ...editingEntity, description: e.target.value })}
                                             className="w-full h-32 rounded-2xl border border-slate-200 p-4 text-xs font-medium focus:ring-2 focus:ring-primary/20 outline-none resize-none"
                                         />
@@ -495,7 +491,7 @@ export function EntityDefinitionsPanel() {
                                         >
                                             <option value="">-- Select Display Field --</option>
                                             {editingEntity.fields?.map((f: any) => (
-                                                <option key={f.name} value={f.name}>{renderString(f.label || f.name)}</option>
+                                                <option key={f.name} value={f.name}>{renderString(f.label || f.name, lang)}</option>
                                             ))}
                                         </select>
                                         <p className="text-[8px] text-slate-400 mt-2">Which field represents this record in dropdowns and links?</p>
@@ -511,7 +507,7 @@ export function EntityDefinitionsPanel() {
                                             <div className="flex flex-wrap gap-1 mb-2">
                                                 {(editingEntity.requires || []).map((dep: string) => (
                                                     <Badge key={dep} variant="outline" className="bg-white border-amber-200 text-amber-700 gap-1 text-[9px] py-0 px-2">
-                                                        {renderString(entities.find(e => e.name === dep)?.label || dep)}
+                                                        {renderString(entities.find(e => e.name === dep)?.label || dep, lang)}
                                                         <X 
                                                             size={10} 
                                                             className="cursor-pointer hover:text-red-500" 
@@ -542,7 +538,7 @@ export function EntityDefinitionsPanel() {
                                                 {entities
                                                     .filter(e => e.name !== editingEntity.name && !(editingEntity.requires || []).includes(e.name))
                                                     .map(e => (
-                                                        <option key={e.name} value={e.name}>{renderString(e.label || e.name)}</option>
+                                                        <option key={e.name} value={e.name}>{renderString(e.label || e.name, lang)}</option>
                                                     ))
                                                 }
                                             </select>
@@ -606,7 +602,7 @@ export function EntityDefinitionsPanel() {
                                                                     #{idx + 1}
                                                                 </div>
                                                                 <div className="flex items-center gap-3">
-                                                                    <span className="text-xs font-black uppercase italic text-slate-700">{renderString(field.label || field.name || 'New Field')}</span>
+                                                                    <span className="text-xs font-black uppercase italic text-slate-700">{renderString(field.label || field.name || 'New Field', lang)}</span>
                                                                     <Badge variant="outline" className="text-[8px] font-bold uppercase py-0 px-2 bg-indigo-50 text-indigo-600 border-indigo-100">{field.type || 'text'}</Badge>
                                                                     {field.required && <Badge variant="outline" className="text-[8px] font-bold uppercase py-0 px-2 bg-red-50 text-red-600 border-red-100">Required</Badge>}
                                                                 </div>
@@ -718,7 +714,7 @@ export function EntityDefinitionsPanel() {
                                                                 <Label className="text-[9px] font-black uppercase text-slate-400">UI Label</Label>
                                                                 <Input 
                                                                     placeholder="Field Label" 
-                                                                    value={field.label}
+                                                                    value={renderString(field.label, lang)}
                                                                     onChange={(e) => {
                                                                         const fields = [...editingEntity.fields];
                                                                         fields[idx].label = e.target.value;
@@ -1180,7 +1176,7 @@ export function EntityDefinitionsPanel() {
                                                                     {(field.options || []).map((o: any, oIdx: number) => {
                                                                         const val = typeof o === 'object' ? o.value : o;
                                                                         const label = typeof o === 'object' ? o.label : o;
-                                                                        return <option key={`${val}-${oIdx}`} value={val}>{renderString(label)}</option>;
+                                                                        return <option key={`${val}-${oIdx}`} value={val}>{renderString(label, lang)}</option>;
                                                                     })}
                                                                 </select>
                                                             </div>
@@ -1209,7 +1205,7 @@ export function EntityDefinitionsPanel() {
                                                                     className="w-full h-8 rounded-lg border border-slate-200 text-[10px] px-2"
                                                                 >
                                                                     <option value="">Select...</option>
-                                                                    {entities.map((e: any) => <option key={e.name} value={e.name}>{renderString(e.label || e.name)}</option>)}
+                                                                    {entities.map((e: any) => <option key={e.name} value={e.name}>{renderString(e.label || e.name, lang)}</option>)}
                                                                 </select>
                                                             </div>
                                                             <div className="space-y-1">
@@ -1231,7 +1227,7 @@ export function EntityDefinitionsPanel() {
                                                                         const targetFields = targetEntity.fields;
 
                                                                         return targetFields.map((f: any) => (
-                                                                            <option key={f.name} value={f.name}>{renderString(f.label || f.name)}</option>
+                                                                            <option key={f.name} value={f.name}>{renderString(f.label || f.name, lang)}</option>
                                                                         ));
                                                                     })()}
                                                                 </select>
@@ -1316,7 +1312,7 @@ export function EntityDefinitionsPanel() {
                                                                     >
                                                                         <option value="">Select Field...</option>
                                                                         {editingEntity.fields.filter((f: any) => f.name !== field.name).map((f: any) => (
-                                                                            <option key={f.name} value={f.name}>{renderString(f.label || f.name)}</option>
+                                                                            <option key={f.name} value={f.name}>{renderString(f.label || f.name, lang)}</option>
                                                                         ))}
                                                                     </select>
                                                                 </div>
@@ -1605,7 +1601,7 @@ export function EntityDefinitionsPanel() {
                                                                                 setEditingEntity({ ...editingEntity, fields });
                                                                             }}
                                                                         >
-                                                                            {renderString(action.label)}
+                                                                            {renderString(action.label, lang)}
                                                                         </button>
                                                                     );
                                                                 })}
@@ -1681,7 +1677,7 @@ export function EntityDefinitionsPanel() {
                                                                     className="w-3 h-3 rounded"
                                                                 />
                                                                 <span className={cn("font-bold", isChecked ? "text-slate-600" : "text-slate-300")}>
-                                                                    {renderString(field.label || field.name)}
+                                                                    {renderString(field.label || field.name, lang)}
                                                                 </span>
                                                             </label>
                                                         );
@@ -1786,7 +1782,7 @@ export function EntityDefinitionsPanel() {
                                                             className="w-3 h-3 rounded"
                                                         />
                                                         <span className={`font-bold ${isHidden ? 'text-slate-400 line-through' : 'text-slate-600'}`}>
-                                                            {renderString(field.label || field.name)}
+                                                            {renderString(field.label || field.name, lang)}
                                                         </span>
                                                         {isHidden && <span className="text-[7px] text-slate-400 ml-auto">HIDDEN</span>}
                                                     </label>
@@ -1800,7 +1796,7 @@ export function EntityDefinitionsPanel() {
                                         <div>
                                             <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500 mb-3">Inbound Relations Visibility</Label>
                                             <div className="space-y-2 p-4 bg-slate-50 rounded-2xl max-h-64 overflow-y-auto border border-slate-100 italic">
-                                                <p className="text-[7px] text-slate-500 mb-2">Entități care fac referire la {renderString(editingEntity.label || editingEntity.name)}:</p>
+                                                <p className="text-[7px] text-slate-500 mb-2">Entități care fac referire la {renderString(editingEntity.label || editingEntity.name, lang)}:</p>
                                                 {(() => {
                                                     const inbound = entities.filter(e => {
                                                         return e.fields.some((f: any) => f.relationEntity === editingEntity.name || f.relation?.target === editingEntity.name);
@@ -1833,7 +1829,7 @@ export function EntityDefinitionsPanel() {
                                                                     "font-bold transition-colors",
                                                                     isHidden ? "text-slate-300 line-through" : "text-slate-600 group-hover:text-indigo-600"
                                                                 )}>
-                                                                    {renderString(child.label || child.name)}
+                                                                    {renderString(child.label || child.name, lang)}
                                                                 </span>
                                                                 {isHidden ? (
                                                                     <Badge variant="outline" className="text-[6px] h-3 px-1 ml-auto border-slate-200 text-slate-300 uppercase">Ascuns</Badge>
@@ -2039,7 +2035,7 @@ export function EntityDefinitionsPanel() {
                                             >
                                                 <option value="">Selectează câmp...</option>
                                                 {editingEntity.fields.map((f: any) => (
-                                                    <option key={f.name} value={f.name}>{renderString(f.label || f.name)}</option>
+                                                    <option key={f.name} value={f.name}>{renderString(f.label || f.name, lang)}</option>
                                                 ))}
                                             </select>
                                         </div>
@@ -2068,7 +2064,7 @@ export function EntityDefinitionsPanel() {
                                             <div className="flex items-center gap-2 p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100">
                                                 <Info size={14} className="text-indigo-500" />
                                                 <p className="text-[8px] text-indigo-700 leading-relaxed italic">
-                                                    Aceste setări vor genera automat componente vizuale pe Dashboard-ul principal bazate pe datele în timp real din {renderString(editingEntity.labelPlural || editingEntity.name)}.
+                                                    Aceste setări vor genera automat componente vizuale pe Dashboard-ul principal bazate pe datele în timp real din {renderString(editingEntity.labelPlural || editingEntity.name, lang)}.
                                                 </p>
                                             </div>
                                         </div>
@@ -2077,13 +2073,13 @@ export function EntityDefinitionsPanel() {
                             </div>
                         </TabsContent>
 
-                        {/* PERMISSIONS TAB */}
-                        <TabsContent value="permissions" className="space-y-6 mt-6">
+                        {/* PERMISSION TAB */}
+                        <TabsContent value="permission" className="space-y-6 mt-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="space-y-5">
                                     <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Role Based Access Control</Label>
                                     <div className="space-y-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                                        {Object.entries(constants?.AUTH_CONFIG?.roles || constants?.roles || {
+                                        {Object.entries(constants?.SYSTEM_ROLE || constants?.AUTH_CONFIG?.role || constants?.roles || {
                                             superadmin: { label: 'Super Admin' },
                                             workspace_owner: { label: 'Workspace Owner' },
                                             member: { label: 'Member' },
@@ -2091,13 +2087,13 @@ export function EntityDefinitionsPanel() {
                                         }).map(([roleKey, roleValue]: [string, any]) => (
                                             <div key={roleKey} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-200/50">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[10px] uppercase">{renderString(roleValue.label || roleKey).charAt(0)}</div>
-                                                    <span className="text-xs font-black uppercase italic text-slate-700">{renderString(roleValue.label || roleKey)}</span>
+                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[10px] uppercase">{renderString(roleValue.label || roleKey, lang).charAt(0)}</div>
+                                                    <span className="text-xs font-black uppercase italic text-slate-700">{renderString(roleValue.label || roleKey, lang)}</span>
                                                 </div>
                                                 <div className="flex gap-2">
                                                     {['R', 'W', 'D'].map(action => {
                                                         const actionKey = action === 'R' ? 'read' : action === 'W' ? 'write' : 'delete';
-                                                        const current = editingEntity.permissions?.roles?.[roleKey]?.[actionKey] ?? (roleKey === 'superadmin' || roleKey === 'workspace_owner' || roleKey === 'owner');
+                                                        const current = editingEntity.permission?.role?.[roleKey]?.[actionKey] ?? (roleKey === 'superadmin' || roleKey === 'workspace_owner' || roleKey === 'owner');
                                                         return (
                                                             <label key={action} className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer hover:bg-primary/5 hover:border-primary/30 transition-all has-[:checked]:bg-primary/10 has-[:checked]:border-primary">
                                                                 <input 
@@ -2105,10 +2101,10 @@ export function EntityDefinitionsPanel() {
                                                                     className="hidden" 
                                                                     checked={current}
                                                                     onChange={(e) => {
-                                                                        const roles = { ...(editingEntity.permissions?.roles || {}) };
-                                                                        roles[roleKey] = { ...(roles[roleKey] || { read: false, write: false, delete: false }), [actionKey]: e.target.checked };
-                                                                        const permissions = { ...(editingEntity.permissions || {}), roles };
-                                                                        setEditingEntity({ ...editingEntity, permissions });
+                                                                        const role = { ...(editingEntity.permission?.role || {}) };
+                                                                        role[roleKey] = { ...(role[roleKey] || { read: false, write: false, delete: false }), [actionKey]: e.target.checked };
+                                                                        const permission = { ...(editingEntity.permission || {}), role };
+                                                                        setEditingEntity({ ...editingEntity, permission });
                                                                     }}
                                                                 />
                                                                 <span className="text-[8px] font-black">{action}</span>
@@ -2129,10 +2125,10 @@ export function EntityDefinitionsPanel() {
                                                 <p className="text-[8px] text-slate-400">Users can only see records they created</p>
                                             </div>
                                             <Switch 
-                                                checked={!!editingEntity.permissions?.ownerOnly} 
+                                                checked={!!editingEntity.permission?.ownerOnly} 
                                                 onCheckedChange={(checked) => {
-                                                    const permissions = { ...(editingEntity.permissions || {}), ownerOnly: checked };
-                                                    setEditingEntity({ ...editingEntity, permissions });
+                                                    const permission = { ...(editingEntity.permission || {}), ownerOnly: checked };
+                                                    setEditingEntity({ ...editingEntity, permission });
                                                 }}
                                             />
                                         </div>
@@ -2174,7 +2170,7 @@ export function EntityDefinitionsPanel() {
                                         ].map(feat => (
                                             <div key={feat.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between hover:bg-white transition-all cursor-pointer group">
                                                 <div className="space-y-1">
-                                                    <h5 className="text-[10px] font-black uppercase italic group-hover:text-primary transition-colors">{renderString(feat.label)}</h5>
+                                                    <h5 className="text-[10px] font-black uppercase italic group-hover:text-primary transition-colors">{renderString(feat.label, lang)}</h5>
                                                     <p className="text-[8px] text-slate-400">{feat.desc}</p>
                                                 </div>
                                                 <Switch 
@@ -2203,14 +2199,14 @@ export function EntityDefinitionsPanel() {
                                             >
                                                 <option value="">No Workflow</option>
                                                 {editingEntity.fields.filter((f: any) => ['select', 'text'].includes(f.type)).map((f: any) => (
-                                                    <option key={f.name} value={f.name}>{renderString(f.label || f.name)}</option>
+                                                    <option key={f.name} value={f.name}>{renderString(f.label || f.name, lang)}</option>
                                                 ))}
                                             </select>
                                         </div>
                                         <div className="p-4 bg-primary/5 rounded-xl border border-primary/10">
                                             <p className="text-[9px] font-medium text-primary/70 italic leading-relaxed">
                                                 Workflow statuses will be automatically loaded from **Registry** key 
-                                                <code className="mx-1 bg-primary/10 px-1 rounded font-bold uppercase tracking-tighter">{editingEntity.name?.toUpperCase()}_STATUSES</code>.
+                                                <code className="mx-1 bg-primary/10 px-1 rounded font-bold uppercase tracking-tighter">{editingEntity.name?.toUpperCase()}_STATUS</code>.
                                             </p>
                                         </div>
                                     </div>
@@ -2249,11 +2245,11 @@ export function EntityDefinitionsPanel() {
                     <DialogHeader>
                         <DialogTitle className="text-destructive flex items-center gap-2 uppercase italic font-black">
                             <Trash2 size={18} />
-                            Șterge Entitate: {renderString(deleteDialog.entity?.label)}
+                            Șterge Entitate: {renderString(deleteDialog.entity?.label, lang)}
                         </DialogTitle>
                         <DialogDescription className="text-xs pt-2">
                             Această acțiune va elimina definiția entității din sistem. 
-                            Pentru a confirma, scrie numele tehnic al entității: <strong className="font-mono text-destructive">{renderString(deleteDialog.entity?.name)}</strong>
+                            Pentru a confirma, scrie numele tehnic al entității: <strong className="font-mono text-destructive">{renderString(deleteDialog.entity?.name, lang)}</strong>
                         </DialogDescription>
                     </DialogHeader>
                     

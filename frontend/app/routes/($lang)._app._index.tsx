@@ -23,10 +23,10 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
 }
 
 export default function Dashboard() {
-  const { entities, uiConfig, constants } = useConfig();
+  const { entity: configMap, uiConfig, constants } = useConfig();
   const { user } = useAuth();
   const { lang = 'ro' } = useParams();
-  const { t, i18n } = useTranslation(['common', 'entities', 'dashboard']);
+  const { t, i18n } = useTranslation(['common', 'entity', 'dashboard']);
   const [stats, setStats] = useState<Record<string, any>>({});
   const [activity, setActivity] = useState<any[]>([]);
   const [health, setHealth] = useState<any>(null);
@@ -88,7 +88,7 @@ export default function Dashboard() {
       }
     }
     fetchData();
-  }, [lang]);
+  }, [lang, user]);
 
   const handleRestartWorkers = async () => {
     try {
@@ -104,7 +104,7 @@ export default function Dashboard() {
     }
   };
 
-  const dashboardWidgets = Object.entries(entities)
+  const dashboardWidgets = Object.entries(configMap || {})
     .map(([name, def]) => normalizeEntity({ ...def, name }))
     .filter(ent => ent.dashboardConfig?.enabled !== false && ent.dashboardConfig?.showInDashboard !== false)
     .sort((a, b) => (a.dashboardConfig?.priority ?? 99) - (b.dashboardConfig?.priority ?? 99));
@@ -128,12 +128,12 @@ export default function Dashboard() {
 
       {/* Dynamic Dashboard Engine (Level 8) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {dashboardWidgets.map((entity) => {
-          const tableName = resolveCollection(entity.name);
+        {dashboardWidgets.map((entityDef) => {
+          const tableName = resolveCollection(entityDef.name);
           return (
             <EntityWidget 
-              key={entity.name}
-              entity={entity} 
+              key={entityDef.name}
+              entity={entityDef} 
               stats={stats[tableName]}
               loading={loading}
             />
@@ -235,7 +235,7 @@ export default function Dashboard() {
                   )}
                   <div className="p-4 border-t border-gray-50">
                     <Button variant="outline" className="w-full text-[10px] font-black uppercase tracking-widest h-8 rounded-xl border-dashed" asChild>
-                       <Link to={`/${lang}/todos`}>{t('dashboard:manage_todos')}</Link>
+                       <Link to={`/${lang}/task`}>{t('dashboard:manage_todos')}</Link>
                     </Button>
                   </div>
                </CardContent>

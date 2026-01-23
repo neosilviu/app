@@ -57,13 +57,13 @@ export const getLocalAgentUrl = () => {
     }
 
     // 3. Try from Registry (The Brain's Configuration) - Level 8 Preference
-    const registryUrl = _registry?.system_setting?.local_agent_url || _registry?.local_agent_url;
+    const registryUrl = _registry?.SYSTEM_SETTING?.local_agent_url || _registry?.local_agent_url;
     if (registryUrl) {
         return registryUrl.replace(/\/$/, '');
     }
 
     // 4. Fallback to intelligent detection
-    const PORT = _registry?.system_setting?.local_agent_port || _registry?.local_agent_port || 4001;
+    const PORT = _registry?.SYSTEM_SETTING?.local_agent_port || _registry?.local_agent_port || 4001;
 
     if (isBrowser) {
         const { hostname, protocol } = window.location;
@@ -425,7 +425,7 @@ export const PROMPT_MANAGER = {
     },
     getPrompt: async ({ db, registry, name, context = {} }: { db?: any, registry: any, name: string, context?: any }) => {
         const reg = registry || _registry;
-        const prompts = reg?.AI_PROMPTS || {};
+        const prompts = reg?.AI_PROMPT || {};
         
         let systemPrompt = "";
         let userTemplate = "{{message}}";
@@ -446,7 +446,7 @@ export const PROMPT_MANAGER = {
         }
 
         // 3. Check Workspace custom prompts (from context if provided, or registry if merged)
-        const workspacePrompts = context.workspace_prompts || prompts.workspacePrompts || [];
+        const workspacePrompts = context.workspace_prompt || prompts.workspacePrompts || [];
         const wsMatch = workspacePrompts.find((p: any) => p.id === name || p.name === name);
         if (wsMatch) {
             userTemplate = wsMatch.content;

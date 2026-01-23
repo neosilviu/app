@@ -1,18 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { 
-    Activity, 
-    Database, 
-    Terminal as TerminalIcon, 
-    Brain, 
-    History, 
-    Cloud,
-    RefreshCcw,
-    RotateCcw,
-    Lock,
-    ChevronRight,
-    Server
-} from "lucide-react";
+import { Activity,  Database, Terminal as TerminalIcon, History, RefreshCcw, ChevronRight, Server } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "~/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
@@ -25,6 +13,7 @@ import {
 } from "~/lib/core";
 import { useAuth } from "~/hooks/useAuth";
 import { useSettings } from "~/hooks/useSettings";
+import { useConfig } from "~/hooks/useConfig";
 import { useNavigate, useParams } from "react-router";
 import type { Route } from "./+types/($lang)._app.monitoring";
 
@@ -33,8 +22,6 @@ import { MetricsGrid } from "~/components/monitoring/MetricsGrid";
 import { WorkerGrid } from "~/components/monitoring/WorkerGrid";
 import { LiveLogs } from "~/components/monitoring/LiveLogs";
 import { DatabaseTab } from "~/components/monitoring/DatabaseTab";
-import { CloudTab } from "~/components/monitoring/CloudTab";
-import { AIInsights } from "~/components/monitoring/AIInsights";
 import { HistoryLogs } from "~/components/monitoring/HistoryLogs";
 import { DatabaseBrowserDialog } from "~/components/monitoring/DatabaseBrowserDialog";
 
@@ -46,10 +33,30 @@ export async function loader({ params }: Route.LoaderArgs) {
 
 export default function MonitoringPage() {
     const { t } = useTranslation(['common', 'monitoring']);
-    const { user } = useAuth();
+    const { user, hasPageAccess, hasPermission } = useAuth();
     const { settings } = useSettings();
+    const config = useConfig();
     const navigate = useNavigate();
     const { lang } = useParams();
+
+    const systemSettings = config?.constants?.SYSTEM_SETTING || {};
+    const useLocalAgent = systemSettings.use_local_agent === true || systemSettings.use_local_agent === 1 || String(systemSettings.use_local_agent) === 'true';
+
+    // Security check: Role-based page access & Local Agent dependency
+    useEffect(() => {
+        if (!config?.isInitialized) return;
+
+        if (user && !hasPageAccess('monitoring')) {
+            toast.error("Acces neautorizat la pagina de monitorizare");
+            navigate('/');
+            return;
+        }
+
+        if (!useLocalAgent) {
+            toast.error("Pagina de monitorizare necesită Agentul Local activ");
+            navigate(`/${lang}/settings`);
+        }
+    }, [user, hasPageAccess, navigate, useLocalAgent, config?.isInitialized, lang]);
     
     // Monitoring Settings
     const syncHeavyData = settings?.sync_heavy_data;
@@ -59,16 +66,9 @@ export default function MonitoringPage() {
     const [localStats, setLocalStats] = useState<any>(null);
     const [dbStats, setDbStats] = useState<any>(null);
     const [workerStats, setWorkerStats] = useState<any>(null);
-    const [cloudflareStats, setCloudflareStats] = useState<any>(null);
     const [storageStats, setStorageStats] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-
-    // AI & Connectors State
-    const [aiStats, setAiStats] = useState<any>(null);
-    const [aiConnectivity, setAiConnectivity] = useState<any>(null);
-    const [isAIOperating, setIsAIOperating] = useState(false);
-    const [aiTestOutput, setAiTestOutput] = useState<string | null>(null);
 
     // Logs State
     const [liveLogs, setLiveLogs] = useState<any[]>([]);
@@ -123,12 +123,7 @@ export default function MonitoringPage() {
                 .catch(err => console.error(`[MONITOR] Error fetching ${job.req}:`, err))
         );
 
-        // Brain request (HTTP)
-        const brainPromise = api.brain.get("system/monitoring/cloudflare")
-            .then(res => setCloudflareStats(res.data || res))
-            .catch(() => setCloudflareStats({ enabled: false }));
-
-        await Promise.allSettled([...localPromises, brainPromise]);
+        await Promise.allSettled(localPromises);
         
         setRefreshing(false);
         setLoading(false);
@@ -223,13 +218,6 @@ export default function MonitoringPage() {
         });
     };
 
-    const fetchAiStats = async () => {
-        try {
-            const res = await socketRequest("monitoring:ai");
-            if (res.success) setAiStats(res.data);
-        } catch (e) {}
-    };
-
     const fetchHistoryLogs = async (filters: any = {}) => {
         setHistoryLoading(true);
         try {
@@ -312,44 +300,22 @@ export default function MonitoringPage() {
         });
     };
 
-    const handleSyncRAG = async () => {
-        setIsAIOperating(true);
-        try {
-            const res = await socketRequest("monitoring:ai:sync-rag");
-            if (res.success) toast.success("Knowledge base re-indexed");
-        } catch (e) {
-            toast.error("RAG Sync failed");
-        } finally {
-            setIsAIOperating(false);
-        }
-    };
-
-    const handleTestAIQuality = async () => {
-        setAiTestOutput("");
-        setIsAIOperating(true);
-        try {
-            await socketRequest("ai:test-quality");
-        } catch (e) {
-            toast.error("AI Quality test failed");
-        } finally {
-            setIsAIOperating(false);
-        }
-    };
-
     // Real-time Listeners
     useEffect(() => {
-        if (socket.connected) {
+        // Initial fetch - Always run on mount to at least show Brain data
+        fetchData();
+        fetchBackups();
+
+        // Also fetch when socket connects to get local agent data
+        const onConnect = () => {
+            console.log("[MONITOR] Socket connected, refreshing data...");
             fetchData();
-            fetchAiStats();
-            fetchBackups();
-        }
+        };
+
+        socket.on("connect", onConnect);
 
         const handleLog = (log: any) => {
             setLiveLogs(prev => [log, ...prev].slice(0, 500));
-        };
-
-        const handleAiOutput = (msg: string) => {
-            setAiTestOutput(prev => (prev || "") + msg);
         };
 
         const handleWorkerStatus = (msg: any) => {
@@ -367,13 +333,12 @@ export default function MonitoringPage() {
         };
 
         socket.on("system:log", handleLog);
-        socket.on("ai:test-output", handleAiOutput);
         socket.on('gmail:status', handleWorkerStatus);
         socket.on('whatsapp:status', handleWorkerStatus);
         
         return () => {
+            socket.off("connect", onConnect);
             socket.off("system:log", handleLog);
-            socket.off("ai:test-output", handleAiOutput);
             socket.off('gmail:status');
             socket.off('whatsapp:status');
         };
@@ -391,7 +356,7 @@ export default function MonitoringPage() {
         );
     }
 
-    if (!user || !['admin', 'superadmin'].includes(user.role)) {
+    if (!user || !hasPageAccess('monitoring')) {
         return (
             <div className="flex items-center justify-center min-h-[60vh] p-4">
                 <Card className="w-full max-w-md border-destructive/20 bg-destructive/5 backdrop-blur-sm shadow-xl">
@@ -408,11 +373,6 @@ export default function MonitoringPage() {
                 </Card>
             </div>
         );
-    }
-
-    // Hide all UI if Master Switch is OFF
-    if (settings && settings?.enable_workers === false) {
-        return null;
     }
 
     return (
@@ -441,26 +401,17 @@ export default function MonitoringPage() {
             </div>
 
             <Tabs defaultValue="system" className="space-y-6" onValueChange={(val) => {
-                if (val === 'ai') fetchAiStats();
                 if (val === 'logs-history') fetchHistoryLogs();
             }}>
                 <div className="sticky top-0 z-20 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/50 p-2 backdrop-blur-xl dark:bg-slate-900/50">
-                    <TabsList className="grid h-12 w-full grid-cols-3 gap-2 bg-transparent lg:grid-cols-6">
+                    <TabsList className="grid h-12 w-full grid-cols-2 gap-2 bg-transparent lg:grid-cols-4">
                         <TabsTrigger value="system" className="rounded-xl data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-800 font-medium">
                             <Server className="mr-2 h-4 w-4" />
                             <span className="hidden lg:inline">{t("monitoring:tabs.system")}</span>
                         </TabsTrigger>
-                        <TabsTrigger value="cloudflare" className="rounded-xl data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-800 font-medium">
-                            <Cloud className="mr-2 h-4 w-4" />
-                            <span className="hidden lg:inline">{t("monitoring:tabs.cloudflare")}</span>
-                        </TabsTrigger>
                         <TabsTrigger value="database" className="rounded-xl data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-800 font-medium">
                             <Database className="mr-2 h-4 w-4" />
                             <span className="hidden lg:inline">{t("monitoring:tabs.database")}</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="ai" className="rounded-xl data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-800 font-medium">
-                            <Brain className="mr-2 h-4 w-4" />
-                            <span className="hidden lg:inline">{t("monitoring:tabs.ai")}</span>
                         </TabsTrigger>
                         <TabsTrigger value="logs-history" className="rounded-xl data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-800 font-medium">
                             <History className="mr-2 h-4 w-4" />
@@ -478,6 +429,7 @@ export default function MonitoringPage() {
                         localStats={localStats} 
                         workerStats={workerStats} 
                         user={user} 
+                        isSuper={hasPermission('*')}
                         handleRestartWindows={handleRestartWindows}
                         handleRestartServer={handleRestartServer}
                     />
@@ -487,10 +439,6 @@ export default function MonitoringPage() {
                         handleStopWorker={handleStopWorker}
                         handleStartWorker={handleStartWorker}
                     />
-                </TabsContent>
-
-                <TabsContent value="cloudflare">
-                    <CloudTab cloudflareStats={cloudflareStats} />
                 </TabsContent>
 
                 <TabsContent value="database">
@@ -526,18 +474,6 @@ export default function MonitoringPage() {
                         }}
                         isUpdatingMaxBackups={isUpdatingMaxBackups}
                         handleRestoreBackup={handleRestoreBackup}
-                    />
-                </TabsContent>
-
-                <TabsContent value="ai">
-                    <AIInsights 
-                        aiStats={aiStats} 
-                        cloudflareStats={cloudflareStats}
-                        isAIOperating={isAIOperating}
-                        aiTestOutput={aiTestOutput}
-                        handleSyncRAG={handleSyncRAG}
-                        handleTestAIQuality={handleTestAIQuality}
-                        localStats={localStats}
                     />
                 </TabsContent>
 

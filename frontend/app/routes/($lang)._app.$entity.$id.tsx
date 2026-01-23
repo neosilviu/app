@@ -1,7 +1,7 @@
 import React from 'react';
 import { useParams } from 'react-router';
 import { useConfig } from '~/hooks/useConfig';
-import { DynamicEntityDetail } from '~/components/entities/DynamicEntityDetail';
+import { DynamicEntityDetail } from '~/components/entity/DynamicEntityDetail';
 import { ErrorBoundary } from '~/components/ControlGates';
 import { api } from '~/lib/core';
 
@@ -25,7 +25,7 @@ export async function action({ request, params }: any) {
 
 export default function EntityDetailPage() {
     const { entity, id } = useParams();
-    const { entities, isInitialized } = useConfig();
+    const { entity: configMap, isInitialized } = useConfig();
 
     if (!isInitialized) {
         return (
@@ -36,7 +36,7 @@ export default function EntityDetailPage() {
         );
     }
     
-    const config = entities[entity as string];
+    const config = configMap[entity as string];
     if (!config) {
         return (
             <div className="p-20 text-center">

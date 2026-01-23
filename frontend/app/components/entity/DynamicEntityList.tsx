@@ -1,29 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams, useSubmit, useParams } from 'react-router';
-import { 
-    Plus, Search, Filter, Edit, Trash2, 
-    ArrowUpDown, Download, RefreshCw, Layers, ChevronRight,
-    Table as TableIcon, LayoutGrid, List, Edit2
-} from 'lucide-react';
+import { Plus, Search, Trash2, ArrowUpDown, Layers, ChevronRight, Table as TableIcon, LayoutGrid, Edit2 } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Badge } from '~/components/ui/badge';
-import { 
-    DropdownMenu, 
-    DropdownMenuContent, 
-    DropdownMenuItem, 
-    DropdownMenuTrigger,
-    DropdownMenuLabel,
-    DropdownMenuSeparator
-} from '~/components/ui/dropdown-menu';
 import { GlassCard } from '~/components/ui/GlassCard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 import { Checkbox } from "~/components/ui/checkbox";
-import { api, cn, renderString, getThemeClasses } from '~/lib/core';
+import { cn, renderString, getThemeClasses } from '~/lib/core';
 import { normalizeEntity } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
-import i18next from 'i18next';
-import { toast } from 'sonner';
 import { IconMap } from '~/lib/icons';
 import { useConfig } from '~/hooks/useConfig';
 import { useEntity } from '~/hooks/useEntity';
@@ -36,13 +22,13 @@ interface DynamicEntityListProps {
 
 export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEntityListProps) {
     const { lang } = useParams();
-    const { t } = useTranslation(['common', 'entities']);
+    const { t } = useTranslation(['common', 'entity']);
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const systemConfig = useConfig();
     const submit = useSubmit();
     const [showArchived, setShowArchived] = useState(false);
-    const config = initialConfig || (systemConfig?.entities as any)?.[entityId] || {};
+    const config = initialConfig || (systemConfig?.entity as any)?.[entityId] || {};
     
     // Core Entity Hook (Enterprise Level 8)
     const { 

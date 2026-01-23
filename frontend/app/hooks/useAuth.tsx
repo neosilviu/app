@@ -2,19 +2,21 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import { socket, whatsappSocket } from '~/lib/core';
 import { brainApi } from '~/lib/core';
 import { authClient } from '~/lib/core';
+import { useConfig } from "./useConfig";
 
 interface AuthContextType {
   user: any;
-  users: any[];
-  usersLoading: boolean;
+  userList: any[];
+  userLoading: boolean;
   isAdminExists: boolean | null;
   loading: boolean;
   registerAdmin: (data: any) => Promise<any>;
   login: (data: any) => Promise<any>;
   logout: () => Promise<void>;
   hasPermission: (permissionOrEntity: any, action?: 'create' | 'read' | 'update' | 'delete') => boolean;
+  hasPageAccess: (pageId: string) => boolean;
   switchWorkspace: (workspaceId: string) => Promise<void>;
-  fetchUsers: (force?: boolean) => Promise<void>;
+  fetchUserList: (force?: boolean) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,27 +29,34 @@ export function useOptionalAuth() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any>(null);
-  const [users, setUsers] = useState<any[]>([]);
-  const [usersLoading, setUsersLoading] = useState(false);
+  const [userList, setUserList] = useState<any[]>([]);
+  const [userLoading, setUserLoading] = useState(false);
   const [isAdminExists, setIsAdminExists] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
+  const config = useConfig();
+  const useLocalAgent = config?.constants?.SYSTEM_SETTING?.use_local_agent === true;
 
-  const fetchUsers = useCallback(async (force = false) => {
-    if (!user?.workspaceId && user?.role !== 'superadmin') return;
-    if (!force && users.length > 0) return; // Basic Caching (Enterprise Level 8 Optimization)
+  const fetchUserList = useCallback(async (force = false) => {
+    if (!user) return;
     
-    setUsersLoading(true);
+    const roleDef = config?.constants?.SYSTEM_ROLE?.[user.role];
+    const isGlobal = roleDef?.permission?.includes('*');
+    if (!user.workspaceId && !isGlobal) return;
+    
+    if (!force && userList.length > 0) return; // Basic Caching (Enterprise Level 8 Optimization)
+    
+    setUserLoading(true);
     try {
-      const response = await brainApi.get(`workspace/users?workspaceId=${user.workspaceId || ""}`);
+      const response = await brainApi.get(`workspace/member?workspaceId=${user.workspaceId || ""}`);
       if (response.data?.success) {
-        setUsers(Array.isArray(response.data.data) ? response.data.data : []);
+        setUserList(Array.isArray(response.data.data) ? response.data.data : []);
       }
     } catch (error) {
-      console.error("[AUTH] Failed to fetch users", error);
+      console.error("[AUTH] Failed to fetch user list", error);
     } finally {
-      setUsersLoading(false);
+      setUserLoading(false);
     }
-  }, [user?.workspaceId, user?.role, users.length]);
+  }, [user?.workspaceId, user?.role, userList.length]);
 
   const init = useCallback(async () => {
     try {
@@ -113,8 +122,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Connect socket ONLY after user is authenticated AND not on login page
     const isLoginPage = typeof window !== 'undefined' && window.location.pathname.includes('/login');
+    const useLocalAgent = config?.constants?.SYSTEM_SETTING?.use_local_agent === true;
     
-    if (user && !socket.connected && !isLoginPage) {
+    if (user && !isLoginPage && useLocalAgent) {
+      if (socket.connected) return;
+
       // Enterprise Level 8: Delay socket connection to allow for "Brain-Only" mode
       // If the local agent is not running, we shouldn't spam the console.
       const waitThenConnect = setTimeout(() => {
@@ -128,12 +140,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         socket.connect();
         if ((whatsappSocket as any).connect) whatsappSocket.connect();
         
-        console.log("[AUTH] Authenticated user detected, connecting sockets...");
+        console.warn("⚠️ [SOCKET.IO] ACTIVATING CONNECTION - Authenticated user detected");
       }, 2000); // 2 second delay to prioritize UI load
 
       return () => clearTimeout(waitThenConnect);
+    } else {
+      // Enterprise Level 8: Force disconnect if local agent is disabled or user logged out
+      if (socket.connected) {
+        socket.disconnect();
+        console.log("[AUTH] Disconnecting socket (Local Agent disabled or session inactive)");
+      }
+      if ((whatsappSocket as any).connected) {
+        (whatsappSocket as any).disconnect();
+      }
     }
-  }, [user]);
+  }, [user, useLocalAgent]);
 
   useEffect(() => {
     const joinRoom = () => {
@@ -233,20 +254,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hasPermission = (perm: string | any, action?: string) => {
     if (!user) return false;
     
-    // Administrative roles (Enterprise Level 8)
-    const isAdmin = ['superadmin', 'workspace_owner', 'workspace_admin'].includes(user.role);
-    if (isAdmin) return true;
+    // Enterprise Level 8: Registry-Driven Permission Check
+    const roles = config?.constants?.SYSTEM_ROLE || {};
+    const roleDef = roles[user.role];
+    
+    if (roleDef?.permission?.includes('*')) return true;
     
     // Support for entity-object check
     if (typeof perm === 'object' && perm !== null) {
         if (!action) return true;
-        const perms = perm.permissions || {};
+        const perms = perm.permission || {};
         const roleKeys = [user.role || 'user'];
         const allowed = perms[action] || [];
         return roleKeys.some(r => allowed.includes(r));
     }
 
-    return (user.permissions || []).includes(perm);
+    return (user.permission || []).includes(perm) || (roleDef?.permission || []).includes(perm);
+  };
+
+  const hasPageAccess = (pageId: string) => {
+    if (!user) return false;
+    
+    const roles = config?.constants?.SYSTEM_ROLE || {};
+    const roleDef = roles[user.role];
+    
+    if (roleDef?.permission?.includes('*')) return true;
+    if (!roleDef) return false;
+
+    const allowed = roleDef.allowedPage || [];
+    if (allowed.includes('*')) return true;
+
+    // Entities are handled via 'entity' group or specific ID
+    if (pageId.startsWith('entity:')) {
+       return allowed.includes('entity') || allowed.includes(pageId);
+    }
+
+    // Workers are handled via 'workers' group or specific ID
+    if (pageId.startsWith('worker:')) {
+       return allowed.includes('workers') || allowed.includes(pageId);
+    }
+
+    return allowed.includes(pageId);
   };
 
   const switchWorkspace = async (id: string) => {
@@ -267,16 +315,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ 
       user, 
-      users,
-      usersLoading,
+      userList,
+      userLoading,
       isAdminExists, 
       loading, 
       login, 
       logout, 
       registerAdmin, 
       hasPermission,
+      hasPageAccess,
       switchWorkspace,
-      fetchUsers
+      fetchUserList
     }}>
       {children}
     </AuthContext.Provider>
@@ -288,16 +337,17 @@ export function useAuth() {
   if (context === undefined) {
     return {
       user: null,
-      users: [],
-      usersLoading: false,
+      userList: [],
+      userLoading: false,
       isAdminExists: null,
       loading: false,
       login: async () => { console.warn("useAuth: login called outside AuthProvider") },
       logout: async () => {},
       registerAdmin: async () => ({}),
       hasPermission: () => false,
+      hasPageAccess: () => false,
       switchWorkspace: async () => {},
-      fetchUsers: async () => {},
+      fetchUserList: async () => {},
     } as AuthContextType;
   }
   return context;

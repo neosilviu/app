@@ -21,8 +21,8 @@ export async function loader({ context }: LoaderFunctionArgs) {
     const env = (context as any).cloudflare?.env || (process as any).env;
     const db = getDb(env);
     try {
-        // Verificăm în tabelul 'user' (Better-Auth) - Include unified roles
-        const result = await db.query("SELECT COUNT(*) as count FROM user WHERE role IN ('superadmin', 'workspace_owner', 'workspace_admin', 'admin')");
+        // Verificăm în tabelul 'user' (Better-Auth) - Dacă există măcar un utilizator, sistemul este considerat inițializat
+        const result = await db.query("SELECT COUNT(*) as count FROM user");
         const count = result[0]?.count || 0;
         return { hasAdmin: count > 0 };
     } catch (e: any) {

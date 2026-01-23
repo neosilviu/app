@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { Moon, Sun, Laptop, Palette, Save, RotateCcw, X, Keyboard, Layers, ArrowRight, Check, Zap, Pin, LayoutGrid } from "lucide-react";
 import { useParams } from "react-router";
 import { renderString } from "~/lib/utils";
-import { REGISTRY_BASELINE, socket } from "../lib/core";
 import { useConfig } from '~/hooks/useConfig';
 import { useTheme, type CustomTheme } from '~/hooks/useTheme';
 import { Button } from "./ui/button";
@@ -105,7 +104,7 @@ export function ThemeEditor({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [theme, setTheme] = useState<CustomTheme>(THEME_PRESETS.light);
   const [activeTab, setActiveTab] = useState<'visual' | 'shortcuts' | 'presets' | 'sidebar'>('presets');
   const [loading, setLoading] = useState(true);
-  const { entities, uiConfig, navigation } = useConfig();
+  const { entity, uiConfig, navigation } = useConfig();
 
   useEffect(() => {
     if (isOpen) {
@@ -149,7 +148,7 @@ export function ThemeEditor({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       const isNew = action.startsWith('new:');
       const isList = action.startsWith('list:');
       const entityId = action.replace(isNav ? 'nav:' : (isNew ? 'new:' : 'list:'), '');
-      const entityDef = entities[entityId];
+      const entityDef = entity[entityId];
       
       let label: any = action;
       if (isList) {
@@ -466,7 +465,7 @@ export function ThemeEditor({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {Object.entries(entities).map(([id, config]: [string, any]) => {
+                  {Object.entries(entity).map(([id, config]: [string, any]) => {
                     const isPinned = (theme.sidebarShortcuts || []).some((p: any) => p.id === id);
                     const Icon = resolveIcon(config.icon);
                     return (

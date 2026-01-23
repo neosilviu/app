@@ -16,6 +16,11 @@ Instrucțiuni experte pentru dezvoltarea în workspace-ul Studio App v2 (Enterpr
 - ✅ **OBLIGATORIU**: Metaprogramare + template engine pentru prompt-uri.
 - ✅ **OBLIGATORIU**: Folosire `useConfig()` (Frontend) și `getRegistry()` (Worker) pentru a încărca config.
 
+### **STYLING & FORMATTING**
+- ✅ **OBLIGATORIU**: Importurile din `lucide-react` trebuie să fie întotdeauna pe **O SINGURĂ LINIE**, indiferent de numărul de iconițe importate. 
+  - ❌ **INTERZIS**: Multi-line imports pentru iconițe.
+  - ✅ **EXEMPLU**: `import { Activity, Shield, Settings, Zap, History, User } from 'lucide-react';`
+
 **Impact:** Orice schimbare de config/prompt/entitate se face DOAR din interfața SuperAdmin, fără redeploy!
 
 ---

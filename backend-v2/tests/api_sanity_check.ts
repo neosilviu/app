@@ -22,8 +22,8 @@ async function runTest() {
         }
 
         // 2. Check Entities
-        console.log('2. Testing GET /entities...');
-        const entRes = await axios.get(`${BASE_URL}/entities`);
+        console.log('2. Testing GET /entity...');
+        const entRes = await axios.get(`${BASE_URL}/entity`);
         if (entRes.status === 200 && entRes.data.success) {
             console.log(color.green(`   ✅ Success! Got entities list: ${entRes.data.data.map((e: any) => e.name).join(', ')}`));
         } else {
@@ -31,8 +31,8 @@ async function runTest() {
         }
 
         // 3. Check Audit Logs
-        console.log('3. Testing GET /audit/logs...');
-        const audRes = await axios.get(`${BASE_URL}/audit/logs`);
+        console.log('3. Testing GET /audit/log...');
+        const audRes = await axios.get(`${BASE_URL}/audit/log`);
         if (audRes.status === 200 && audRes.data.success) {
             console.log(color.green(`   ✅ Success! Got ${audRes.data.count} logs`));
         } else {

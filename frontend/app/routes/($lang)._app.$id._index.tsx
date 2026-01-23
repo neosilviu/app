@@ -7,20 +7,7 @@ import { useAuth } from '~/hooks/useAuth';
 import { DynamicTable, DynamicForm } from '~/components/EntitySystem';
 import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  Download, 
-  ChevronRight, 
-  Database,
-  ArrowRight,
-  PlusCircle,
-  Archive,
-  Trash2,
-  FileSpreadsheet,
-  Layers
-} from 'lucide-react';
+import { Plus, Search, Filter, Download, ChevronRight, Database, ArrowRight, PlusCircle, Archive, Trash2, FileSpreadsheet, Layers } from 'lucide-react';
 import { IconMap } from '~/lib/icons';
 import {
   Dialog,
@@ -45,13 +32,13 @@ export async function loader({ params }: Route.LoaderArgs) {
 
 export default function EntityPage() {
   const { id, lang } = useParams<{ id: string; lang: string }>();
-  const { t } = useTranslation(['common', 'entities']);
+  const { t } = useTranslation(['common', 'entity']);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { entities, loading: configLoading } = useConfig();
+  const { entity: configMap, loading: configLoading } = useConfig();
   const { hasPermission } = useAuth();
   const entityType = id || '';
-  const config = entities[entityType];
+  const config = configMap[entityType];
   
   const [showArchived, setShowArchived] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -112,8 +99,8 @@ export default function EntityPage() {
         <div className="w-20 h-20 bg-rose-100 dark:bg-rose-900/40 rounded-full flex items-center justify-center text-rose-600 mb-6">
             <Database size={40} />
         </div>
-        <h1 className="text-2xl font-black text-rose-900 dark:text-rose-100 mb-2">{t('entities:unknown_entity')}</h1>
-        <p className="text-rose-600/70 max-w-md text-center" dangerouslySetInnerHTML={{ __html: t('entities:unknown_entity_desc', { id }) }} />
+        <h1 className="text-2xl font-black text-rose-900 dark:text-rose-100 mb-2">{t('entity:unknown_entity')}</h1>
+        <p className="text-rose-600/70 max-w-md text-center" dangerouslySetInnerHTML={{ __html: t('entity:unknown_entity_desc', { id }) }} />
         <Button variant="outline" className="mt-8 border-rose-200 text-rose-700" onClick={() => navigate(-1)}>
             {t('common:back_to_dashboard')}
         </Button>
@@ -128,14 +115,14 @@ export default function EntityPage() {
         <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 rounded-md border border-indigo-100 dark:border-indigo-800">
                <Database className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-               <span className="text-[8px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">{renderString(t('entities:master_data'), lang)}</span>
+               <span className="text-[8px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">{renderString(t('entity:master_data'), lang)}</span>
             </div>
             <div>
                 <h1 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase italic leading-none">
                     {renderString(t(`entities:${entityType}.labelPlural`, renderString(config.labelPlural || entityType, lang)), lang)}
                 </h1>
                 <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">
-                    {renderString(t('entities:manage_your', { label: renderString(t(`entities:${entityType}.labelPlural`, renderString(config.labelPlural || entityType, lang)), lang).toLowerCase() }), lang)}
+                    {renderString(t('entity:manage_your', { label: renderString(t(`entities:${entityType}.labelPlural`, renderString(config.labelPlural || entityType, lang)), lang).toLowerCase() }), lang)}
                 </p>
             </div>
         </div>
@@ -143,7 +130,7 @@ export default function EntityPage() {
         <div className="flex items-center gap-2">
             <div className="hidden sm:flex flex-col items-end mr-2">
                 <span className="text-xl font-black text-slate-900 dark:text-white leading-none">{entity.data.length}</span>
-                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{t('entities:records_count')}</span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{t('entity:records_count')}</span>
             </div>
 
             {canCreate && (
@@ -151,7 +138,7 @@ export default function EntityPage() {
                     <DialogTrigger asChild>
                     <Button className="h-8 px-4 bg-indigo-600 text-white hover:bg-indigo-700 font-bold rounded-lg gap-2 shadow-lg shadow-indigo-100 dark:shadow-none transition-all active:scale-95 text-[10px] uppercase">
                         <PlusCircle className="w-4 h-4" />
-                        <span className="hidden sm:inline">{t('entities:add_entity', { label: t(`entities:${entityType}.label`, renderString(config.label || entityType, lang)) })}</span>
+                        <span className="hidden sm:inline">{t('entity:add_entity', { label: t(`entities:${entityType}.label`, renderString(config.label || entityType, lang)) })}</span>
                     </Button>
                     </DialogTrigger>
                     <DialogContent 
@@ -176,11 +163,11 @@ export default function EntityPage() {
                                     </div>
                                     <div className="space-y-1">
                                       <DialogTitle className="text-3xl font-black tracking-tighter italic uppercase text-slate-900 dark:text-white leading-none">
-                                          {t('entities:new_record', { label: t(`entities:${entityType}.label`, renderString(config.label || entityType, lang)) })}
+                                          {t('entity:new_record', { label: t(`entities:${entityType}.label`, renderString(config.label || entityType, lang)) })}
                                       </DialogTitle>
                                       <DialogDescription className="text-slate-500 font-bold italic uppercase tracking-widest text-[10px] flex items-center gap-2">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                        {t('entities:new_record_desc')}
+                                        {t('entity:new_record_desc')}
                                       </DialogDescription>
                                     </div>
                                   </div>
@@ -231,11 +218,11 @@ export default function EntityPage() {
         <div className="p-1 px-2 border-b border-slate-50 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
             <div className="flex items-center gap-2 pl-4">
                 <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('entities:master_data_grid')}</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('entity:master_data_grid')}</span>
                 {isFiltersVisible && (
                     <div className="ml-4 animate-in fade-in slide-in-from-left-2 duration-300">
                         <Input 
-                            placeholder={t('entities:table.search_placeholder', { label: '' }).replace('...', '')} 
+                            placeholder={t('entity:table.search_placeholder', { label: '' }).replace('...', '')} 
                             className="h-8 w-48 text-[10px] bg-white border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
@@ -255,7 +242,7 @@ export default function EntityPage() {
                     }}
                 >
                     <Filter className="w-3.5 h-3.5 mr-2" />
-                    {t('entities:filters')}
+                    {t('entity:filters')}
                 </Button>
             </div>
         </div>
@@ -280,13 +267,13 @@ export default function EntityPage() {
                 <div className="w-24 h-24 bg-slate-50 dark:bg-slate-800/50 rounded-full flex items-center justify-center text-slate-200 dark:text-slate-700 mb-6">
                     <Database size={48} />
                 </div>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{t('entities:no_records')}</h3>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{t('entity:no_records')}</h3>
                 <p className="text-slate-500 max-w-sm mb-8">
-                    {t('entities:no_records_desc')}
+                    {t('entity:no_records_desc')}
                 </p>
                 {canCreate && (
                     <Button onClick={() => setIsCreateOpen(true)} className="rounded-2xl bg-indigo-600 hover:bg-indigo-700">
-                        <Plus className="mr-2 h-5 w-5" /> {t('entities:add_first_record')}
+                        <Plus className="mr-2 h-5 w-5" /> {t('entity:add_first_record')}
                     </Button>
                 )}
             </div>
@@ -297,9 +284,9 @@ export default function EntityPage() {
       <ConfirmDestructiveAction 
         open={!!deletingItem}
         onOpenChange={(open) => !open && setDeletingItem(null)}
-        title={t('entities:delete_title')}
-        description={t('entities:delete_confirm', { name: deletingItem?.name || deletingItem?.id, label: renderString(config.label, lang) })}
-        confirmationWord={t('entities:confirmation_delete')}
+        title={t('entity:delete_title')}
+        description={t('entity:delete_confirm', { name: deletingItem?.name || deletingItem?.id, label: renderString(config.label, lang) })}
+        confirmationWord={t('entity:confirmation_delete')}
         onConfirm={async () => {
           if (deletingItem) {
             await entity.remove(deletingItem.id);
@@ -311,8 +298,8 @@ export default function EntityPage() {
       <SimpleConfirmAction 
         open={!!archivingItem}
         onOpenChange={(open) => !open && setArchivingItem(null)}
-        title={t('entities:archive_title')}
-        description={t('entities:archive_confirm', { name: archivingItem?.name || archivingItem?.id, label: renderString(config.label, lang) })}
+        title={t('entity:archive_title')}
+        description={t('entity:archive_confirm', { name: archivingItem?.name || archivingItem?.id, label: renderString(config.label, lang) })}
         confirmText={t('common:archive')}
         cancelText={t('common:cancel')}
         isDangerous={false}
@@ -347,11 +334,11 @@ export default function EntityPage() {
                   </div>
                   <div className="space-y-1">
                     <DialogTitle className="text-3xl font-black tracking-tighter italic uppercase text-slate-900 dark:text-white leading-none">
-                        {t('entities:add_new_entity', { label: renderString(config?.label, lang) })}
+                        {t('entity:add_new_entity', { label: renderString(config?.label, lang) })}
                     </DialogTitle>
                     <DialogDescription className="text-slate-500 font-bold italic uppercase tracking-widest text-[10px] flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                      {t('entities:create_record_desc', { defaultValue: 'Introduceți datele pentru noua înregistrare' })}
+                      {t('entity:create_record_desc', { defaultValue: 'Introduceți datele pentru noua înregistrare' })}
                     </DialogDescription>
                   </div>
                 </div>
@@ -400,11 +387,11 @@ export default function EntityPage() {
                   </div>
                   <div className="space-y-1">
                     <DialogTitle className="text-3xl font-black tracking-tighter italic uppercase text-slate-900 dark:text-white leading-none">
-                        {t('entities:edit_entity', { label: renderString(config?.label, lang) })}
+                        {t('entity:edit_entity', { label: renderString(config?.label, lang) })}
                     </DialogTitle>
                     <DialogDescription className="text-slate-500 font-bold italic uppercase tracking-widest text-[10px] flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                      {t('entities:edit_record_desc')}
+                      {t('entity:edit_record_desc')}
                     </DialogDescription>
                   </div>
                 </div>

@@ -4,18 +4,10 @@ import { ChevronRight, Home, Bug, Send, AlertCircle } from 'lucide-react';
 import { getNavItemByPath } from '~/lib/core';
 import { useConfig } from '~/hooks/useConfig';
 import { useTranslation } from 'react-i18next';
-import { cn, getLocalizedPath, api, renderString } from '~/lib/core';
+import { getLocalizedPath, api, renderString } from '~/lib/core';
 import { useAuth } from '~/hooks/useAuth';
 import { toast } from 'sonner';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogDescription,
-  DialogTrigger,
-  DialogFooter
-} from '../ui/dialog';
+import { Dialog,  DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
 import { Input } from '../ui/input';
@@ -27,7 +19,7 @@ import { Label } from '../ui/label';
 
 export function Breadcrumbs() {
   const location = useLocation();
-  const { entities } = useConfig();
+  const { entity } = useConfig();
   const { t } = useTranslation();
   const { lang, ...params } = useParams();
 
@@ -62,19 +54,19 @@ export function Breadcrumbs() {
           label = t(navItem.label);
         } 
         // 2. Check entities config (if it's a defined entity list)
-        else if (entities[value]) {
-          label = entities[value].labelPlural || entities[value].label || value;
+        else if (entity[value]) {
+          label = entity[value].labelPlural || entity[value].label || value;
         }
         // 3. Check if it's a dynamic parameter (e.g. recordId)
         else if (params.recordId === value) {
           label = value; // Could potentially fetch record name here
         }
-        else if (params.id === value && !entities[value]) {
+        else if (params.id === value && !entity[value]) {
           label = value;
         }
         
         // Handle specific segments
-        if (value === 'entities') return null; // Skip the "entities" segment for cleaner UI
+        if (value === 'entity') return null; // Skip the "entity" segment for cleaner UI
 
         return (
           <React.Fragment key={to}>
@@ -118,7 +110,7 @@ export function BugReportModal({ onOpen }: { onOpen?: () => void }) {
 
     setLoading(true);
     try {
-      const response = await api.brain.post(`/api/db/collection/bug_report/${user?.workspaceId || 'all'}`, {
+      const response = await api.brain.post(`db/collection/bug_report/${user?.workspaceId || 'all'}`, {
         title,
         description,
         status: 'new',

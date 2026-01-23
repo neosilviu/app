@@ -208,7 +208,7 @@ export function ShortcutManager() {
   const navigate = useNavigate();
   const { lang } = useParams();
   const { theme, setTheme, customTheme } = useTheme();
-  const { uiConfig, entities } = useConfig();
+  const { uiConfig, entity } = useConfig();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -267,21 +267,21 @@ export function ShortcutManager() {
             // 1. Navigation (nav:entity_id)
             if (action.startsWith("nav:")) {
               const entityId = action.split('?')[0].replace('nav:', '');
-              const entityDef = (entities as any)[entityId];
+              const entityDef = (entity as any)[entityId];
               navigate(getLocalizedPath(`/${action.replace('nav:', '')}`, lang));
               toast.info(`Navigare către ${renderString(entityDef?.labelPlural || entityDef?.label, lang) || entityId}`);
             }
             // 2. Creation (new:entity_id)
             else if (action.startsWith("new:")) {
               const entityId = action.replace('new:', '');
-              const entityDef = (entities as any)[entityId];
+              const entityDef = (entity as any)[entityId];
               navigate(getLocalizedPath(`/${entityId}/new`, lang));
               toast.success(`Deschidere formular: ${renderString(entityDef?.label, lang) || entityId}`);
             }
             // 3. List/Board (list:entity_id)
             else if (action.startsWith("list:")) {
               const entityId = action.replace('list:', '');
-              const entityDef = (entities as any)[entityId];
+              const entityDef = (entity as any)[entityId];
               navigate(getLocalizedPath(`/${entityId}`, lang));
               toast.info(`Listă completă: ${renderString(entityDef?.labelPlural || entityDef?.label, lang) || entityId}`);
             }
@@ -291,7 +291,7 @@ export function ShortcutManager() {
       }
 
       // Check static entity shortcuts (legacy/fallback)
-      Object.entries(entities).forEach(([id, config]: [string, any]) => {
+      Object.entries(entity).forEach(([id, config]: [string, any]) => {
         // If there's an override in theme for this entity, it was already handled above
         const hasOverride = dynamicShortcuts.some((s: any) => s.action === `nav:${id}`);
         if (hasOverride) return;
@@ -316,7 +316,7 @@ export function ShortcutManager() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [navigate, theme, setTheme, uiConfig, entities]);
+  }, [navigate, theme, setTheme, uiConfig, entity]);
 
   return null;
 }

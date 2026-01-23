@@ -3,20 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { GlassCard } from '~/components/ui/GlassCard';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { 
-    Rocket, 
-    Cpu, 
-    Network, 
-    ShieldCheck, 
-    Zap, 
-    Brain, 
-    Lock,
-    Globe,
-    Server,
-    Database,
-    Cloud,
-    LayoutDashboard
-} from 'lucide-react';
+import { Rocket, Cpu, Network, ShieldCheck, Zap, Brain, Lock, Globe, Server, Database, Cloud, LayoutDashboard } from 'lucide-react';
 import { renderString } from '~/lib/core';
 import { useParams } from 'react-router';
 

@@ -295,7 +295,7 @@ export class SystemSchema {
                 relationships TEXT,
                 uiConfig TEXT,
                 menuConfig TEXT,
-                permissions TEXT,
+                permission TEXT,
                 features TEXT,
                 layout TEXT,
                 dashboardConfig TEXT,

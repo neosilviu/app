@@ -7,27 +7,20 @@ import { clearColumnCache } from './d1.server';
  * This is a core feature of the No-Code Engine to handle schema evolution.
  */
 export async function syncTableSchema(db: any, table: string, expectedColumns: string[], forceLog = false) {
-    try {
-        const resolved = resolveCollection(table);
-        if (forceLog) console.log(`[DB-AUTOHEAL] Checking schema for ${resolved}...`);
-        const info = await db.query(`PRAGMA table_info("${resolved}")`);
-        if (!info || info.length === 0) {
-            // Table doesn't exist yet - skip auto-heal for it
-            return;
+    const resolved = resolveCollection(table);
+    if (forceLog) console.log(`[DB-AUTOHEAL] Checking schema for ${resolved}...`);
+    const info = await db.query(`PRAGMA table_info("${resolved}")`);
+    if (!info || info.length === 0) {
+        // Table doesn't exist yet - skip auto-heal for it
+        return;
+    }
+    const existingColumns = info.map((r: any) => r.name.toLowerCase());
+    
+    for (const col of expectedColumns) {
+        if (!existingColumns.includes(col.toLowerCase())) {
+            console.log(`[DB-AUTOHEAL] Adding missing column "${col}" to table "${resolved}"`);
+            await db.exec(`ALTER TABLE "${resolved}" ADD COLUMN "${col}" TEXT`);
         }
-        const existingColumns = info.map((r: any) => r.name.toLowerCase());
-        
-        for (const col of expectedColumns) {
-            if (!existingColumns.includes(col.toLowerCase())) {
-                console.log(`[DB-AUTOHEAL] Adding missing column "${col}" to table "${resolved}"`);
-                await db.exec(`ALTER TABLE "${resolved}" ADD COLUMN "${col}" TEXT`).catch((e: any) => {
-                    console.warn(`[DB-AUTOHEAL] Failed to add column ${col}:`, e.message);
-                });
-            }
-        }
-    } catch (e: any) {
-        if (forceLog) console.error(`[DB-AUTOHEAL] Check failed for ${table}:`, e.message);
-        else console.warn(`[DB-AUTOHEAL] Check failed for ${table}:`, e.message);
     }
 }
 
@@ -104,137 +97,38 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
                  console.warn("[DB-INIT] Transient error checking _metadata:", e.message);
             }
 
-            // Step 2: Schema Version 116 (Enterprise Architecture)
-            if (migrationLevel >= 116) {
-                const defCountResult = await db.query("SELECT COUNT(*) as count FROM entity_definition").catch(() => [{ count: 0 }]);
-                const defCount = defCountResult[0]?.count || 0;
-
-                if (defCount > 0) {
-                    console.log(`[DB-INIT] Level 116 detected with ${defCount} entities. Verifying core columns...`);
-                    
-                    // Global Auto-Heal for all tables (Enterprise Level 116 Standard)
-                    const allTables = await db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE '_metadata'");
-                    for (const t of allTables) {
-                        await syncTableSchema(db, t.name, ['archived', 'deletedAt', 'workspaceId', 'createdBy', 'updatedBy']);
-                    }
-
-                    // Level 8: Trigger baseline sync in background if needed (Ensures new entities appear)
-                    const registry = await getRegistry();
-                    if (ctx && typeof ctx.waitUntil === 'function') {
-                        ctx.waitUntil(ensureBaselineSync(db, registry));
-                    } else {
-                        ensureBaselineSync(db, registry).catch(e => console.error("[DB-INIT] Background baseline sync failed:", e.message));
-                    }
-
-                    global.IS_DB_INITIALIZED = true;
-                    return;
-                }
-                console.log("[DB-INIT] Level 116 detected but definitions are missing. Proceeding with sync...");
-            }
-
-            console.log(`[DB-INIT] Initializing Enterprise structure (Level 116)... Target version: 116, Current: ${migrationLevel}`);
-
-            const schemaStatements = [
-                "CREATE TABLE IF NOT EXISTS _metadata (key TEXT PRIMARY KEY, value TEXT, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP)",
-                "CREATE TABLE IF NOT EXISTS entity_definition (id TEXT PRIMARY KEY, name TEXT NOT NULL, label TEXT, labelPlural TEXT, description TEXT, icon TEXT DEFAULT 'Box', colorTheme TEXT, tableName TEXT, displayField TEXT, fields TEXT NOT NULL, validations TEXT, relationships TEXT, uiConfig TEXT, menuConfig TEXT, permissions TEXT, features TEXT, layout TEXT, dashboardConfig TEXT, isSystem INTEGER DEFAULT 0, workspaceId TEXT DEFAULT 'system', archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT, UNIQUE(name, workspaceId))",
-                "CREATE TABLE IF NOT EXISTS system_setting (id TEXT PRIMARY KEY, namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT, dataType TEXT DEFAULT 'text', description TEXT, isSecret INTEGER DEFAULT 0, workspaceId TEXT, archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT, UNIQUE(namespace, key))",
-                "CREATE TABLE IF NOT EXISTS _ai_prompt (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, systemPrompt TEXT, userPromptTemplate TEXT, model TEXT, inputContext TEXT, outputField TEXT, category TEXT, description TEXT, workspaceId TEXT DEFAULT 'system', archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT, isLocked INTEGER DEFAULT 0)",
-                "CREATE TABLE IF NOT EXISTS user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, emailVerified INTEGER DEFAULT 0, image TEXT, role TEXT DEFAULT 'user', preferredLanguage TEXT DEFAULT 'ro', workspaceId TEXT, lastWorkspaceId TEXT, status TEXT DEFAULT 'active', archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT)",
-                "CREATE TABLE IF NOT EXISTS session (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES user(id), archived INTEGER DEFAULT 0, archivedAt DATETIME, deletedAt DATETIME, workspaceId TEXT, createdBy TEXT, updatedBy TEXT)",
-                "CREATE TABLE IF NOT EXISTS account (id TEXT PRIMARY KEY, userId TEXT NOT NULL REFERENCES user(id), accountId TEXT NOT NULL, providerId TEXT NOT NULL, accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt INTEGER, refreshTokenExpiresAt INTEGER, scope TEXT, password TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, archived INTEGER DEFAULT 0, archivedAt DATETIME, deletedAt DATETIME, workspaceId TEXT, createdBy TEXT, updatedBy TEXT)",
-                "CREATE TABLE IF NOT EXISTS verification (id TEXT PRIMARY KEY, identifier TEXT NOT NULL, value TEXT NOT NULL, expiresAt INTEGER NOT NULL, createdAt INTEGER, updatedAt INTEGER, archived INTEGER DEFAULT 0, archivedAt DATETIME, deletedAt DATETIME, workspaceId TEXT, createdBy TEXT, updatedBy TEXT)",
-                "CREATE TABLE IF NOT EXISTS workspace (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, slug TEXT UNIQUE, ownerId TEXT REFERENCES user(id) ON DELETE SET NULL, avatarUrl TEXT, settings TEXT, status TEXT DEFAULT 'active', archived INTEGER DEFAULT 0, archivedAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT)",
-                "CREATE TABLE IF NOT EXISTS role (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT, description TEXT, permissions TEXT, workspaceId TEXT DEFAULT 'system', archived INTEGER DEFAULT 0, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, createdBy TEXT, updatedBy TEXT)",
-                "CREATE TABLE IF NOT EXISTS workspace_user (id TEXT PRIMARY KEY, workspaceId TEXT NOT NULL REFERENCES workspace(id), userId TEXT NOT NULL REFERENCES user(id), role TEXT DEFAULT 'user', permissions TEXT, archived INTEGER DEFAULT 0, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(workspaceId, userId))",
-                "CREATE TABLE IF NOT EXISTS tag_assignment (id TEXT PRIMARY KEY, workspaceId TEXT, tagId TEXT, entityType TEXT, entityId TEXT, archived INTEGER DEFAULT 0, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP)",
-                "CREATE TABLE IF NOT EXISTS audit_log (id TEXT PRIMARY KEY, workspaceId TEXT, action TEXT, entityType TEXT, entityId TEXT, display_value TEXT, user TEXT, userId TEXT, details TEXT, snapshot_before TEXT, snapshot_after TEXT, version INTEGER DEFAULT 1, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP, deletedAt DATETIME, archived INTEGER DEFAULT 0, createdBy TEXT, updatedBy TEXT)"
-            ];
-            
-            // Use batch for much better performance and atomicity
+            // Enterprise Level 8: Namespace Normalization Migration
             try {
-                console.log(`[DB-INIT] Executing ${schemaStatements.length} schema statements via BATCH...`);
-                const batch = schemaStatements.map(stmt => db.prepare(stmt));
-                await db.batch(batch);
-                console.log("[DB-INIT] Schema batch execution successful.");
+                await db.exec("UPDATE SYSTEM_SETTING SET namespace = LOWER(namespace), id = LOWER(id)");
             } catch (e: any) {
-                console.error("[DB-INIT] Schema batch execution failed. Attempting sequential fallback...", e.message);
-                // Fallback to sequential if batch fails
-                for (const stmt of schemaStatements) {
-                    console.log(`[DB-INIT] Sequential fallback: ${stmt.substring(0, 50)}...`);
-                    await db.query(stmt);
-                }
+                console.warn("[DB-INIT] Namespace normalization skipped (table might not exist):", e.message);
             }
-            
-            // --- AUTO-HEAL: SYSTEM CORE ---
-            // Only perform auto-heal if we're not at level 116 already
+
+            // Step 2: DNA-Driven Schema Sychronization
+            const baseline = await loadBaseline();
+            const coreEntities = baseline.ENTITY_CONFIG || {};
+
+            console.log(`[DB-INIT] Starting DNA-Driven Sync for ${Object.keys(coreEntities).length} entities...`);
+
+            // Ensure physical tables for ALL entities in Registry
+            for (const [name, def] of Object.entries(coreEntities)) {
+                await syncEntityTable(db, { ...def, name });
+            }
+
+            // Step 3: Specific Migrations / Fixes (Keep only what's absolutely necessary)
             if (migrationLevel < 116) {
-                console.log("[DB-INIT] Running auto-heal for core kernel tables...");
-                
-                await syncTableSchema(db, 'user', [
-                    'name', 'email', 'role', 'workspaceId', 'status', 'archived', 'deletedAt', 'updatedAt'
-                ], true);
-
-                await syncTableSchema(db, 'account', [
-                    'userId', 'accountId', 'providerId', 'accessToken', 'refreshToken', 
-                    'idToken', 'accessTokenExpiresAt', 'refreshTokenExpiresAt', 'scope', 'password',
-                    'workspaceId', 'archived', 'deletedAt'
-                ], true);
-
-                await syncTableSchema(db, 'workspace', [
-                    'name', 'description', 'archived', 'archivedAt', 'deletedAt', 'updatedAt'
-                ], true);
-
-                await syncTableSchema(db, 'entity_definition', [
-                    'label', 'labelPlural', 'description', 'icon', 'colorTheme', 
-                    'tableName', 'displayField', 'fields', 'validations', 
-                    'relationships', 'uiConfig', 'menuConfig', 'permissions', 
-                    'features', 'layout', 'dashboardConfig', 'isSystem', 'workspaceId', 'archived', 'deletedAt', 'updatedAt'
-                ], true);
-
-                await syncTableSchema(db, '_ai_prompt', [
-                    'name', 'description', 'systemPrompt', 'userPromptTemplate', 'model', 'inputContext', 'outputField', 'category', 'workspaceId', 'archived', 'deletedAt', 'updatedAt', 'isLocked'
-                ], true);
-
-                // Level 8: Handle legacy 'template' column if it exists (Rename to systemPrompt if systemPrompt is empty)
+                // Workspace Isolation check (System workspace is mandatory)
                 try {
-                    const columns = await db.query(`PRAGMA table_info("_ai_prompt")`);
-                    if (columns.find((c: any) => c.name === 'template')) {
-                        console.log("[DB-INIT] Legacy 'template' column detected in _ai_prompt. Migrating data...");
-                        await db.query(`UPDATE _ai_prompt SET systemPrompt = template WHERE (systemPrompt IS NULL OR systemPrompt = '') AND template IS NOT NULL`);
-                        // We don't drop columns in SQLite easily, but we can make it NULLable if we had a better DDL engine.
-                        // For now, we just ensure it doesn't block inserts.
+                    const workspace = await db.list('workspace');
+                    if (workspace.length === 0 || !workspace.find((w: any) => w.id === 'system')) {
+                         await db.create('workspace', { id: 'system', name: 'System Administration' });
                     }
                 } catch (e: any) {
-                    console.warn("[DB-INIT] Legacy _ai_prompt migration skipped:", e.message);
+                    console.warn("[DB-INIT] System workspace check skipped:", e.message);
                 }
-
-                // Level 8: Ensure archived exists as numeric 0 for all system entities
-                await db.query("UPDATE _ai_prompt SET archived = 0 WHERE archived IS NULL").catch(() => {});
-                await db.query("UPDATE entity_definition SET archived = 0 WHERE archived IS NULL").catch(() => {});
-                await db.query("UPDATE workspace SET archived = 0 WHERE archived IS NULL").catch(() => {});
             }
 
-            console.log("[DB-INIT] Updating _metadata db_version to 116...");
-            await db.query("INSERT OR REPLACE INTO _metadata (key, value) VALUES ('db_version', '116')");
-            clearColumnCache('entity_definition');
-
-            // Workspace Isolation check
-            try {
-                console.log("[DB-INIT] Ensuring 'system' workspace exists...");
-                const workspace = await db.list('workspace');
-                if (workspace.length === 0 || !workspace.find((w: any) => w.id === 'system')) {
-                     console.log("[DB-INIT] Creating 'system' workspace record...");
-                     await db.create('workspace', { id: 'system', name: 'System Administration', description: 'Root workspace for system entities' });
-                }
-            } catch (e: any) {
-                console.error("[DB-INIT] Failed to ensure 'system' workspace:", e.message);
-            }
-
-            console.log("[DB-INIT] Loading registry for baseline sync...");
-            const registry = await getRegistry();
-            
-            // Level 8: Set initialized BEFORE baseline sync to allow parallel requests 
-            // once core tables exist.
+            // Level 8: Set initialized BEFORE baseline sync
             global.IS_DB_INITIALIZED = true;
             console.log(`[DB-INIT] Core schema applied in ${Date.now() - start}ms; starting baseline sync in ${typeof ctx?.waitUntil === 'function' ? 'background' : 'foreground'}`);
 
@@ -263,7 +157,7 @@ export function mapFieldType(type: string): string {
 }
 
 export async function ensureBaselineSync(db: any, registry: any) {
-    const baselineEntities = registry.ENTITY_CONFIGS || registry.ENTITY_CONFIG || registry.entity_definition || registry.entity_definition || {};
+    const baselineEntities = registry.ENTITY_CONFIG || registry.ENTITY_CONFIG || registry.entity_definition || registry.entity_definition || {};
     if (baselineEntities && Object.keys(baselineEntities).length > 0) {
         const metaStatements: any[] = [];
         
@@ -277,7 +171,7 @@ export async function ensureBaselineSync(db: any, registry: any) {
                         db.prepare(`INSERT OR REPLACE INTO entity_definition (
                             id, name, label, labelPlural, description, icon, colorTheme, 
                             tableName, displayField, fields, validations, relationships, 
-                            uiConfig, menuConfig, permissions, features, layout, 
+                            uiConfig, menuConfig, permission, features, layout, 
                             dashboardConfig, isSystem, workspaceId
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                         .bind(
@@ -292,7 +186,7 @@ export async function ensureBaselineSync(db: any, registry: any) {
                             JSON.stringify(normalized.relationships || {}),
                             JSON.stringify(normalized.uiConfig || {}),
                             JSON.stringify(normalized.menuConfig || {}),
-                            JSON.stringify(normalized.permissions || {}),
+                            JSON.stringify(normalized.permission || {}),
                             JSON.stringify(normalized.features || {}),
                             JSON.stringify(normalized.layout || {}),
                             JSON.stringify(normalized.dashboardConfig || {}),
@@ -327,7 +221,7 @@ export async function ensureBaselineSync(db: any, registry: any) {
 }
 
 export async function syncWorkspaceSettingsBaseline(db: any, registry: any) {
-    const systemSettings = registry.system_setting || {};
+    const systemSettings = registry.SYSTEM_SETTING || {};
     const aiConfig = registry.AI_CONFIG || {};
     
     console.log('[DB-INIT] Syncing workspace settings baseline (System Workspace)...');
@@ -356,7 +250,7 @@ export async function syncWorkspaceSettingsBaseline(db: any, registry: any) {
 }
 
 export async function syncRolesBaseline(db: any, registry: any) {
-    const roles = registry.roles || registry.SYSTEM_ROLES || {};
+    const roles = registry.SYSTEM_ROLE || registry.roles || {};
     if (!roles || Object.keys(roles).length === 0) return;
 
     console.log('[DB-INIT] Syncing system roles baseline (Batched)...');
@@ -369,8 +263,8 @@ export async function syncRolesBaseline(db: any, registry: any) {
         const descriptionStr = typeof c.description === 'object' ? (c.description.ro || c.description.en) : (c.description || '');
 
         statements.push(
-            db.prepare(`INSERT OR REPLACE INTO role (id, name, color, description, permissions, workspaceId) VALUES (?, ?, ?, ?, ?, ?)`)
-                .bind(id, nameStr, c.color || '#3b82f6', descriptionStr, JSON.stringify(c.permissions || []), 'system')
+            db.prepare(`INSERT OR REPLACE INTO role (id, name, color, description, permission, workspaceId) VALUES (?, ?, ?, ?, ?, ?)`)
+                .bind(id, nameStr, c.color || '#3b82f6', descriptionStr, JSON.stringify(c.permission || []), 'system')
         );
     }
 
@@ -381,10 +275,11 @@ export async function syncRolesBaseline(db: any, registry: any) {
 
 export async function syncSystemSettingsBaseline(db: any, registry: any) {
     const namespaces: Record<string, string> = {
-        'system_setting': 'system',
+        'SYSTEM_SETTING': 'SYSTEM_SETTING',
         'AI_CONFIG': 'ai',
         'AUTH_CONFIG': 'auth',
         'THEME': 'theme',
+        'INTEGRATION': 'integrations',
         'WAPP_CONFIG': 'whatsapp'
     };
 
@@ -399,9 +294,12 @@ export async function syncSystemSettingsBaseline(db: any, registry: any) {
             const dataType = typeof value === 'object' && value !== null ? 'json' : typeof value;
             const finalValue = dataType === 'json' ? JSON.stringify(value) : (value === null ? '' : String(value));
 
+            // Enterprise Level 8: Use INSERT OR IGNORE to allow user overrides to persist across reboots
+            // Use lowercase namespace to maintain UI consistency and avoid duplicate records
+            const targetNamespace = namespace.toLowerCase();
             statements.push(
-                db.prepare(`INSERT OR REPLACE INTO system_setting (id, namespace, key, value, dataType) VALUES (?, ?, ?, ?, ?)`)
-                    .bind(`${namespace}:${key}`, namespace, key, finalValue, dataType)
+                db.prepare(`INSERT OR IGNORE INTO SYSTEM_SETTING (id, namespace, key, value, dataType) VALUES (?, ?, ?, ?, ?)`)
+                    .bind(`${targetNamespace}:${key}`, targetNamespace, key, finalValue, dataType)
             );
         }
     }
@@ -425,7 +323,7 @@ export async function syncSystemSettingsBaseline(db: any, registry: any) {
 }
 
 export async function syncAiPromptsBaseline(db: any, registry: any) {
-    const prompts = registry.AI_PROMPTS;
+    const prompts = registry.AI_PROMPT;
     if (!prompts || typeof prompts !== 'object') return;
 
     console.log('[DB-INIT] Syncing AI prompts baseline (Batched)...');
@@ -512,11 +410,18 @@ export async function syncEntityTable(db: any, rawDef: any) {
         if (!rows || rows.length === 0) {
             const colDefs = [`"${pk}" TEXT PRIMARY KEY`];
             fields.forEach((f: any) => {
-                const fname = f.name;
+                const fname = f.name || f.id;
                 if (fname && fname !== pk && fname !== 'id') {
                     let colDef = `"${fname}" ${mapFieldType(f.type)}`;
                     if (f.unique) colDef += ' UNIQUE';
                     if (f.required) colDef += ' NOT NULL';
+                    
+                    // Level 8: Foreign Key Support
+                    if (f.relation && f.relation.target) {
+                        const targetTable = resolveCollection(f.relation.tableName || f.relation.target);
+                        colDef += ` REFERENCES "${targetTable}"(id) ON DELETE SET NULL`;
+                    }
+                    
                     colDefs.push(colDef);
                 }
             });

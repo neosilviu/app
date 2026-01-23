@@ -1,34 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription
-} from "~/components/ui/dialog";
-import { 
-    Database, 
-    Search, 
-    ArrowRight, 
-    Table as TableIcon, 
-    AlertCircle, 
-    RefreshCw,
-    ChevronLeft,
-    ChevronRight,
-    Download
-} from "lucide-react";
+import {  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "~/components/ui/dialog";
+import { Database, Search, Table as TableIcon, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { 
-    Table, 
-    TableBody, 
-    TableCell, 
-    TableHead, 
-    TableHeader, 
-    TableRow 
-} from "~/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 import { useTranslation } from "react-i18next";
 import { socketRequest } from "~/lib/core";
 import { toast } from "sonner";

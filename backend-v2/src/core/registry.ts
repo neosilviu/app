@@ -2,19 +2,19 @@ import { DatabaseDriver } from '../db/driver';
 import winston from 'winston';
 // We import the baseline directly. ensure tsconfig includes this path or allows it.
 // @ts-ignore - Importing outside of rootDir
-import { CORE_CONSTANTS, NAV_STRUCTURE, system_setting, ENTITY_CONFIG, I18N, THEME_CONFIG, AUTH_CONFIG } from '../../../registry-baseline';
+import { CONSTANT, NAV, SYSTEM_SETTING, ENTITY_CONFIG, I18N, THEME, AUTH_CONFIG } from '../../../registry-baseline';
 
 // Define the shape of the Registry based on what we know
 export interface Registry {
-  nav: typeof NAV_STRUCTURE;
-  constants: typeof CORE_CONSTANTS;
-  system: typeof system_setting;
-  entities: typeof ENTITY_CONFIG | Record<string, any>; // Baseline + Dynamic entity definitions
-  uiConfig: typeof THEME_CONFIG | Record<string, any>;
-  i18n: typeof I18N | Record<string, any>;
-  prompts: Record<string, string>;
-  models: Record<string, any>;
-  roles: any;
+  nav: any;
+  constants: any;
+  system: any;
+  entity: Record<string, any>; 
+  uiConfig: any;
+  i18n: any;
+  prompt: any;
+  model: any;
+  role: any;
   [key: string]: any;
 }
 
@@ -102,7 +102,7 @@ const SYSTEM_I18N = {
       printing: "Imprimare",
       monitoring: "Monitorizare Sistem",
     },
-    entities: {
+    entity: {
       interaction: { label: "Interacțiune", labelPlural: "Interacțiuni" },
       printing: { label: "Imprimare", labelPlural: "Sesiuni Imprimare" },
       monitoring: { label: "Monitorizare", labelPlural: "Status Sistem" }
@@ -114,7 +114,7 @@ const SYSTEM_I18N = {
       printing: "Printing",
       monitoring: "System Monitor",
     },
-    entities: {
+    entity: {
       interaction: { label: "Interaction", labelPlural: "interaction" },
       printing: { label: "Printing", labelPlural: "Printing Sessions" },
       monitoring: { label: "Monitoring", labelPlural: "System Status" }
@@ -146,15 +146,15 @@ export class RegistryManager {
 
     // 1. Start with Baseline
     const completeRegistry: Registry = {
-      nav: { ...NAV_STRUCTURE },
-      constants: { ...CORE_CONSTANTS },
-      system: { ...system_setting },
-      entities: { ...ENTITY_CONFIG, ...SYSTEM_ENTITIES },
-      uiConfig: { ...THEME_CONFIG },
+      nav: { ...NAV },
+      constants: { ...CONSTANT },
+      system: { ...SYSTEM_SETTING },
+      entity: { ...ENTITY_CONFIG, ...SYSTEM_ENTITIES },
+      uiConfig: { ...THEME },
       i18n: { ...I18N },
-      prompts: {},
-      models: {},
-      roles: { ...AUTH_CONFIG.roles }
+      prompt: {},
+      model: {},
+      role: { ...AUTH_CONFIG.role }
     };
 
     // Merge system translations safely
@@ -198,10 +198,36 @@ export class RegistryManager {
     }
 
     // 3. Load Entity Definitions from DB
-    // ...
-    // previous logic continues
+    try {
+      const entities = await this.db.query('SELECT * FROM entity_definition');
+      entities.forEach((row: any) => {
+        try {
+          const fields = typeof row.fields === 'string' ? JSON.parse(row.fields) : row.fields;
+          const menuConfig = typeof row.menuConfig === 'string' ? JSON.parse(row.menuConfig) : row.menuConfig;
+          const permission = typeof row.permission === 'string' ? JSON.parse(row.permission) : row.permission;
+          
+          completeRegistry.entity[row.name] = {
+            ...completeRegistry.entity[row.name],
+            ...row,
+            fields,
+            menuConfig,
+            permission,
+            __source: 'db'
+          };
+        } catch (e) {
+          logger.error(`Failed to parse entity definition: ${row.name}`, e);
+        }
+      });
+    } catch (e: any) {
+      if (e.message.includes('no such table')) {
+        logger.warn('Table entity_definition does not exist. Using baseline only.');
+      } else {
+        logger.error('Error loading entity_definition', e);
+      }
+    }
+    
     this.registry = completeRegistry;
-    logger.info(`Registry loaded. ${Object.keys(completeRegistry.entities).length} dynamic entities.`);
+    logger.info(`Registry loaded. ${Object.keys(completeRegistry.entity).length} dynamic entities.`);
     
     return this.registry;
   }
@@ -243,7 +269,7 @@ export class RegistryManager {
 
     // Special case: if path starts with system, nav, constants, search there first as they are top level keys
     // Otherwise, we search the entire registry or specific groups.
-    // Based on our structure: Registry { nav, constants, system, entities... }
+    // Based on our structure: Registry { nav, constants, system, entity... }
     
     for (const part of parts) {
       if (current === null || current === undefined || typeof current !== 'object') return defaultValue;

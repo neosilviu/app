@@ -48,18 +48,18 @@ export async function initializeRegistry() {
 export async function getRegistry(db?: any) {
     if (!_registry) await initializeRegistry();
     
-    // If DB is provided, we merge with system_setting (Enterprise Level 8)
+    // If DB is provided, we merge with SYSTEM_SETTING (Enterprise Level 8)
     if (db) {
-        const dbSettings = await db.list('system_setting');
+        const dbSettings = await db.list('SYSTEM_SETTING');
         const settingsObj: any = {};
         
         // Legacy Mappings (Enterprise Level 8 Standard)
         const nsMap: Record<string, string> = {
             'ai': 'AI_CONFIG', 'ai_config': 'AI_CONFIG',
-            'theme': 'THEME', 'ui': 'THEME', 'ui_config': 'THEME',
+            'theme': 'THEME', 'ui': 'THEME', 'ui_config': 'THEME', 'uiconfig': 'THEME',
             'auth': 'AUTH_CONFIG', 'auth_config': 'AUTH_CONFIG',
-            'system': 'system_setting', 'system_setting': 'system_setting',
-            'general': 'GENERAL'
+            'system': 'SYSTEM_SETTING', 'system_setting': 'SYSTEM_SETTING', 'SYSTEM_SETTING': 'SYSTEM_SETTING',
+            'general': 'GENERAL', 'root': 'GENERAL'
         };
 
         dbSettings.forEach((s: any) => {
@@ -70,9 +70,19 @@ export async function getRegistry(db?: any) {
                 
                 if (!settingsObj[targetNs]) settingsObj[targetNs] = {};
                 
-                const value = (s.dataType === 'json' || (typeof s.value === 'string' && (s.value.startsWith('{') || s.value.startsWith('[')))) 
-                    ? JSON.parse(s.value) 
-                    : s.value;
+                let value = s.value;
+                if (s.dataType === 'json' || (typeof s.value === 'string' && (s.value.startsWith('{') || s.value.startsWith('[')))) {
+                    try { value = JSON.parse(s.value); } catch { value = s.value; }
+                } else if (s.dataType === 'boolean' || s.value === 'true' || s.value === 'false') {
+                    value = s.value === 'true' || s.value === '1' || s.value === 1;
+                } else if (s.dataType === 'number') {
+                    value = Number(s.value);
+                } else if (typeof s.value === 'string') {
+                    // Auto-detection for simple types
+                    if (s.value === 'true') value = true;
+                    else if (s.value === 'false') value = false;
+                    else if (!isNaN(Number(s.value)) && s.value.trim() !== '') value = Number(s.value);
+                }
                 
                 settingsObj[targetNs][key] = value;
             } catch (e) {
@@ -83,7 +93,7 @@ export async function getRegistry(db?: any) {
         
         const merged = { 
             ..._registry,
-            ENTITY_CONFIGS: { ...(_registry.ENTITY_CONFIGS || {}) }
+            ENTITY_CONFIG: { ...(_registry.ENTITY_CONFIG || {}) }
         };
         for (const [ns, values] of Object.entries(settingsObj)) {
             if (ns === 'GENERAL') {
@@ -99,7 +109,7 @@ export async function getRegistry(db?: any) {
     
     return { 
         ..._registry,
-        ENTITY_CONFIGS: { ...(_registry.ENTITY_CONFIGS || {}) }
+        ENTITY_CONFIG: { ...(_registry.ENTITY_CONFIG || {}) }
     };
 }
 
@@ -113,10 +123,12 @@ export function clearRegistryCache() {
 /**
  * RBAC Helper
  */
-export function hasPermission(role: string, permission: string): boolean {
+export function hasPermission(role: string, requiredPermission: string): boolean {
     if (!_registry) return false;
-    const permissions = _registry.ROLE_PERMISSIONS?.[role] || [];
-    return permissions.includes(permission) || permissions.includes('admin');
+    const roleDef = (_registry.SYSTEM_ROLE || {})[role];
+    if (!roleDef) return false;
+    const permissions = roleDef.permission || [];
+    return permissions.includes('*') || permissions.includes(requiredPermission);
 }
 
 /**
@@ -128,10 +140,10 @@ export const REGISTRY_BASELINE: any = new Proxy({}, {
         if (!_registry) {
             // Return safe defaults for known structures
             // NOTE: NAV must NOT return empty object - that breaks menu rendering
-            if (prop === 'ENTITY_CONFIGS') return {};
+            if (prop === 'ENTITY_CONFIG') return {};
             if (prop === 'NAV') {
                 console.warn("[REGISTRY] Accessing NAV before initialization!");
-                return { main: [], workers: [], admin: [], user: [] };
+                return { main: [], worker: [], admin: [], user: [] };
             }
             if (prop === 'THEME') return { 
                 defaultTheme: 'light', 

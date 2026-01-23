@@ -48,18 +48,16 @@ export function deepClone<T>(obj: T): T {
 export interface NavItem {
   id?: string;
   path: string;
-  label: string;
+  label: any;
   icon?: string;
   priority?: number;
   hidden?: boolean;
   badge?: string;
-  superadminOnly?: boolean;
-  adminOnly?: boolean;
+  localAgentOnly?: boolean;
   permission?: string;
   workerName?: string;
-  requiresWorkers?: boolean;
-  roleRestriction?: string[];
   category?: string;
+  status?: string;
 }
 
 export type EntityType = 'text' | 'email' | 'number' | 'date' | 'select' | 'boolean' | 'json' | 'rich-text';
@@ -106,12 +104,17 @@ export function debounce<T extends (...args: any[]) => any>(
 /**
  * Extracts a string from an i18n object or returns the string directly.
  * Handles: string | { [lang: string]: string } | null | undefined
+ * Enterprise Level 8: Recursive & Bulletproof
  */
 export function renderString(value: any, lang: string = 'ro'): string {
-    if (!value) return '';
+    if (value === null || value === undefined) return '';
     
-    // If it's a string, check if it's a JSON string that needs parsing
+    // 1. Handle Strings
     if (typeof value === 'string') {
+        // Anti-corruption: NEVER return "[object Object]"
+        if (value === '[object Object]') return '';
+
+        // Handle JSON strings that might contain i18n objects
         if (value.startsWith('{') || value.startsWith('[')) {
             try {
                 const parsed = JSON.parse(value);
@@ -123,23 +126,57 @@ export function renderString(value: any, lang: string = 'ro'): string {
         return value;
     }
 
+    // 2. Handle Objects
     if (typeof value === 'object') {
-        // Handle standard i18n objects { ro: "...", en: "..." }
-        if (value[lang]) return value[lang];
-        if (value['ro']) return value['ro'];
-        if (value['en']) return value['en'];
+        const baseLang = lang.split('-')[0].toLowerCase();
 
-        // Handle common entity expansion (record objects with identity fields)
-        if (value.name || value.label || value.title || value.displayName) {
-          const val = value.name || value.label || value.title || value.displayName;
-          if (typeof val === 'string') return val;
-          return renderString(val, lang);
+        // Priority A: Direct language match or base language match
+        if (value[lang] !== undefined) {
+            const val = value[lang];
+            if (typeof val === 'string') return val;
+            return renderString(val, lang);
+        }
+        if (value[baseLang] !== undefined) {
+            const val = value[baseLang];
+            if (typeof val === 'string') return val;
+            return renderString(val, lang);
+        }
+
+        // Priority B: Fallback to base system languages
+        const fallbacks = ['ro', 'en'];
+        for (const f of fallbacks) {
+            if (value[f] !== undefined) {
+                const val = value[f];
+                if (typeof val === 'string') return val;
+                return renderString(val, lang);
+            }
+        }
+
+        // Priority C: Standard identity fields (if value is a record object)
+        const identityFields = ['label', 'name', 'title', 'displayName', 'text'];
+        for (const field of identityFields) {
+            if (value[field] !== undefined) {
+                const val = value[field];
+                if (typeof val === 'string') return val;
+                return renderString(val, lang);
+            }
         }
         
-        // Final fallback for objects
-        return Object.values(value)[0] as string || '';
+        // Priority D: First non-undefined value in the object
+        const values = Object.values(value);
+        if (values.length > 0) {
+            const first = values[0];
+            if (typeof first === 'string') return first;
+            if (typeof first === 'object' && first !== null) return renderString(first, lang);
+            return String(first);
+        }
+        
+        return '';
     }
-    return String(value);
+
+    // 3. Fallback for primitives
+    const final = String(value);
+    return final === '[object Object]' ? '' : final;
 }
 
 export function isValidEmail(email: string): boolean {

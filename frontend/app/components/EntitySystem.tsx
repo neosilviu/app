@@ -9,14 +9,7 @@ import { useConfig } from "~/hooks/useConfig";
 import { useAuth } from '~/hooks/useAuth';
 import { socket } from '~/lib/core';
 import { cn, api, renderString, normalizeEntity } from '~/lib/core';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "./ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
@@ -30,26 +23,7 @@ import { TagSelector } from "./ui/tag-selector";
 import { IconPicker } from './ui/IconPicker';
 import { ColorPicker } from './ui/ColorPicker';
 import { DatePicker } from './ui/DatePicker';
-import { 
-  Edit, 
-  Trash, 
-  ArrowUpDown, 
-  ArrowUp, 
-  ArrowDown, 
-  Check, 
-  X, 
-  Archive, 
-  RotateCcw,
-  FileIcon,
-  ExternalLink,
-  Tag as TagIcon,
-  Zap,
-  Code,
-  Sparkles,
-  Star,
-  ArrowRight,
-  HelpCircle
-} from "lucide-react";
+import { Edit, Trash,  ArrowUpDown, ArrowUp, ArrowDown, Check, X, Archive, RotateCcw, FileIcon, ExternalLink, Tag as TagIcon, Zap, Code, Sparkles, Star, ArrowRight, HelpCircle } from "lucide-react";
 import { IconMap } from "~/lib/icons";
 
 // --- RelationSelect Component ---
@@ -62,7 +36,7 @@ interface RelationSelectProps {
 }
 
 export function RelationSelect({ entityType, value, onChange, placeholder }: RelationSelectProps) {
-    const { t } = useTranslation(['common', 'entities']);
+    const { t } = useTranslation(['common', 'entity']);
     const { lang } = useParams();
     const [options, setOptions] = useState<{ value: string, label: string }[]>([]);
     const [loading, setLoading] = useState(true);
@@ -145,10 +119,10 @@ export const DynamicTable = React.memo(function DynamicTable({
   onRestore,
   onRowClick 
 }: DynamicTableProps) {
-  const { t } = useTranslation(['common', 'entities']);
+  const { t } = useTranslation(['common', 'entity']);
   const { lang } = useParams();
-  const { entities } = useConfig();
-  const config = entities[entityType];
+  const { entity } = useConfig();
+  const config = entity[entityType];
   const [isPending, startTransition] = useTransition();
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" | null }>({
     key: "",
@@ -512,10 +486,10 @@ interface DynamicFormProps {
 }
 
 export function DynamicForm({ entityType, onSubmit, initialData, loading }: DynamicFormProps) {
-  const { t } = useTranslation(['common', 'validation', 'entities']);
+  const { t } = useTranslation(['common', 'validation', 'entity']);
   const { lang } = useParams();
-  const { entities } = useConfig();
-  let config = entities[entityType];
+  const { entity } = useConfig();
+  let config = entity[entityType];
   
   // Enterprise Level 8: Always use the central normalizer
   const normalizedConfig = normalizeEntity(config);
