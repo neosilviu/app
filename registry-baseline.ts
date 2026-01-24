@@ -251,6 +251,17 @@ export const CONSTANT = {
     'session',
     'config_version'
   ],
+  offlineCapableEntities: [
+    'contact',
+    'file',
+    'tag',
+    'automation',
+    'audit_log',
+    'changelog',
+    'interaction',
+    'bug_report',
+    'notification'
+  ],
   aiPromptCategory: [
     'system', 
     'global', 

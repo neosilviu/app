@@ -24,18 +24,6 @@ export interface EntityOptions {
   skipFetch?: boolean;
 }
 
-const LOCAL_FALLBACK_ENTITIES = [
-  'contact', 
-  'file', 
-  'tag', 
-  'automation',
-  'audit_log', 
-  'changelog', 
-  'interaction', 
-  'bug_report', 
-  'notification'
-];
-
 export function useEntity<T = any>(entityName: string, options: EntityOptions = {}) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(!options.skipFetch);
@@ -43,17 +31,23 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const skipNextSocketUpdate = useRef<string | null>(null);
   const { user, hasPermission } = useAuth();
-  const { entity } = useConfig();
+  const { entity, constants } = useConfig();
   const { autoRefreshEnabled, canAutoRefresh } = useTheme();
   const params = useParams();
   const lang = (params.lang as string) || 'ro';
 
+  // Get offline-capable entities from Registry
+  const offlineEntities = useMemo(() => 
+    constants?.offlineCapableEntities || [],
+    [constants]
+  );
+
   const isKnownEntity = useMemo(() => {
     if (!entityName || entityName === 'undefined') return false;
     return !!entity[entityName] || 
-           LOCAL_FALLBACK_ENTITIES.includes(entityName) || 
+           offlineEntities.includes(entityName) || 
            ['workspace', 'user', 'SYSTEM_SETTING', 'entity_definition'].includes(entityName);
-  }, [entityName, entity]);
+  }, [entityName, entity, offlineEntities]);
 
   // Selection helpers
   const getPk = useCallback((item: any) => {
@@ -161,7 +155,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         // IMPROVED: If we are in dev or Brain has significantly fewer records than local usually has, 
         // we should check Local Agent regardless or merge them.
         const resolvedName = resolveCollection(entityName);
-        const isLocalEntity = LOCAL_FALLBACK_ENTITIES.includes(resolvedName);
+        const isLocalEntity = offlineEntities.includes(resolvedName);
         
         // If Brain returned FEWER than 100 records for a local entity like contact, we suspect local has more.
         const brainHasFewRecords = responseData.success && responseData.data?.length < 100;
@@ -187,7 +181,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       } catch (err) {
         console.warn(`[useEntity] Brain API failed for ${entityName}, trying Socket fallback...`);
         const resolvedName = resolveCollection(entityName);
-        const isLocalEntity = LOCAL_FALLBACK_ENTITIES.includes(resolvedName);
+        const isLocalEntity = offlineEntities.includes(resolvedName);
         const effectivePageSize = options.pageSize || (isLocalEntity ? 10000 : undefined);
         console.log(`[useEntity] Socket fallback for ${entityName} with pageSize=${effectivePageSize}`);
         const localRes = await socketRequest('db:list', { 
