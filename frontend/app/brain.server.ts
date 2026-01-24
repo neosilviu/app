@@ -11,7 +11,10 @@ if (typeof process !== 'undefined') {
 
 import { getDb, clearColumnCache } from './lib/d1.server';
 import { getAuth, verifyAuth } from "./lib/auth-core.server";
-import { AiService, getRegistry, clearRegistryCache, resolveCollection, getPrimaryKey, normalizeEntity, safeParse, getDisplayValue, renderString } from './lib/core';
+import { AiService } from './lib/ai.server';
+import { getRegistry, clearRegistryCache, resolveCollection, getPrimaryKey } from './lib/registry-lite';
+import { normalizeEntity, safeParse, getDisplayValue } from './lib/entity-engine';
+import { renderString } from './lib/utils';
 import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin, checkAccessAsync } from './lib/auth-utils';
 import { ensureSystemTables, waitForDbReady, mapFieldType, ensureBaselineSync, syncEntityTable } from './lib/db-init.server';
 import { executeEntityAction } from './lib/brain-engine.server';
@@ -92,30 +95,6 @@ declare global {
 }
 
 const global = globalThis as any;
-
-/**
- * WORKFLOW STATE MACHINE - Enterprise Level 8
- */
-
-/**
- * WORKFLOW STATE MACHINE - Enterprise Level 8
- */
-
-/**
- * WORKFLOW STATE MACHINE - Enterprise Level 8
- */
-
-/**
- * WORKFLOW STATE MACHINE - Enterprise Level 8
- */
-
-/**
- * WORKFLOW STATE MACHINE - Enterprise Level 8
- */
-
-/**
- * WORKFLOW STATE MACHINE - Enterprise Level 8
- */
 
 /**
  * WORKFLOW STATE MACHINE - Enterprise Level 8

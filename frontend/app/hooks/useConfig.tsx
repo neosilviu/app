@@ -10,7 +10,7 @@ import {
     api,
     debounce 
 } from '../lib/core';
-import { db } from '../lib/core';
+import { getBrowserDb } from '../lib/core';
 import { normalizeEntity } from '../lib/entity-engine';
 
 export interface NavItem {
@@ -238,6 +238,13 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     useEffect(() => {
         const initConfig = async () => {
             const initial = getInitialConfig();
+            const db = await getBrowserDb();
+            if (!db) {
+                // If no local DB, still setup from initial
+                setEntity(initial.entity);
+                setConstants(STATIC_CONSTANTS);
+                return;
+            }
             try {
                 const cachedEntities = await db.configs.get('all_entities');
                 const cachedConstants = await db.configs.get('system_constants');
@@ -421,10 +428,13 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 }
 
                 // Cache to IndexedDB
-                await db.configs.put({ id: 'all_entities', data: result.entity, updatedAt: Date.now() });
-                await db.configs.put({ id: 'system_constants', data: result.constants, updatedAt: Date.now() });
-                if (result.uiConfig) {
-                    await db.configs.put({ id: 'ui_config', data: result.uiConfig, updatedAt: Date.now() });
+                const db = await getBrowserDb();
+                if (db) {
+                    await db.configs.put({ id: 'all_entities', data: result.entity, updatedAt: Date.now() });
+                    await db.configs.put({ id: 'system_constants', data: result.constants, updatedAt: Date.now() });
+                    if (result.uiConfig) {
+                        await db.configs.put({ id: 'ui_config', data: result.uiConfig, updatedAt: Date.now() });
+                    }
                 }
             }
         } catch (e: any) {
@@ -494,7 +504,10 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         }
 
         // 2. Save to IndexedDB (Offline cache)
-        await db.configs.put({ id: 'ui_config', data: updated, updatedAt: Date.now() });
+        const db = await getBrowserDb();
+        if (db) {
+            await db.configs.put({ id: 'ui_config', data: updated, updatedAt: Date.now() });
+        }
 
         // 3. Notify Local Agent (Socket)
         socket.emit('db:set', { 

@@ -7,7 +7,7 @@ import {
   debounce,
   normalizeEntity
 } from "../lib/core";
-import { db, resolveCollection } from '../lib/core';
+import { getBrowserDb, resolveCollection } from '../lib/core';
 import { toast } from "sonner";
 import { renderString } from "../lib/utils";
 import { useAuth } from "~/hooks/useAuth";
@@ -79,6 +79,8 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   useEffect(() => {
     const loadCached = async () => {
       if (!entityName || options.skipFetch || !isKnownEntity) return;
+      const db = await getBrowserDb();
+      if (!db) return;
       const cached = await db.entityData
         .where('entityType')
         .equals(entityName)
@@ -212,18 +214,21 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         });
         
         // Update IndexedDB cache
-        await db.entityData.where('entityType').equals(entityName).delete();
-        if (newData.length > 0) {
-          const cacheEntries = newData.map((item: any) => {
-            const pk = getPk(item);
-            return {
-              id: `${entityName}:${pk}`,
-              entityType: entityName,
-              data: item,
-              updatedAt: Date.now()
-            };
-          });
-          await db.entityData.bulkPut(cacheEntries);
+        const db = await getBrowserDb();
+        if (db) {
+          await db.entityData.where('entityType').equals(entityName).delete();
+          if (newData.length > 0) {
+            const cacheEntries = newData.map((item: any) => {
+              const pk = getPk(item);
+              return {
+                id: `${entityName}:${pk}`,
+                entityType: entityName,
+                data: item,
+                updatedAt: Date.now()
+              };
+            });
+            await db.entityData.bulkPut(cacheEntries);
+          }
         }
       } else {
         setError(responseData.error);

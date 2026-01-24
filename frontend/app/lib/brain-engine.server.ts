@@ -1,7 +1,10 @@
 
 import { getDb, clearColumnCache } from './d1.server';
 import { getAuth, verifyAuth } from "./auth-core.server";
-import { AiService, getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, safeParse, getDisplayValue, renderString } from './core';
+import { AiService } from './ai.server';
+import { getRegistry, resolveCollection, getPrimaryKey } from './registry-lite';
+import { normalizeEntity, safeParse, getDisplayValue } from './entity-engine';
+import { renderString } from './utils';
 import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin, checkAccessAsync } from './auth-utils';
 import { ensureSystemTables, waitForDbReady, syncEntityTable } from './db-init.server';
 

@@ -19,8 +19,7 @@ export {
     EntityParser,
     parseEntity,
     serializeEntity,
-    db,
-    AppDatabase,
+    getBrowserDb,
     type CachedConfig,
     type CachedData
 } from './data';

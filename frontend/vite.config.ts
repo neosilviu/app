@@ -35,8 +35,26 @@ const getVersion = () => {
   return memoizedVersion;
 };
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, isSsrBuild }) => ({
   envDir: "../",
+  resolve: {
+    alias: [
+      { find: "~", replacement: path.resolve(__dirname, "./app") },
+      ...(isSsrBuild ? [
+        { find: "lucide-react", replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+        { find: /.*\/lucide-wrapper(\.server)?$/, replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+        { find: "framer-motion", replacement: path.resolve(__dirname, "./app/lib/framer-mock.server.ts") },
+        { find: /.*\/framer-wrapper(\.server)?$/, replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+        { find: "axios", replacement: path.resolve(__dirname, "./app/lib/axios-mock.server.ts") },
+        { find: "socket.io-client", replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+        { find: "react-markdown", replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+        { find: /^date-fns(\/.*)?$/, replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+        { find: "fast-xml-parser", replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+        { find: /^@radix-ui\/react-.*$/, replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+        { find: "sonner", replacement: path.resolve(__dirname, "./app/lib/lucide-mock.server.ts") },
+      ] : [])
+    ]
+  },
   define: {
     __APP_VERSION__: JSON.stringify(getVersion()),
   },
@@ -65,6 +83,17 @@ export default defineConfig(({ command }) => ({
     tsconfigPaths()
   ].filter(Boolean) as any,
   ssr: {
+    noExternal: [
+      "lucide-react",
+      "framer-motion",
+      "axios",
+      "socket.io-client",
+      /^@radix-ui\/react-.*$/,
+      "sonner",
+      "react-markdown",
+      "date-fns",
+      "fast-xml-parser"
+    ],
     resolve: {
       externalConditions: ["workerd", "worker"],
     },
@@ -74,6 +103,7 @@ export default defineConfig(({ command }) => ({
     legalComments: 'none',
   },
   build: {
+    minify: true,
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       onwarn(warning, warn) {

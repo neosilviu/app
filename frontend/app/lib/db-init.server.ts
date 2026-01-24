@@ -1,4 +1,6 @@
-import { getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, clearRegistryCache, loadBaseline } from './core';
+import { getRegistry, resolveCollection, getPrimaryKey, clearRegistryCache } from './registry-lite';
+import { normalizeEntity } from './entity-engine';
+import { loadBaseline } from './registry';
 
 /**
  * AUTO-HEAL: Sync Table Schema (Enterprise Level 8)

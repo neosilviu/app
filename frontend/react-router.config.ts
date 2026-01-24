@@ -16,7 +16,36 @@ export default {
       
       try {
         const banner = "import { MessageChannel } from 'node:worker_threads'; globalThis.MessageChannel = globalThis.MessageChannel || MessageChannel;";
-        execSync(`npx esbuild ${workerPath} --bundle --minify --format=esm --outfile=${outputPath} --platform=browser --conditions=worker,workerd,browser --target=esnext --external:node:* --banner:js="${banner}" --log-level=error`, { stdio: 'inherit' });
+        
+        const mockedLibs = [
+          "lucide-react",
+          "framer-motion",
+          "axios",
+          "socket.io-client",
+          "react-markdown",
+          "date-fns",
+          "fast-xml-parser",
+          "sonner",
+          "@radix-ui/react-accordion",
+          "@radix-ui/react-avatar",
+          "@radix-ui/react-checkbox",
+          "@radix-ui/react-dialog",
+          "@radix-ui/react-dropdown-menu",
+          "@radix-ui/react-label",
+          "@radix-ui/react-popover",
+          "@radix-ui/react-progress",
+          "@radix-ui/react-scroll-area",
+          "@radix-ui/react-select",
+          "@radix-ui/react-separator",
+          "@radix-ui/react-slot",
+          "@radix-ui/react-switch",
+          "@radix-ui/react-tabs",
+          "@radix-ui/react-tooltip"
+        ];
+        
+        const aliases = mockedLibs.map(lib => `--alias:${lib}=./app/lib/lucide-mock.server.ts`).join(" ");
+
+        execSync(`npx esbuild ${workerPath} --bundle --minify --format=esm --outfile=${outputPath} --platform=browser --conditions=worker,workerd,browser --target=esnext --external:node:* ${aliases} --banner:js="${banner}" --log-level=error`, { stdio: 'inherit' });
         
         // Function to calculate directory size
         const getDirSize = (dir: string): number => {

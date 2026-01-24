@@ -3,12 +3,35 @@
  * Merged from entity-parser, db-utils, database-client
  */
 
-import Dexie, { type Table } from 'dexie';
-
 let _registry: any = null;
 
 export function initRegistry(registry: any) {
     _registry = registry;
+}
+
+// Enterprise Level 8: Dynamic DX for Dexie to prevent SSR leakage
+let _dexieInstance: any = null;
+
+export async function getBrowserDb() {
+    if (typeof window === "undefined") return null;
+    if (!_dexieInstance) {
+        const DexieModule = await import("dexie");
+        const Dexie = DexieModule.default;
+        
+        class AppDatabase extends Dexie {
+            configs!: any;
+            entityData!: any;
+            constructor() {
+                super("AppStudioDB");
+                this.version(1).stores({
+                    configs: "id, updatedAt",
+                    entityData: "id, entityType, updatedAt"
+                });
+            }
+        }
+        _dexieInstance = new AppDatabase();
+    }
+    return _dexieInstance;
 }
 
 // --- ENTITY PARSER ---
@@ -97,16 +120,4 @@ export const DB_UTILS = {
 export interface CachedConfig { id: string; data: any; updatedAt: number; }
 export interface CachedData { id: string; entityType: string; data: any; updatedAt: number; }
 
-export class AppDatabase extends Dexie {
-    configs!: Table<CachedConfig>;
-    entityData!: Table<CachedData>;
-    constructor() {
-        super('AppStudioDB');
-        this.version(1).stores({
-            configs: 'id, updatedAt',
-            entityData: 'id, entityType, updatedAt'
-        });
-    }
-}
-
-export const db = (typeof window !== 'undefined' && !(window as any).__is_shim) ? new AppDatabase() : null as any;
+// Use getBrowserDb() instead of direct export to avoid SSR leaks
