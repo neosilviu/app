@@ -106,6 +106,18 @@ export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+export function getThemeClasses(color: string = 'indigo') {
+  const c = color.toLowerCase();
+  return {
+    bg: `bg-${c}-600`,
+    text: `text-${c}-600`,
+    border: `border-${c}-200`,
+    ring: `ring-${c}-500`,
+    lightBg: `bg-${c}-50`,
+    darkBg: `dark:bg-${c}-950/20`
+  };
+}
+
 /**
  * Enterprise Level 8: Registry-Aware Validation
  */

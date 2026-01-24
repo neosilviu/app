@@ -1,23 +1,39 @@
 import React from 'react';
-import { useParams } from 'react-router';
+import { useParams, useLoaderData, type LoaderFunctionArgs, type ActionFunctionArgs } from 'react-router';
 import { useConfig } from '~/hooks/useConfig';
 import { DynamicEntityDetail } from '~/components/entity/DynamicEntityDetail';
 import { ErrorBoundary } from '~/components/ControlGates';
-import { api } from '~/lib/core';
+import { Brain } from '~/brain.server';
 
-export async function action({ request, params }: any) {
-    const formData = await request.formData();
-    const action = formData.get('_action');
-    const entity = params.entity;
-    const id = params.id;
+export async function loader({ params, context }: LoaderFunctionArgs) {
+    const { entity, id, lang } = params;
 
-    if (action === 'delete') {
-        return await api.brain.delete(`db/${entity}/${id}`);
+    if (id === 'new') {
+        return { data: null };
     }
 
-    if (action === 'update' || action === 'put') {
-        const data = JSON.parse(formData.get('data') || '{}');
-        return await api.brain.put(`db/${entity}/${id}`, data);
+    const data = await Brain.execute(entity!, 'READ', { id, lang }, context);
+    return { data };
+}
+
+export async function action({ request, params, context }: ActionFunctionArgs) {
+    const { entity, id, lang } = params;
+    const formData = await request.formData();
+    const _action = formData.get('_action');
+
+    if (_action === 'delete') {
+        const result = await Brain.execute(entity!, 'DELETE', { id, lang }, context);
+        return result;
+    }
+
+    // Default to WRITE for form submissions
+    const dataString = formData.get('data');
+    if (dataString) {
+        const payload = JSON.parse(dataString as string || '{}');
+        if (id !== 'new') payload.id = id;
+        payload.lang = lang;
+        const result = await Brain.execute(entity!, 'WRITE', payload, context);
+        return result;
     }
 
     return { error: 'Invalid action' };
@@ -25,6 +41,8 @@ export async function action({ request, params }: any) {
 
 export default function EntityDetailPage() {
     const { entity, id } = useParams();
+    const loaderData = useLoaderData<typeof loader>();
+    const data = loaderData?.data;
     const { entity: configMap, isInitialized } = useConfig();
 
     if (!isInitialized) {
@@ -48,7 +66,12 @@ export default function EntityDetailPage() {
 
     return (
         <ErrorBoundary>
-            <DynamicEntityDetail entityId={entity as string} recordId={id as string} config={config} />
+            <DynamicEntityDetail 
+                entityId={entity as string} 
+                recordId={id as string} 
+                config={config} 
+                initialData={data}
+            />
         </ErrorBoundary>
     );
 }

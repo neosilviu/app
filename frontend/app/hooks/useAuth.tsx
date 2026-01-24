@@ -1,8 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import { socket, whatsappSocket } from '~/lib/core';
 import { brainApi } from '~/lib/core';
 import { authClient } from '~/lib/core';
-import { useConfig } from "./useConfig";
+import { useConfig, filterNavigationItems, type NavItem } from "./useConfig";
 
 interface AuthContextType {
   user: any;
@@ -10,6 +10,14 @@ interface AuthContextType {
   userLoading: boolean;
   isAdminExists: boolean | null;
   loading: boolean;
+  navigationAuthorized: {
+    main: NavItem[];
+    worker: NavItem[];
+    entity: NavItem[];
+    admin: NavItem[];
+    user: NavItem[];
+    shortcuts: NavItem[];
+  };
   registerAdmin: (data: any) => Promise<any>;
   login: (data: any) => Promise<any>;
   logout: () => Promise<void>;
@@ -312,6 +320,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const navigationAuthorized = useMemo(() => {
+     if (!config?.navigation || !user) return {
+         main: [], worker: [], entity: [], admin: [], user: [], shortcuts: []
+     };
+
+     return {
+         main: filterNavigationItems(config.navigation.main, hasPageAccess, useLocalAgent),
+         worker: filterNavigationItems(config.navigation.worker, hasPageAccess, useLocalAgent),
+         entity: filterNavigationItems(config.navigation.entity, hasPageAccess, useLocalAgent),
+         admin: filterNavigationItems(config.navigation.admin, hasPageAccess, useLocalAgent),
+         user: filterNavigationItems(config.navigation.user, hasPageAccess, useLocalAgent),
+         shortcuts: filterNavigationItems(config.navigation.shortcuts, hasPageAccess, useLocalAgent)
+     };
+  }, [config?.navigation, user, useLocalAgent, hasPageAccess]);
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -319,6 +342,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       userLoading,
       isAdminExists, 
       loading, 
+      navigationAuthorized,
       login, 
       logout, 
       registerAdmin, 
@@ -341,6 +365,9 @@ export function useAuth() {
       userLoading: false,
       isAdminExists: null,
       loading: false,
+      navigationAuthorized: {
+        main: [], worker: [], entity: [], admin: [], user: [], shortcuts: []
+      },
       login: async () => { console.warn("useAuth: login called outside AuthProvider") },
       logout: async () => {},
       registerAdmin: async () => ({}),

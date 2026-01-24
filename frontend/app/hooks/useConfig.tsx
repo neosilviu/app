@@ -13,7 +13,7 @@ import {
 import { db } from '../lib/core';
 import { normalizeEntity } from '../lib/entity-engine';
 
-interface NavItem {
+export interface NavItem {
     id?: string;
     path: string;
     label: any;
@@ -24,7 +24,32 @@ interface NavItem {
     permission?: string;
     workerName?: string;
     localAgentOnly?: boolean;
+    category?: string;
 }
+
+/**
+ * Filter and sort navigation items based on permissions and settings
+ * (Pure function for use in useAuth or components)
+ */
+export const filterNavigationItems = (
+    items: NavItem[], 
+    hasPageAccess: (id: string) => boolean, 
+    useLocalAgent: boolean
+) => {
+    if (!items) return [];
+    return items
+      .filter(item => {
+        if (item.hidden) return false;
+
+        // Condition: If it requires local agent, check it first
+        if (item.localAgentOnly === true && !useLocalAgent) return false;
+
+        // Registry-Driven access check
+        if (!item.id) return true;
+        return hasPageAccess(item.id);
+      })
+      .sort((a, b) => (a.priority || 99) - (b.priority || 99));
+};
 
 const resolveNavIcons = (nav: NavItem[]) => {
     return nav;
@@ -142,7 +167,7 @@ const getInitialConfig = () => {
             entity: nav.entity || [],
             admin: nav.admin || [],
             user: nav.user || [],
-            shortcuts: nav.shortcuts || []
+            shortcuts: nav.shortcuts || nav.SHORTCUT || []
         },
         constants: STATIC_CONSTANTS
     };
@@ -371,8 +396,8 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                         worker: applyNavOverrides(baseWorker, ui.navOverrides?.worker),
                         entity: applyNavOverrides(filteredEntities, ui.navOverrides?.entity).map(i => ({ ...i, path: `/${i.id}` })),
                         admin: applyNavOverrides(baseAdmin, ui.navOverrides?.admin),
-                        user: applyNavOverrides(dynamicNav.user || initial.navigation.user, ui.navOverrides?.user),
-                        shortcuts: applyNavOverrides(dynamicNav.shortcuts || initial.navigation.shortcuts, ui.navOverrides?.shortcuts)
+                        user: applyNavOverrides(dynamicNav.user || dynamicNav.USER || initial.navigation.user, ui.navOverrides?.user),
+                        shortcuts: applyNavOverrides(dynamicNav.shortcuts || dynamicNav.SHORTCUT || initial.navigation.shortcuts, ui.navOverrides?.shortcuts)
                     });
                 } else {
                     const baseMain = initial.navigation.main;
@@ -449,10 +474,10 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         setNavigation({
             main: applyNavOverrides(baseMain, updated.navOverrides?.main),
             worker: applyNavOverrides(baseWorker, updated.navOverrides?.worker),
-            entity: applyNavOverrides(filteredEntities, updated.navOverrides?.entity),
+            entity: applyNavOverrides(filteredEntities, updated.navOverrides?.entity).map(i => ({ ...i, path: i.path || `/${i.id}` })),
             admin: applyNavOverrides(baseAdmin, updated.navOverrides?.admin),
-            user: applyNavOverrides(dynamicNav?.user || initial.navigation.user, updated.navOverrides?.user),
-            shortcuts: applyNavOverrides(dynamicNav?.shortcuts || initial.navigation.shortcuts, updated.navOverrides?.shortcuts)
+            user: applyNavOverrides(dynamicNav?.user || dynamicNav?.USER || initial.navigation.user, updated.navOverrides?.user),
+            shortcuts: applyNavOverrides(dynamicNav?.shortcuts || dynamicNav?.SHORTCUT || initial.navigation.shortcuts, updated.navOverrides?.shortcuts)
         });
 
         // 1. Save to Cloud (The Brain Registry - Enterprise Level 8)

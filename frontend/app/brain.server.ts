@@ -16,6 +16,53 @@ import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin, checkAcc
 import { ensureSystemTables, waitForDbReady, mapFieldType, ensureBaselineSync, syncEntityTable } from './lib/db-init.server';
 import { executeEntityAction } from './lib/brain-engine.server';
 
+/**
+ * THE BRAIN - Enterprise Level 8 Metaprogramming Interface
+ * Generic executor for No-Code frontend shells.
+ */
+export const Brain = {
+    async execute(entity: string, action: 'READ' | 'WRITE' | 'DELETE', payload: any = {}, env?: any) {
+        // Fallback for missing env
+        const d1 = env?.cloudflare?.env?.DB || env?.DB || env?.db || (globalThis as any).DB;
+        const db = getDb({ DB: d1 });
+        const registry = await getRegistry(db);
+        const lang = payload?.lang || 'ro';
+        
+        switch (action) {
+            case 'READ':
+                if (payload?.id) {
+                    const item = await db.get(entity, payload.id);
+                    if (!item) return null;
+                    return transformTranslations(deepParse(item), lang);
+                }
+                const results = await db.list(entity);
+                return transformTranslations(results.map(deepParse), lang);
+                
+            case 'WRITE':
+                const id = payload?.id;
+                const data = { ...payload };
+                delete data.id;
+                delete data.lang;
+                
+                if (id && id !== 'new') {
+                    await db.update(entity, id, deepStringify(data));
+                    return { success: true, id };
+                } else {
+                    const created = await db.create(entity, deepStringify(data));
+                    const pk = getPrimaryKey(entity) || 'id';
+                    return { success: true, id: created[pk] || created.id };
+                }
+                
+            case 'DELETE':
+                await db.delete(entity, payload.id);
+                return { success: true };
+                
+            default:
+                throw new Error(`Action ${action} not implemented in Brain.execute`);
+        }
+    }
+};
+
 // --- SYSTEM CONSTANTS (Level 8: Decoupled to Registry - NO FAILSAFES) ---
 const isGlobalEntity = (name: string, registry?: any) => {
     const list = registry?.CONSTANT?.globalEntity || [];
@@ -243,7 +290,7 @@ function synthesizeNavigation(merged: any, template: any) {
         worker: [],
         entity: [],
         admin: [...(template.NAV?.admin || [])],
-        SHORTCUT: [...(template.NAV?.SHORTCUT || [])],
+        shortcuts: [...(template.NAV?.shortcuts || template.NAV?.SHORTCUT || [])],
     };
 
     // Unified Entity-to-Nav Synthesizer
@@ -1146,7 +1193,42 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
         const logs = await db.list('audit_log', { workspaceId: user.workspaceId }, { limit: 10, sortBy: 'createdAt', sortOrder: 'DESC' });
         return success(logs);
     },
-    auth: async ({ request, env }) => {
+    auth: async ({ request, env, op, user, db, body, registry }) => {
+        if (op === "check-admin") {
+            return success({ isAdmin: isGlobalAdmin(user, registry) });
+        }
+        
+        if (op === "setup-admin") {
+            const { email, password, name } = body;
+            if (!email || !password) return error("Email and password are required");
+            
+            // Level 8: Protection - Only allow setup if NO users exist or NO superadmin exists
+            try {
+                const admins = await db.query("SELECT id FROM user WHERE role = 'superadmin' LIMIT 1");
+                if (admins && admins.length > 0) {
+                    return error("Sistemul este deja configurat. Setup-ul este blocat.", 403);
+                }
+            } catch (e) {}
+
+            const auth = getAuth(env, request);
+            try {
+                // Register via Better-Auth Server API
+                const result = await auth.api.signUpEmail({
+                    body: { email, password, name: name || email.split('@')[0] }
+                });
+
+                if (!result || !result.user) throw new Error("Eroare la crearea utilizatorului.");
+
+                // Promote to SuperAdmin directly in DB
+                await db.exec("UPDATE user SET role = 'superadmin', workspaceId = 'system' WHERE id = ?", [result.user.id]);
+                
+                return success({ message: "Admin creat cu succes", user: result.user });
+            } catch (err: any) {
+                console.error("[SETUP-ADMIN-ERROR]", err);
+                return error(`Setup eșuat: ${err.message}`, 500);
+            }
+        }
+
         const auth = getAuth(env, request);
         return await auth.handler(request);
     }
@@ -1329,6 +1411,8 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
             
             return handlerResponse;
         }
+        
+        console.warn(`[BRAIN][${requestId}] No handler found for ${resource}, falling back to CRUD`);
         
         // Generic CRUD Fallback (Enterprise Level 8)
         if (request.method === 'GET') {

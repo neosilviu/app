@@ -18,9 +18,10 @@ import { DataManagementActions } from '../DataOps';
 interface DynamicEntityListProps {
     entityId: string;
     config: any;
+    initialData?: any[];
 }
 
-export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEntityListProps) {
+export function DynamicEntityList({ entityId, config: initialConfig, initialData }: DynamicEntityListProps) {
     const { lang } = useParams();
     const { t } = useTranslation(['common', 'entity']);
     const navigate = useNavigate();
@@ -47,7 +48,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
         exportData
     } = useEntity(entityId, { 
         includeArchived: showArchived,
-        skipFetch: !!config.mockup,
+        skipFetch: !!config.mockup || !!initialData,
         sortBy: searchParams.get('sortBy') || undefined,
         sortOrder: (searchParams.get('sortOrder')?.toUpperCase() as any) || undefined
     });
@@ -65,7 +66,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
         });
     };
 
-    const data = config.mockup ? (config.data || []) : realData;
+    const data = config.mockup ? (config.data || []) : (initialData || realData || []);
 
     const [search, setSearch] = useState('');
     const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -141,7 +142,9 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
             case 'date': return new Date(val).toLocaleDateString();
             case 'datetime': return new Date(val).toLocaleString();
             case 'boolean':
-            case 'toggle': return val ? <Badge className="bg-emerald-500 text-white border-none py-0 h-4 text-[8px]">DA</Badge> : <Badge variant="outline" className="text-slate-300 py-0 h-4 text-[8px]">NU</Badge>;
+            case 'toggle': return val 
+                ? <Badge className="bg-emerald-500 text-white border-none py-0 h-4 text-[8px]">{renderString(t('common:yes') || 'DA', lang)}</Badge> 
+                : <Badge variant="outline" className="text-slate-300 py-0 h-4 text-[8px]">{renderString(t('common:no') || 'NU', lang)}</Badge>;
             default: return String(val);
         }
     };
@@ -280,7 +283,9 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                                             </div>
                                         </TableHead>
                                     ))}
-                                    <TableHead className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Actions</TableHead>
+                                    <TableHead className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                        {renderString(t('common:actions') || 'Acțiuni', lang)}
+                                    </TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -321,7 +326,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                                                         className="h-8 w-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 text-red-500"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            if(confirm('Are you sure?')) {
+                                                            if(confirm(renderString(t('common:confirm_delete') || 'Ești sigur că vrei să ștergi?', lang))) {
                                                                 submit({ id: item.id }, { method: "delete" });
                                                             }
                                                         }}

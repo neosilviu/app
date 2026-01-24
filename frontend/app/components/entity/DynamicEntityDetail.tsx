@@ -24,9 +24,10 @@ interface DynamicEntityDetailProps {
     entityId: string;
     recordId: string;
     config: any;
+    initialData?: any;
 }
 
-export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntityDetailProps) {
+export function DynamicEntityDetail({ entityId, recordId, config, initialData }: DynamicEntityDetailProps) {
     const { lang } = useParams();
     const { t } = useTranslation(['common', 'entity', 'superadmin']);
     const navigate = useNavigate();
@@ -48,8 +49,8 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     // A record is read-only if it's not new and not editable, OR if it's new but not creatable
     const isGlobalReadOnly = (isNew && !isCreatable) || (!isNew && !isEditable);
 
-    const [formData, setFormData] = useState<any>({});
-    const [loading, setLoading] = useState(!isNew);
+    const [formData, setFormData] = useState<any>(initialData || {});
+    const [loading, setLoading] = useState(!isNew && !initialData);
     const [saving, setSaving] = useState(false);
     const [isAiExtracting, setIsAiExtracting] = useState(false);
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
@@ -263,20 +264,30 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const fetchRecord = async () => {
         fetchRelatedData();
         if (isNew) return;
-        setLoading(true);
+
+        // Use loading only if no initial data
+        if (!initialData) setLoading(true);
+
         try {
-            const res = await api.brain.get(`db/${entityId}/item/${recordId}`);
-            if (res.success) {
-                setFormData(res.data || {});
-                // Fetch audit logs for this specific record (Enterprise Level 8 feature)
-                const auditRes = await api.brain.get(`db/audit_log?entityType=${entityId}&entityId=${recordId}`);
-                if (auditRes.success) setAuditLogs(auditRes.data || []);
-            } else {
-                toast.error("Record not found");
-                navigate('..');
+            // Priority: use initialData if provided and formData is empty
+            if (initialData && !formData.id) {
+                setFormData(initialData);
+            } else if (!initialData) {
+                const res = await api.brain.get(`db/${entityId}/item/${recordId}`);
+                if (res.success) {
+                    setFormData(res.data || {});
+                } else {
+                    toast.error(t('common:record_not_found'));
+                    navigate('..');
+                    return;
+                }
             }
+
+            // Always fetch audit logs for the detail view (Level 8)
+            const auditRes = await api.brain.get(`db/audit_log?entityType=${entityId}&entityId=${recordId}`);
+            if (auditRes.success) setAuditLogs(auditRes.data || []);
         } catch (e: any) {
-            toast.error("Error loading record: " + e.message);
+            toast.error(t('common:error_loading_record') + ": " + e.message);
         } finally {
             setLoading(false);
         }
@@ -499,7 +510,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                         act.variant === 'destructive' ? 'text-rose-500 hover:bg-rose-50' : 'text-indigo-500 hover:bg-indigo-50'
                                     )}
                                     onClick={() => handleFieldAction(act, field)}
-                                    title={act.label}
+                                    title={renderString(act.label || "", lang)}
                                 >
                                     {act.icon === 'MessageCircle' ? <MessageCircle size={10} /> : 
                                      act.icon === 'Phone' ? <Phone size={10} /> :
@@ -772,7 +783,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 disabled={isReadOnly}
                                 onChange={(e) => handleChange(e.target.value)}
                                 className={cn("w-full min-h-[80px] p-4 rounded-xl bg-slate-50 border border-slate-200 border-dashed border-indigo-200 focus:border-indigo-500 font-medium text-sm", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 cursor-not-allowed")}
-                                placeholder={ui?.placeholder ? renderString(ui.placeholder, lang) : "AI will generate this based on your prompt..."}
+                                placeholder={ui?.placeholder ? renderString(ui.placeholder, lang) : renderString(t('common:ai_hint'), lang)}
                             />
                             {!isReadOnly && (
                                 <Button variant="ghost" size="sm" className="w-full h-8 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-100 gap-2 font-black uppercase italic tracking-widest text-[9px]">
@@ -1176,7 +1187,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Paste content below</Label>
                                 <textarea 
                                     className="w-full min-h-[200px] p-6 rounded-[32px] bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all text-sm font-medium leading-relaxed shadow-sm"
-                                    placeholder="Paste an email, a message or a description here..."
+                                    placeholder={renderString(t('common:ai_paste_placeholder'), lang)}
                                     value={extractionText}
                                     onChange={(e) => setExtractionText(e.target.value)}
                                 />
@@ -1189,16 +1200,16 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                     <Plus size={32} />
                                 </div>
                                 <div className="space-y-1">
-                                    <p className="text-xs font-black uppercase tracking-widest text-slate-600">Selectează Document</p>
-                                    <p className="text-[10px] font-bold text-slate-400">Suportă PDF, JPG, PNG sau DOCX</p>
+                                    <p className="text-xs font-black uppercase tracking-widest text-slate-600">{renderString(t('common:select_document'), lang)}</p>
+                                    <p className="text-[10px] font-bold text-slate-400">{renderString(t('common:support_formats'), lang)}</p>
                                 </div>
                                 <FileUploader 
                                     value={null}
                                     onChange={(url) => {
                                         // Auto-trigger extraction when file is uploaded
                                         setExtractionSource('file');
-                                        setExtractionText(url); // We send the URL to AI
-                                        toast.info("Fișier încărcat. Analizăm...");
+                                        setExtractionText(url || ""); // We send the URL to AI
+                                        toast.info(t('common:file_analyzing'));
                                     }}
                                     variant="file"
                                 />
@@ -1232,7 +1243,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                             className="flex-1 h-14 rounded-2xl font-black uppercase tracking-widest text-[10px]"
                             onClick={() => setIsAiModalOpen(false)}
                         >
-                            Cancel
+                            {renderString(t('common:cancel'), lang)}
                         </Button>
                         <Button 
                             disabled={isAiExtracting || (!extractionText && extractionSource === 'text')}
@@ -1240,7 +1251,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                             onClick={handleAiExtraction}
                         >
                             {isAiExtracting ? <RefreshCw className="animate-spin mr-2" size={20} /> : <Sparkles className="mr-2" size={20} />}
-                            <span className="font-extrabold uppercase italic tracking-widest text-sm">ÎNCEPE EXTRACȚIA AI</span>
+                            <span className="font-extrabold uppercase italic tracking-widest text-sm">{renderString(t('common:extract_btn'), lang)}</span>
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -339,23 +339,6 @@ export function getSearchableFields(entity: EntityDefinition): string[] {
     .slice(0, 5); // Limit to top 5 for performance
 }
 
-/**
- * THEME CLASSES HELPER
- * Maps a generic theme color to Tailwind classes
- */
-export function getThemeClasses(color: string = 'blue') {
-  const c = color.toLowerCase();
-  const map: Record<string, { bg: string, text: string, border: string, ring: string }> = {
-    blue:    { bg: 'bg-blue-600',    text: 'text-blue-600',    border: 'border-blue-100',    ring: 'ring-blue-500/20' },
-    emerald: { bg: 'bg-emerald-600', text: 'text-emerald-600', border: 'border-emerald-100', ring: 'ring-emerald-500/20' },
-    green:   { bg: 'bg-emerald-600', text: 'text-emerald-600', border: 'border-emerald-100', ring: 'ring-emerald-500/20' },
-    purple:  { bg: 'bg-purple-600',  text: 'text-purple-600',  border: 'border-purple-100',  ring: 'ring-purple-500/20' },
-    rose:    { bg: 'bg-rose-600',    text: 'text-rose-600',    border: 'border-rose-100',    ring: 'ring-rose-500/20' },
-    red:     { bg: 'bg-rose-600',    text: 'text-rose-600',    border: 'border-rose-100',    ring: 'ring-rose-500/20' },
-    amber:   { bg: 'bg-amber-600',   text: 'text-amber-600',   border: 'border-amber-100',   ring: 'ring-amber-500/20' },
-    slate:   { bg: 'bg-slate-600',   text: 'text-slate-600',   border: 'border-slate-100',   ring: 'ring-slate-500/20' },
-    indigo:  { bg: 'bg-indigo-600',  text: 'text-indigo-600',  border: 'border-indigo-100',  ring: 'ring-indigo-500/20' },
-  };
-  return map[c] || map.indigo;
-}
+// THEME CLASSES HELPER - Removed duplicate export (consolidated in utils.ts)
+
 
