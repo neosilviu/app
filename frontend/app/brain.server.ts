@@ -58,6 +58,32 @@ const deepStringify = (obj: any): any => {
     return result;
 };
 
+const convertToCSV = (data: any[]): string => {
+    if (!data || data.length === 0) {
+        return "";
+    }
+    const headers = Object.keys(data[0]);
+    const csvRows = [];
+    csvRows.push(headers.join(','));
+
+    for (const row of data) {
+        const values = headers.map(header => {
+            let value = row[header];
+            if (value === null || value === undefined) {
+                value = '';
+            } else if (typeof value === 'object') {
+                value = JSON.stringify(value);
+            }
+            
+            const stringValue = String(value);
+            const escaped = stringValue.replace(/"/g, '""');
+            return `"${escaped}"`;
+        });
+        csvRows.push(values.join(','));
+    }
+    return csvRows.join('\n');
+};
+
 /**
  * TRANSLATION TRANSFORMER - Enterprise Level 8
  * Converts multilingual fields (e.g. { ro: "...", en: "..." }) to a single value
@@ -88,32 +114,6 @@ const transformTranslations = (obj: any, lang: string = 'ro'): any => {
     }
     
     return obj;
-};
-
-const deepStringify = (obj: any): any => {
-    if (!data || data.length === 0) {
-        return "";
-    }
-    const headers = Object.keys(data[0]);
-    const csvRows = [];
-    csvRows.push(headers.join(','));
-
-    for (const row of data) {
-        const values = headers.map(header => {
-            let value = row[header];
-            if (value === null || value === undefined) {
-                value = '';
-            } else if (typeof value === 'object') {
-                value = JSON.stringify(value);
-            }
-            
-            const stringValue = String(value);
-            const escaped = stringValue.replace(/"/g, '""');
-            return `"${escaped}"`;
-        });
-        csvRows.push(values.join(','));
-    }
-    return csvRows.join('\n');
 };
 
 // --- CONFIG CACHE & PENDING FETCHES ---
@@ -2815,13 +2815,17 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         return error("AI operation not found", 404);
     },
     action: async ({ op, parts, db, user, body }) => {
+        const registry = await getRegistry(db);
+        const selectedLang = user?.preferredLanguage || registry.language || 'ro';
+        
+        // UNDO (Rollback single change)
         if (op === "undo") {
             const logId = parts[2];
-            if (!logId) return error("Log ID required");
+            if (!logId) return error(renderString({ ro: "ID jurnal lipsește", en: "Log ID required" }, selectedLang));
             
             // Bypass the proxy for the initial log fetch to avoid recursive noise
             const log = await (db as any)._target?.get('audit_log', logId) || await db.get('audit_log', logId);
-            if (!log || !log.snapshot_before) return error("Snapshot not found for undo");
+            if (!log || !log.snapshot_before) return error(renderString({ ro: "Snapshot-ul nu există", en: "Snapshot not found" }, selectedLang));
             
             // Security check
             if (!(await checkAccess(db, user, log.entityType, 'update'))) return error("Forbidden", 403);
@@ -2830,19 +2834,106 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             try {
                 beforeData = typeof log.snapshot_before === 'string' ? JSON.parse(log.snapshot_before) : log.snapshot_before;
             } catch (e) {
-                return error("Invalid snapshot format");
+                return error(renderString({ ro: "Format snapshot invalid", en: "Invalid snapshot format" }, selectedLang));
             }
 
             // Perform the update - this WILL be audited by the proxy as a separate log entry
-            // which is good for full audit transparency.
             await db.update(log.entityType, log.entityId, beforeData);
+            
+            // Create undo audit entry
+            await db.create('audit_log', {
+                id: crypto.randomUUID(),
+                action: 'system-undo',
+                entityType: log.entityType,
+                entityId: log.entityId,
+                display_value: log.display_value,
+                details: renderString({ 
+                    ro: `Restaurat din log ${logId.substring(0, 8)}...`, 
+                    en: `Restored from log ${logId.substring(0, 8)}...` 
+                }, selectedLang),
+                user: user?.email || user?.id || 'system',
+                workspaceId: user?.workspaceId || log.workspaceId,
+                createdAt: new Date().toISOString()
+            });
             
             return success({ 
                 id: log.entityId, 
-                message: "Restaurare finalizată cu succes",
-                details: `Inversat ${log.action} pe ${log.entityType}`
+                message: renderString({ ro: "Restaurare finalizată cu succes", en: "Rollback successful" }, selectedLang),
+                details: renderString({ ro: `Inversat ${log.action} pe ${log.entityType}`, en: `Reverted ${log.action} on ${log.entityType}` }, selectedLang)
             });
         }
+        
+        // HISTORY (All audit logs with filters)
+        if (op === "history") {
+            const limit = parseInt(body?.limit || '100');
+            const offset = parseInt(body?.offset || '0');
+            const entityType = body?.entityType;
+            const action = body?.action;
+            const userId = body?.userId;
+            
+            let query = "SELECT * FROM audit_log WHERE workspaceId = ?";
+            const params: any[] = [user.workspaceId];
+            
+            if (entityType) {
+                query += " AND entityType = ?";
+                params.push(entityType);
+            }
+            if (action) {
+                query += " AND action = ?";
+                params.push(action);
+            }
+            if (userId) {
+                query += " AND userId = ?";
+                params.push(userId);
+            }
+            
+            query += " ORDER BY createdAt DESC LIMIT ? OFFSET ?";
+            params.push(limit, offset);
+            
+            const logs = await db.query(query, params);
+            const countRes = await db.query("SELECT COUNT(*) as total FROM audit_log WHERE workspaceId = ?", [user.workspaceId]);
+            
+            return success({
+                logs: logs.map(deepParse),
+                total: countRes[0]?.total || 0,
+                limit,
+                offset
+            });
+        }
+        
+        // ENTITY-HISTORY (History for specific entity record)
+        if (op === "entity-history") {
+            const entityType = parts[2];
+            const entityId = parts[3];
+            
+            if (!entityType || !entityId) return error(renderString({ ro: "Entity Type și ID necesare", en: "Entity Type and ID required" }, selectedLang));
+            
+            const logs = await db.query(
+                "SELECT * FROM audit_log WHERE workspaceId = ? AND entityType = ? AND entityId = ? ORDER BY createdAt DESC LIMIT 50",
+                [user.workspaceId, entityType, entityId]
+            );
+            
+            return success(logs.map(deepParse));
+        }
+        
+        // STATS (Audit statistics)
+        if (op === "stats") {
+            const today = new Date();
+            const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+            
+            const totalRes = await db.query("SELECT COUNT(*) as total FROM audit_log WHERE workspaceId = ?", [user.workspaceId]);
+            const weekRes = await db.query("SELECT COUNT(*) as week FROM audit_log WHERE workspaceId = ? AND createdAt > ?", [user.workspaceId, sevenDaysAgo.toISOString()]);
+            const byActionRes = await db.query("SELECT action, COUNT(*) as count FROM audit_log WHERE workspaceId = ? GROUP BY action ORDER BY count DESC LIMIT 10", [user.workspaceId]);
+            const byEntityRes = await db.query("SELECT entityType, COUNT(*) as count FROM audit_log WHERE workspaceId = ? GROUP BY entityType ORDER BY count DESC LIMIT 10", [user.workspaceId]);
+            
+            return success({
+                total: totalRes[0]?.total || 0,
+                lastWeek: weekRes[0]?.week || 0,
+                byAction: byActionRes || [],
+                byEntity: byEntityRes || []
+            });
+        }
+        
         return error("Action not found", 404);
     },
     tag: async ({ op, parts, db, user, body, method }) => {
@@ -3233,7 +3324,7 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
             // Enterprise Level 8: Apply Translation Transformer to JSON responses
             if (handlerResponse.headers.get('content-type')?.includes('application/json')) {
                 try {
-                    const data = await handlerResponse.json();
+                    const data: any = await handlerResponse.json();
                     
                     // Transform multilingual fields in response data
                     if (data.data) {
