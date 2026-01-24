@@ -17,6 +17,7 @@ import { normalizeEntity } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
 import { useConfig } from '~/hooks/useConfig';
 import { toast } from 'sonner';
+import { EntityHistoryWidget } from '~/components/entity/EntityHistoryWidget';
 
 interface DynamicEntityDetailProps {
     entityId: string;
@@ -1081,6 +1082,16 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                             </div>
                         )}
                     </GlassCard>
+
+                    {/* Enterprise Level 8: Undo Engine Widget */}
+                    {!isNew && (
+                        <EntityHistoryWidget 
+                            entityType={entityId} 
+                            entityId={recordId}
+                            maxHeight="500px"
+                            showUndoButton={true}
+                        />
+                    )}
 
                     <div className="p-6 rounded-[32px] bg-indigo-600 text-white space-y-4 shadow-2xl shadow-indigo-200 dark:shadow-none">
                         <div className="flex items-center gap-2">

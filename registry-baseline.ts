@@ -171,6 +171,7 @@ export const NAV = {
   ],
   admin: [
     { id: 'monitoring', label: { ro: 'Monitorizare', en: 'Monitoring' }, icon: 'Activity', path: '/monitoring', priority: 90, category: 'administration', localAgentOnly: true },
+    { id: 'audit-history', label: { ro: 'Istoric Modificări', en: 'Change History' }, icon: 'History', path: '/audit-history', priority: 95, category: 'administration' },
     { id: 'setting', label: { ro: 'Setări Generale', en: 'General Settings' }, icon: 'Settings', path: '/settings', priority: 100, category: 'administration' },
     { id: 'superadmin', label: { ro: 'SuperAdmin', en: 'SuperAdmin' }, icon: 'Shield', path: '/superadmin', priority: 110, category: 'administration' }
   ],
