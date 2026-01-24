@@ -1861,6 +1861,8 @@ export const ENTITY_CONFIG = {
       id: { type: 'uuid', primaryKey: true, hidden: true },
       name: { type: 'string', required: true, ui: { width: 6 } },
       email: { type: 'string', required: true, unique: true, ui: { width: 6 } },
+      emailVerified: { type: 'boolean', defaultValue: false, hidden: true },
+      emailVerifiedAt: { type: 'datetime', hidden: true },
       image: { type: 'image', ui: { width: 12 } },
       role: { type: 'string', ui: { width: 6 } },
       workspaceId: { type: 'string', hidden: true },
@@ -1881,12 +1883,13 @@ export const ENTITY_CONFIG = {
     isSystem: true,
     features: { auditable: false, deletable: true },
     fields: {
-      id: { type: 'uuid', primaryKey: true },
-      userId: { type: 'string', required: true },
-      token: { type: 'string', required: true, unique: true },
-      expiresAt: { type: 'datetime', required: true },
-      ipAddress: { type: 'string' },
-      userAgent: { type: 'string' }
+      sessionId: { type: 'uuid', primaryKey: true, hidden: true },
+      userId: { type: 'string', required: true, hidden: true },
+      token: { type: 'string', required: true, unique: true, hidden: true },
+      expiresAt: { type: 'datetime', required: true, hidden: true },
+      ipAddress: { type: 'string', hidden: true },
+      userAgent: { type: 'string', hidden: true },
+      workspaceId: { type: 'string', hidden: true }
     }
   },
   account: {
