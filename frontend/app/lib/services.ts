@@ -248,26 +248,26 @@ export const localAgentApi = axios.create({ baseURL: `${SOCKET_URL}/api/`, timeo
     });
 });
 
-export const api = {
+const brainHandlers = {
     get: (url: string, cfg?: any) => brainApi.get(url, cfg).then(r => r.data),
     post: (url: string, data?: any, cfg?: any) => brainApi.post(url, data, cfg).then(r => r.data),
     put: (url: string, data?: any, cfg?: any) => brainApi.put(url, data, cfg).then(r => r.data),
     patch: (url: string, data?: any, cfg?: any) => brainApi.patch(url, data, cfg).then(r => r.data),
     delete: (url: string, cfg?: any) => brainApi.delete(url, cfg).then(r => r.data),
-    brain: {
-        get: (url: string, cfg?: any) => brainApi.get(url, cfg).then(r => r.data),
-        post: (url: string, data?: any, cfg?: any) => brainApi.post(url, data, cfg).then(r => r.data),
-        put: (url: string, data?: any, cfg?: any) => brainApi.put(url, data, cfg).then(r => r.data),
-        patch: (url: string, data?: any, cfg?: any) => brainApi.patch(url, data, cfg).then(r => r.data),
-        delete: (url: string, cfg?: any) => brainApi.delete(url, cfg).then(r => r.data),
-    },
-    local: {
-        get: (url: string, cfg?: any) => localAgentApi.get(url, cfg).then(r => r.data),
-        post: (url: string, data?: any, cfg?: any) => localAgentApi.post(url, data, cfg).then(r => r.data),
-        put: (url: string, data?: any, cfg?: any) => localAgentApi.put(url, data, cfg).then(r => r.data),
-        patch: (url: string, data?: any, cfg?: any) => localAgentApi.patch(url, data, cfg).then(r => r.data),
-        delete: (url: string, cfg?: any) => localAgentApi.delete(url, cfg).then(r => r.data),
-    }
+};
+
+const localHandlers = {
+    get: (url: string, cfg?: any) => localAgentApi.get(url, cfg).then(r => r.data),
+    post: (url: string, data?: any, cfg?: any) => localAgentApi.post(url, data, cfg).then(r => r.data),
+    put: (url: string, data?: any, cfg?: any) => localAgentApi.put(url, data, cfg).then(r => r.data),
+    patch: (url: string, data?: any, cfg?: any) => localAgentApi.patch(url, data, cfg).then(r => r.data),
+    delete: (url: string, cfg?: any) => localAgentApi.delete(url, cfg).then(r => r.data),
+};
+
+export const api = {
+    ...brainHandlers,
+    brain: brainHandlers,
+    local: localHandlers
 };
 
 // --- AI ENGINE ---
@@ -531,7 +531,7 @@ export class CurrencyService {
             }
             const jsonObj = this.parser.parse(await resp.text());
             const cube = jsonObj.DataSet.Body.Cube;
-            const result: any = { date: cube['@_date'], rates: { EUR: 4.97 } };
+            const result: any = { date: cube['@_date'], rates: {} };
             const rates = Array.isArray(cube.Rate) ? cube.Rate : [cube.Rate];
             rates.forEach((r: any) => { if (r) result.rates[r['@_currency']] = parseFloat(r['#text']); });
             return result;

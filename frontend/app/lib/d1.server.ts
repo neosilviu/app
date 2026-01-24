@@ -221,14 +221,7 @@ export class D1Driver {
             console.warn(`[D1][SLOW-QUERY] ${duration}ms: ${sql.substring(0, 100)}...`);
         }
         return result;
-    }, undefined, sql, this.rawBinding).catch(e => {
-        const isTableMissing = e.message.includes('no such table');
-        const isSelect = upperSql.startsWith('SELECT');
-        if (!(isTableMissing && isSelect)) {
-            console.error(`[D1] Query Error: ${e.message}`, { sql });
-        }
-        throw e;
-    });
+    }, undefined, sql, this.rawBinding);
   }
 
   async listTables(): Promise<string[]> {
@@ -354,25 +347,15 @@ export class D1Driver {
       params.push(value);
     });
     
-    try {
-        const result = await this.query(sql, params);
-        return (result as any)?.[0]?.count || 0;
-    } catch (e: any) {
-        if (e.message && e.message.includes('no such table')) return 0;
-        throw e;
-    }
+    const result = await this.query(sql, params);
+    return (result as any)?.[0]?.count || 0;
   }
 
   async get(collection: string, id: string): Promise<any> {
     const resolved = resolveCollection(collection);
     const pk = this.getPk(resolved);
-    try {
-        const results = await this.query(`SELECT * FROM "${resolved}" WHERE "${pk}" = ? LIMIT 1`, [id]);
-        return results[0] || null;
-    } catch (e: any) {
-        if (e.message && e.message.includes('no such table')) return null;
-        throw e;
-    }
+    const results = await this.query(`SELECT * FROM "${resolved}" WHERE "${pk}" = ? LIMIT 1`, [id]);
+    return results[0] || null;
   }
 
   async getTableColumns(table: string): Promise<string[]> {
@@ -391,7 +374,8 @@ export class D1Driver {
             }
             return columns;
         } catch (e: any) {
-            return [];
+            console.error(`[D1] Failed to fetch columns for table ${resolved}: ${e.message}`);
+            throw e;
         } finally {
             pendingColumnFetches.delete(resolved);
         }
@@ -447,15 +431,8 @@ export class D1Driver {
       params.push(options.limit, options.offset || 0);
     }
 
-    try {
-        const results = await this.query(sql, params);
-        return results || [];
-    } catch (e: any) {
-        if (e.message && e.message.includes('no such table')) {
-            return [];
-        }
-        throw e;
-    }
+    const results = await this.query(sql, params);
+    return results || [];
   }
 
   async create(collection: string, data: any): Promise<any> {
@@ -475,17 +452,8 @@ export class D1Driver {
     
     // Safety: wrap columns in quotes
     const sql = `INSERT OR REPLACE INTO "${resolved}" (${keys.map(k => `"${k}"`).join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`;
-    try {
-        await this.query(sql, keys.map(k => filteredData[k]));
-        return filteredData;
-    } catch (e: any) {
-        if (e.message && e.message.includes('no such table')) {
-            console.warn(`[D1] Create ignored: Table ${resolved} does not exist.`);
-            return data;
-        }
-        console.error(`[D1] Create Failure on table ${resolved}: ${e.message}`, { sql, dataSnippet: JSON.stringify(filteredData).slice(0, 100) });
-        throw e;
-    }
+    await this.query(sql, keys.map(k => filteredData[k]));
+    return filteredData;
   }
 
   async update(collection: string, id: string, data: any): Promise<any> {
@@ -505,39 +473,23 @@ export class D1Driver {
     if (keys.length === 0) return data;
 
     const sql = `UPDATE "${resolved}" SET ${keys.map(k => `"${k}" = ?`).join(', ')} WHERE "${pk}" = ?`;
-    try {
-        await this.query(sql, [...keys.map(k => filteredData[k]), id]);
-        return data;
-    } catch (e: any) {
-        if (e.message && e.message.includes('no such table')) {
-            console.warn(`[D1] Update ignored: Table ${resolved} does not exist.`);
-            return data;
-        }
-        throw e;
-    }
+    await this.query(sql, [...keys.map(k => filteredData[k]), id]);
+    return data;
   }
 
   async set(collection: string, id: string, data: any): Promise<any> {
-    try {
-        const existing = await this.get(collection, id);
-        const resolved = resolveCollection(collection);
-        const pk = this.getPk(resolved);
-        
-        if (existing) {
-            return await this.update(collection, id, data);
-        }
-        
-        const insertData = { ...data };
-        if (!insertData[pk]) insertData[pk] = id;
-        
-        return await this.create(collection, insertData);
-    } catch (e: any) {
-        if (e.message && e.message.includes('no such table')) {
-            console.warn(`[D1] Set ignored: Table ${collection} does not exist.`);
-            return { ...data, id };
-        }
-        throw e;
+    const existing = await this.get(collection, id);
+    const resolved = resolveCollection(collection);
+    const pk = this.getPk(resolved);
+    
+    if (existing) {
+        return await this.update(collection, id, data);
     }
+    
+    const insertData = { ...data };
+    if (!insertData[pk]) insertData[pk] = id;
+    
+    return await this.create(collection, insertData);
   }
 
   async delete(collection: string, id: string): Promise<boolean> {

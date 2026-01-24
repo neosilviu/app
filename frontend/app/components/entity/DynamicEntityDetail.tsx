@@ -12,7 +12,7 @@ import { FileUploader } from '~/components/ui/file-uploader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { Dialog, DialogContent, DialogHeader,  DialogTitle, DialogDescription, DialogFooter } from '~/components/ui/dialog';
 import { GlassCard } from '~/components/ui/GlassCard';
-import { api, cn, socket, renderString, getLocalizedPath } from '~/lib/core';
+import { api, cn, socket, renderString, getLocalizedPath, ValidationUtils } from '~/lib/core';
 import { normalizeEntity } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
 import { useConfig } from '~/hooks/useConfig';
@@ -69,13 +69,10 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             if (res.success && res.data) {
                 // Enterprise Level 8: Recursive merge to preserve existing data but overwrite with AI findings
                 setFormData((prev: any) => ({ ...prev, ...res.data }));
-                toast.success(renderString({
-                    ro: "Datele au fost extrase și aplicate cu succes!",
-                    en: "Data extracted and applied successfully!"
-                }, lang));
+                toast.success(t('common:restore_success')); 
                 setIsAiModalOpen(false);
             } else {
-                toast.error(res.error || "AI Extraction failed");
+                toast.error(res.error || t('common:save_error'));
             }
         } catch (e: any) {
             toast.error(e.message);
@@ -216,32 +213,47 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             if (!shouldShowField(f)) return;
             const val = formData[f.name];
             const isRequired = f.req || f.required;
+            const fieldLabel = renderString(f.label, lang);
 
-            // Required Check
+            // 1. Required Check
             if (isRequired && (val === undefined || val === null || val === '')) {
-                newErrors[f.name] = "Acest câmp este obligatoriu";
+                newErrors[f.name] = ValidationUtils.getErrorMessage('required', fieldLabel, constants, lang);
                 return;
             }
 
             // Skip further validation if empty and not required
             if (val === undefined || val === null || val === '') return;
 
-            // Pattern Check (Regex)
-            const pattern = f.validation?.pattern || f.pattern;
-            if (pattern && !new RegExp(pattern).test(String(val))) {
-                newErrors[f.name] = f.patternMessage || f.validation?.message || "Format invalid (Regex)";
+            // 2. Email Special Check (Enterprise Architecture)
+            if (f.type === 'email' && !ValidationUtils.isValidEmail(String(val))) {
+                newErrors[f.name] = ValidationUtils.getErrorMessage('invalid_email', fieldLabel, constants, lang);
+                return;
             }
 
-            // Min/Max Length or Value
+            // 3. Pattern Check (Regex)
+            const pattern = f.validation?.pattern || f.pattern;
+            if (pattern && !new RegExp(pattern).test(String(val))) {
+                newErrors[f.name] = f.patternMessage || f.validation?.message || ValidationUtils.getErrorMessage('invalid_format', fieldLabel, constants, lang);
+            }
+
+            // 4. Min/Max Validation (Registry Driven)
             const min = f.validation?.min !== undefined ? f.validation.min : f.min;
             const max = f.validation?.max !== undefined ? f.validation.max : f.max;
 
             if (f.type === 'number' || f.type === 'currency') {
-                if (min !== undefined && Number(val) < min) newErrors[f.name] = `Valoarea minimă este ${min}`;
-                if (max !== undefined && Number(val) > max) newErrors[f.name] = `Valoarea maximă este ${max}`;
+                if (min !== undefined && Number(val) < min) {
+                    newErrors[f.name] = ValidationUtils.getErrorMessage('min_value', fieldLabel, constants, lang, { min });
+                }
+                if (max !== undefined && Number(val) > max) {
+                    newErrors[f.name] = ValidationUtils.getErrorMessage('max_value', fieldLabel, constants, lang, { max });
+                }
             } else if (typeof val === 'string') {
-                if (min !== undefined && val.length < min) newErrors[f.name] = `Lungimea minimă este ${min} caractere`;
-                if (max !== undefined && val.length > max) newErrors[f.name] = `Lungimea maximă este ${max} caractere`;
+                if (min !== undefined && val.length < min) {
+                    newErrors[f.name] = ValidationUtils.getErrorMessage('min_length', fieldLabel, constants, lang, { min });
+                }
+                if (max !== undefined && val.length > max) {
+                    newErrors[f.name] = ValidationUtils.getErrorMessage('max_length', fieldLabel, constants, lang, { max });
+                }
             }
         });
         setErrors(newErrors);
@@ -276,7 +288,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
 
     const handleSave = async () => {
         if (!validateForm()) {
-            toast.error("Vă rugăm să corectați erorile din formular");
+            toast.error(t('common:validation_error'));
             return;
         }
         setSaving(true);
@@ -286,15 +298,15 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             
             const res = await method(endpoint, formData);
             if (res.success) {
-                toast.success(isNew ? "Creat cu succes" : "Actualizat cu succes");
+                toast.success(t(isNew ? 'common:create_success' : 'common:update_success'));
                 if (isNew) navigate(`../${res.data?.id || res.data?.ID || ''}`, { replace: true });
                 else fetchRecord();
             } else {
-                toast.error("Salvare eșuată: " + res.error);
+                toast.error(t(isNew ? 'common:create_error' : 'common:update_error') + ": " + res.error);
                 if (res.validationErrors) setErrors(res.validationErrors);
             }
         } catch (e: any) {
-            toast.error("Ereare la salvare: " + e.message);
+            toast.error(t('common:save_error') + ": " + e.message);
         } finally {
             setSaving(false);
         }
@@ -302,10 +314,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
 
     const handleDelete = async () => {
         // First generic confirmation
-        if (!confirm(renderString({
-            ro: "Ești sigur că vrei să ștergi această înregistrare? Acțiunea este ireversibilă.",
-            en: "Are you sure you want to delete this record? This action cannot be undone."
-        }, lang))) return;
+        if (!confirm(t('common:confirm_delete'))) return;
 
         try {
             // Step 1: Attempt delete (Enterprise Level 8: uses DB collection endpoint)
@@ -322,30 +331,30 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             }
 
             if (res.success) {
-                toast.success(renderString({ ro: "Înregistrare ștearsă", en: "Record deleted" }, lang));
+                toast.success(t('common:delete_success'));
                 navigate('..', { replace: true });
             } else {
-                toast.error(res.error || "Delete failed");
+                toast.error(res.error || t('common:delete_error'));
             }
         } catch (e: any) {
             console.error("Delete error:", e);
-            toast.error("Delete failed: " + e.message);
+            toast.error(t('common:delete_error') + ": " + e.message);
         }
     };
 
     const handleRollback = async (auditId: string) => {
-        if (!confirm("Sigur doriți să restaurați această versiune? Datele actuale vor fi suprascrise.")) return;
+        if (!confirm(t('common:confirm_restore'))) return;
         try {
             // Enterprise Level 8: Unified Action Endpoint
             const res = await api.brain.post(`action/undo/${auditId}`);
             if (res.success) {
-                toast.success("Date restaurate cu succes!");
+                toast.success(t('common:restore_success'));
                 fetchRecord();
             } else {
-                toast.error("Restauraore eșuată: " + res.error);
+                toast.error(t('common:restore_error') + ": " + res.error);
             }
         } catch (e: any) {
-            toast.error("Eroare la restaurare: " + e.message);
+            toast.error(t('common:restore_error') + ": " + e.message);
         }
     };
 
@@ -359,22 +368,23 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         switch (action.type) {
             case 'whatsapp-trigger':
                 const phone = action.phoneNumberField ? formData[action.phoneNumberField] : (field.type === 'phone' ? val : '');
-                if (!phone) return toast.error("Număr de telefon lipsă");
+                if (!phone) return toast.error(t('common:missing_phone'));
                 const waText = action.template ? processTemplate(action.template) : '';
                 window.open(`https://wa.me/${String(phone).replace(/\D/g, '')}?text=${encodeURIComponent(waText)}`, '_blank');
                 break;
             case 'email-trigger':
                 const email = action.emailField ? formData[action.emailField] : (field.type === 'email' ? val : '');
-                if (!email) return toast.error("Adresă de email lipsă");
+                if (!email) return toast.error(t('common:missing_email'));
                 window.location.href = `mailto:${email}`;
                 break;
             case 'phone-call':
                 const num = action.phoneNumberField ? formData[action.phoneNumberField] : (field.type === 'phone' ? val : '');
-                if (!num) return toast.error("Număr de telefon lipsă");
+                if (!num) return toast.error(t('common:missing_phone'));
                 window.location.href = `tel:${num}`;
                 break;
             case 'url-link':
                 const url = action.urlField ? formData[action.urlField] : (field.type === 'url' ? val : '');
+                if (!url) return toast.error(t('common:missing_url'));
                 if (url) window.open(url.startsWith('http') ? url : `https://${url}`, '_blank');
                 break;
         }
@@ -1133,10 +1143,10 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                             </div>
                             <div>
                                 <DialogTitle className="text-2xl font-black italic uppercase tracking-tighter text-slate-900 leading-none">
-                                    {renderString(t('common:ai_extraction_title', 'Smart Extractor'), lang)}
+                                    {renderString(t('common:ai_extraction_title'), lang)}
                                 </DialogTitle>
                                 <DialogDescription className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">
-                                    {renderString(t('common:ai_extraction_desc', 'Extract data from any source automatically'), lang)}
+                                    {renderString(t('common:ai_extraction_desc'), lang)}
                                 </DialogDescription>
                             </div>
                         </div>

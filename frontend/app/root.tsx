@@ -57,7 +57,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <html lang={data?.locale ?? "ro"} dir={i18n.dir()}>
+    <html lang={data?.locale || (REGISTRY_BASELINE?.I18N_CONFIG?.defaultLanguage) || "ro"} dir={i18n.dir()}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

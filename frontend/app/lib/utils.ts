@@ -101,6 +101,29 @@ export function debounce<T extends (...args: any[]) => any>(
   };
 }
 
+export function isValidEmail(email: string): boolean {
+  if (typeof email !== 'string') return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
+ * Enterprise Level 8: Registry-Aware Validation
+ */
+export const ValidationUtils = {
+  isValidEmail,
+  getErrorMessage: (key: string, label: string, registry: any, lang: string = 'ro', params: Record<string, any> = {}) => {
+    const template = registry?.I18N?.validation?.[key] || key;
+    let msg = renderString(template, lang).replace('{{label}}', label);
+    
+    // Replace extra params like {{min}}, {{max}}, {{length}}
+    Object.entries(params).forEach(([k, v]) => {
+      msg = msg.replace(`{{${k}}}`, String(v));
+    });
+    
+    return msg;
+  }
+};
+
 /**
  * Extracts a string from an i18n object or returns the string directly.
  * Handles: string | { [lang: string]: string } | null | undefined
@@ -177,11 +200,6 @@ export function renderString(value: any, lang: string = 'ro'): string {
     // 3. Fallback for primitives
     const final = String(value);
     return final === '[object Object]' ? '' : final;
-}
-
-export function isValidEmail(email: string): boolean {
-  if (typeof email !== 'string') return false;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export function sanitizeFilename(n: string | any): string {
