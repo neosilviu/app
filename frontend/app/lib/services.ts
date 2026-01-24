@@ -524,16 +524,22 @@ export class CurrencyService {
     async fetchLatestRates() {
         const config = _registry?.CURRENCY || {};
         const bnrUrl = config.BASE_URL || 'https://www.bnr.ro/nbrfxrates.xml';
-        const eurFallback = config.EUR_FALLBACK || 4.97;
         try {
             const resp = await fetch(bnrUrl);
+            if (!resp.ok) {
+                throw new Error(`BNR API returned ${resp.status}: ${resp.statusText}`);
+            }
             const jsonObj = this.parser.parse(await resp.text());
             const cube = jsonObj.DataSet.Body.Cube;
-            const result: any = { date: cube['@_date'], rates: { EUR: eurFallback, USD: config.USD_FALLBACK || 4.55 } };
+            const result: any = { date: cube['@_date'], rates: { EUR: 4.97 } };
             const rates = Array.isArray(cube.Rate) ? cube.Rate : [cube.Rate];
             rates.forEach((r: any) => { if (r) result.rates[r['@_currency']] = parseFloat(r['#text']); });
             return result;
-        } catch (e) { return { rates: { EUR: eurFallback }, date: new Date().toISOString() }; }
+        } catch (e: any) {
+            console.error("[CURRENCY-SERVICE] Failed to fetch rates:", e.message);
+            throw e; // Propagate error instead of silently returning fallback
+        }
     }
 }
+
 
