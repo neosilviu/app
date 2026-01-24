@@ -12,7 +12,7 @@ if (typeof process !== 'undefined') {
 import { getDb, clearColumnCache } from './lib/d1.server';
 import { getAuth, verifyAuth } from "./lib/auth-core.server";
 import { AiService, getRegistry, clearRegistryCache, resolveCollection, getPrimaryKey, normalizeEntity, safeParse, getDisplayValue, renderString } from './lib/core';
-import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin } from './lib/auth-utils';
+import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin, checkAccessAsync } from './lib/auth-utils';
 import { ensureSystemTables, waitForDbReady, mapFieldType, ensureBaselineSync, syncEntityTable } from './lib/db-init.server';
 
 // --- SYSTEM CONSTANTS (Level 8: Decoupled to Registry - NO FAILSAFES) ---
@@ -42,7 +42,18 @@ const json = (payload: any, status = 200) => Response.json(payload, {
     headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } 
 });
 const success = (data: any = true) => json({ success: true, data });
-const error = (msg: string, status = 400) => json({ success: false, error: msg }, status);
+
+/**
+ * Enterprise Level 8: Centralized Error Response Helper
+ * Supports both plain string errors and multilingual { ro, en } objects
+ */
+const error = (msg: string | Record<string, string>, status = 400, selectedLang = 'ro') => {
+    let errorMsg = msg;
+    if (typeof msg === 'object') {
+        errorMsg = msg[selectedLang] || msg.en || msg.ro || JSON.stringify(msg);
+    }
+    return json({ success: false, error: String(errorMsg) }, status);
+};
 
 const deepParse = (obj: any): any => {
     if (typeof obj === 'string' && (obj.startsWith('{') || obj.startsWith('['))) {
@@ -656,88 +667,6 @@ function createAuditProxy(db: any, user: any) {
 // (Initialization logic moved to lib/db-init.server.ts)
 
 // --- PERMISSION HELPERS ---
-async function checkAccess(db: any, user: any, entity: string, action: string) {
-    if (!user) return false;
-
-    // Enterprise Level 8: Registry-Driven Permission check
-    const registry = await mergeRegistryWithD1(db, user.workspaceId);
-    
-    if (isGlobalAdmin(user, registry)) return true;
-
-    try {
-        // 1. Check Granular User-Level Permissions (Enterprise Level 8)
-        // Action Mapping: UI (add, edit, view, delete) -> Backend (create, update, view, delete)
-        const uiActionMap: Record<string, string> = {
-            'create': 'add',
-            'update': 'edit',
-            'view': 'view',
-            'delete': 'delete'
-        };
-        const mappedAction = uiActionMap[action] || action;
-
-        // Fetch permissions from BOTH the global profile (contact) AND the workspace-specific link (workspace_user)
-        // This ensures that global and local permissions are merged (Level 8 Redundancy)
-        const [userContact, workspaceMember] = await Promise.all([
-            db.get('contact', user.id),
-            user.workspaceId ? db.query("SELECT permission FROM workspace_user WHERE userId = ? AND workspaceId = ? LIMIT 1", [user.id, user.workspaceId]).then((res: any) => res[0]).catch(() => null) : Promise.resolve(null)
-        ]);
-
-        const combinedRaw = [];
-        if (userContact?.permission) combinedRaw.push(userContact.permission);
-        if (workspaceMember?.permission) combinedRaw.push(workspaceMember.permission);
-
-        for (const raw of combinedRaw) {
-            try {
-                const perms = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                
-                // Case 1: Granular Entity Object { "lead": { "view": true, "add": false } }
-                if (perms[entity] && typeof perms[entity] === 'object') {
-                    if (perms[entity][mappedAction] === true) return true;
-                }
-                
-                // Case 2: Array of permission strings ["contact:view", "contact:edit"]
-                if (Array.isArray(perms)) {
-                    if (perms.includes(`${entity}:${mappedAction}`) || perms.includes(`${entity}:*`) || perms.includes('*')) return true;
-                }
-            } catch (e) {
-                console.warn("[CHECK-ACCESS] Failed to parse permissions", e);
-            }
-        }
-
-        // 2. Check Entity-Specific Permissions (Defined in Builder)
-        const entityConfigs = registry.ENTITY_CONFIG || {};
-        const entityDef = Object.values(entityConfigs).find((e: any) => e.tableName === entity || e.name === entity) as any;
-        
-        if (entityDef?.permission?.role) {
-            const rolePerms = entityDef.permission.role[user.role];
-            
-            // Handle Object Format (Enterprise Level 8) - { read: true, write: false, delete: false }
-            if (rolePerms && typeof rolePerms === 'object' && !Array.isArray(rolePerms)) {
-                if (action === 'view' && rolePerms.read) return true;
-                if ((action === 'create' || action === 'update') && rolePerms.write) return true;
-                if (action === 'delete' && rolePerms.delete) return true;
-            }
-        }
-
-        // 3. Fallback to Global Role Permissions (SYSTEM_ROLE)
-        const roleDef = (registry.SYSTEM_ROLE || {})[user.role];
-        if (!roleDef) return false;
-
-        const rolePerms = roleDef.permission || [];
-        const hasAccess = rolePerms.includes('*') || rolePerms.includes(action) || rolePerms.includes(`${entity}:*`) || rolePerms.includes(`${entity}:${action}`);
-        
-        if (!hasAccess) {
-            console.warn(`[CHECK-ACCESS] Access Denied: user=${user.email}, role=${user.role}, entity=${entity}, action=${action}, permissions=${JSON.stringify(rolePerms)}`);
-        }
-        
-        return hasAccess;
-    } catch (e: any) {
-        console.error("[BRAIN-ACCESS-ERROR]", e.message);
-        // NO FAILSAFE: Access must be explicitly granted or session must be valid
-        return false;
-    }
-}
-
 // --- DOMAIN HANDLERS ---
 const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
     'ai/extract': async ({ db, body, env, user, selectedLang }) => {
@@ -2258,7 +2187,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             if (action === 'delete' && deletable === false) return error(`Entity '${collection}' is locked: Deletion disabled in Registry.`, 403);
         }
 
-        if (!(await checkAccess(db, user, collection, action))) {
+        if (!(await checkAccessAsync(db, user, collection, action, registry))) {
             return error(`Access Denied: Nu ai permisiunea de '${action}' pentru entitatea '${collection}'`, 403);
         }
 
@@ -2915,7 +2844,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             if (!log || !log.snapshot_before) return error(renderString({ ro: "Snapshot-ul nu există", en: "Snapshot not found" }, selectedLang));
             
             // Security check
-            if (!(await checkAccess(db, user, log.entityType, 'update'))) return error("Forbidden", 403);
+            if (!(await checkAccessAsync(db, user, log.entityType, 'update', registry))) return error("Forbidden", 403);
 
             let beforeData;
             try {
@@ -3083,7 +3012,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 if (!searchFields || searchFields.length === 0) continue;
                 
                 // Security check: can user read this entity?
-                if (!(await checkAccess(db, user, entityName, 'view'))) {
+                if (!(await checkAccessAsync(db, user, entityName, 'view', registry))) {
                     continue;
                 }
                 
@@ -3175,7 +3104,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
             
             // Security check
-            if (!(await checkAccess(db, user, entityType, 'update'))) {
+            if (!(await checkAccessAsync(db, user, entityType, 'update', registry))) {
                 return error(renderString({ 
                     ro: "Acces refuzat la această entitate", 
                     en: "Access denied to this entity" 
