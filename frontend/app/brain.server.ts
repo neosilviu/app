@@ -36,7 +36,17 @@ declare global {
 
 const global = globalThis as any;
 
-// --- CORE HELPERS --- 
+// --- CORE HELPERS ---
+
+/**
+ * UNIFIED API RESPONSE FORMAT (Enterprise Level 8)
+ * 
+ * ALL handlers MUST use:
+ * - success(data) → { success: true, data: {...} }
+ * - error(msg, status, lang) → { success: false, error: "..." }
+ * 
+ * This ensures consistent client-side error handling and middleware behavior.
+ */
 const json = (payload: any, status = 200) => Response.json(payload, { 
     status, 
     headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } 
@@ -2758,7 +2768,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 createdAt: new Date().toISOString()
             });
 
-            return json({ success: true, response });
+            return success({ response });
         }
 
         if (op === "import-ai" || body.action === "import-ai") {
