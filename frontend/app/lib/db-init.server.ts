@@ -160,6 +160,30 @@ export function mapFieldType(type: string): string {
 
 export async function ensureBaselineSync(db: any, registry: any) {
     const baselineEntities = registry.ENTITY_CONFIG || registry.ENTITY_CONFIG || registry.entity_definition || registry.entity_definition || {};
+    
+    // Step 0: Ensure entity_definition has all required columns (Enterprise Level 8 Auto-Heal)
+    const requiredColumns = [
+        'id', 'name', 'label', 'labelPlural', 'description', 'icon', 'colorTheme',
+        'tableName', 'displayField', 'fields', 'validations', 'relationships',
+        'uiConfig', 'menuConfig', 'permission', 'features', 'layout',
+        'dashboardConfig', 'isSystem', 'workspaceId', 'createdAt', 'updatedAt'
+    ];
+    
+    try {
+        const existingCols = await db.query(`PRAGMA table_info("entity_definition")`);
+        const existingColNames = existingCols.map((c: any) => c.name);
+        
+        for (const col of requiredColumns) {
+            if (!existingColNames.includes(col)) {
+                const colType = ['fields', 'validations', 'relationships', 'uiConfig', 'menuConfig', 'permission', 'features', 'layout', 'dashboardConfig'].includes(col) ? 'JSON' : 'TEXT';
+                console.log(`[DB-INIT] AUTO-HEAL: Adding missing column "${col}" to entity_definition`);
+                await db.exec(`ALTER TABLE "entity_definition" ADD COLUMN "${col}" ${colType}`);
+            }
+        }
+    } catch (e: any) {
+        console.warn("[DB-INIT] entity_definition column check failed:", e.message);
+    }
+    
     if (baselineEntities && Object.keys(baselineEntities).length > 0) {
         const metaStatements: any[] = [];
         
@@ -171,28 +195,16 @@ export async function ensureBaselineSync(db: any, registry: any) {
                 if (normalized) {
                     metaStatements.push(
                         db.prepare(`INSERT OR REPLACE INTO entity_definition (
-                            id, name, label, labelPlural, description, icon, colorTheme, 
-                            tableName, displayField, fields, validations, relationships, 
-                            uiConfig, menuConfig, permission, features, layout, 
-                            dashboardConfig, isSystem, workspaceId
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                            id, name, label, labelPlural, tableName, icon, fields, workspaceId
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
                         .bind(
-                            normalized.name, normalized.name, 
+                            normalized.name, 
+                            normalized.name, 
                             typeof normalized.label === 'object' ? JSON.stringify(normalized.label) : normalized.label,
                             typeof normalized.labelPlural === 'object' ? JSON.stringify(normalized.labelPlural) : normalized.labelPlural,
-                            typeof normalized.description === 'object' ? JSON.stringify(normalized.description) : (normalized.description || ''), 
-                            normalized.icon || 'Box', normalized.colorTheme || 'blue', 
-                            normalized.tableName || normalized.name, normalized.displayField || 'name',
-                            JSON.stringify(normalized.fields || {}),
-                            JSON.stringify(normalized.validations || {}),
-                            JSON.stringify(normalized.relationships || {}),
-                            JSON.stringify(normalized.uiConfig || {}),
-                            JSON.stringify(normalized.menuConfig || {}),
-                            JSON.stringify(normalized.permission || {}),
-                            JSON.stringify(normalized.features || {}),
-                            JSON.stringify(normalized.layout || {}),
-                            JSON.stringify(normalized.dashboardConfig || {}),
-                            1, // isSystem
+                            normalized.tableName || normalized.name, 
+                            normalized.icon || 'Box',
+                            JSON.stringify(normalized.fields || []),
                             'system'
                         )
                     );
@@ -238,7 +250,7 @@ export async function syncWorkspaceSettingsBaseline(db: any, registry: any) {
         timezone: registry.timezone || 'UTC',
         logoUrl: systemSettings.logo_url || '/logo.png',
         ai: JSON.stringify(aiConfig),
-        settings: JSON.stringify(systemSettings)
+        setting: JSON.stringify(systemSettings)
     };
 
     // Use INSERT OR IGNORE to not overwrite if user modified it, or REPLACE if we want to force baseline
