@@ -96,25 +96,6 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
                  console.warn("[DB-INIT] Transient error checking _metadata:", e.message);
             }
 
-            // Enterprise Level 8: Namespace Normalization Migration
-            try {
-                // First, remove any potential conflicts by comparing lowercase versions
-                // We keep the first one (MIN(rowid)) to ensure unicity before update
-                await db.exec(`
-                    DELETE FROM SYSTEM_SETTING 
-                    WHERE rowid NOT IN (
-                        SELECT MIN(rowid) 
-                        FROM SYSTEM_SETTING 
-                        GROUP BY LOWER(namespace), LOWER(id)
-                    )
-                `);
-                
-                // Now safely update to lowercase
-                await db.exec("UPDATE SYSTEM_SETTING SET namespace = LOWER(namespace), id = LOWER(id)");
-            } catch (e: any) {
-                console.warn("[DB-INIT] Namespace normalization partially failed or skipped:", e.message);
-            }
-
             // Step 2: DNA-Driven Schema Sychronization
             const baseline = await loadBaseline();
             const coreEntities = baseline.ENTITY_CONFIG || {};
@@ -124,6 +105,15 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             // Ensure physical tables for ALL entities in Registry
             for (const [name, def] of Object.entries(coreEntities)) {
                 await syncEntityTable(db, { ...(def as any), name }, baseline);
+            }
+
+            // Enterprise Level 8: Namespace Normalization Migration (After tables are synced)
+            try {
+                // Remove duplicates and normalize to lowercase
+                await db.exec(`DELETE FROM "SYSTEM_SETTING" WHERE rowid NOT IN (SELECT MIN(rowid) FROM "SYSTEM_SETTING" GROUP BY LOWER(namespace), LOWER(id))`);
+                await db.exec(`UPDATE "SYSTEM_SETTING" SET namespace = LOWER(namespace), id = LOWER(id)`);
+            } catch (e: any) {
+                console.warn("[DB-INIT] Namespace normalization partially failed or skipped:", e.message);
             }
 
             // Step 3: Specific Migrations / Fixes (Keep only what's absolutely necessary)
