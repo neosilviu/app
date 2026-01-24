@@ -666,6 +666,17 @@ function createAuditProxy(db: any, user: any) {
 
 // (Initialization logic moved to lib/db-init.server.ts)
 
+// --- AI SERVICE FACTORY (Enterprise Level 8) ---
+// Centralized AI Service initialization with config merging
+// This replaces 3 scattered AiService instantiations in handlers
+const createAiService = (env: any, registry: any, workspaceAiConfig?: any): AiService => {
+    const aiConfig = workspaceAiConfig 
+        ? { ...registry.AI_CONFIG, ...workspaceAiConfig }
+        : registry.AI_CONFIG || {};
+    
+    return new AiService(env, { ai_config: aiConfig, db: null });
+};
+
 // --- PERMISSION HELPERS ---
 // --- DOMAIN HANDLERS ---
 const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
@@ -674,8 +685,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         if (!content && sourceType === 'text') return error("Content is required", 400);
 
         const registry = await getRegistry(db);
-        const aiConfig = registry.AI_CONFIG || {};
-        const ai = new AiService(env, { ai_config: aiConfig, db });
+        const ai = createAiService(env, registry);
 
         // Build the extraction prompt
         const schemaBrief = schema.map((f: any) => `- ${f.name} (${f.type}): ${renderString(f.label, selectedLang)}`).join('\n');
@@ -704,8 +714,8 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
         try {
             const response = await ai.chat(prompt, [], {
-                provider: aiConfig.active_provider,
-                model: aiConfig.preferredModel || 'gemini-1.5-flash',
+                provider: registry.AI_CONFIG?.active_provider,
+                model: registry.AI_CONFIG?.preferredModel || 'gemini-1.5-flash',
                 temperature: 0.1, // Low temperature for extraction
                 systemPrompt: "You are a data extraction specialist. Always return valid JSON matching the requested schema."
             });
@@ -2650,8 +2660,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
         }
 
-        const aiConfig = { ...registry.AI_CONFIG, ...workspaceAiConfig };
-        const ai = new AiService(env, { ai_config: aiConfig, db });
+        const ai = createAiService(env, registry, workspaceAiConfig);
 
         if (op === "architect" || body.action === "architect") {
             const { prompt, provider, model } = body;
@@ -2668,8 +2677,8 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
             const response = await ai.chat(promptContext.prompt, [], {
                 systemPrompt: promptContext.systemPrompt,
-                provider: provider || aiConfig.active_provider,
-                model: promptContext.model || model || aiConfig.model || aiConfig.preferredModel,
+                provider: provider || registry.AI_CONFIG?.active_provider,
+                model: promptContext.model || model || registry.AI_CONFIG?.model || registry.AI_CONFIG?.preferredModel,
                 response_mime_type: 'application/json'
             });
             
@@ -2717,7 +2726,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
 
             // Apply Personality from Workspace or Context
-            const activePersonality = context.personality || aiConfig.personality || 'professional';
+            const activePersonality = context.personality || registry.AI_CONFIG?.personality || 'professional';
             const personalityInstruction = {
                 professional: "Maintain a professional, concise and business-oriented tone.",
                 creative: "Be creative, expressive and inspirational. Feel free to use metaphors.",
@@ -2731,10 +2740,10 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
             
             const response = await ai.chat(promptContext.prompt, history, { 
-                provider: aiConfig.active_provider, 
-                model: promptContext.model || body.model || aiConfig.preferredModel || aiConfig.model, 
-                temperature: aiConfig.temperature,
-                maxTokens: aiConfig.maxTokens,
+                provider: registry.AI_CONFIG?.active_provider, 
+                model: promptContext.model || body.model || registry.AI_CONFIG?.preferredModel || registry.AI_CONFIG?.model, 
+                temperature: registry.AI_CONFIG?.temperature,
+                maxTokens: registry.AI_CONFIG?.maxTokens,
                 systemPrompt 
             });
 
@@ -2799,7 +2808,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 }
 
                 // Inject personality instruction if provided or from workspace config
-                const activePersonality = personality || aiConfig.personality || 'professional';
+                const activePersonality = personality || registry.AI_CONFIG?.personality || 'professional';
                 const personalityMap: any = {
                     professional: "Maintain a professional, concise and business-oriented tone.",
                     creative: "Be creative, expressive and inspirational. Feel free to use metaphors.",
@@ -2811,9 +2820,9 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 const systemPrompt = personalityMap[activePersonality] || "You are a helpful AI assistant.";
 
                 const response = await ai.chat(finalPrompt, [], { 
-                    provider: aiConfig.active_provider,
-                    model: model || aiConfig.preferredModel || aiConfig.model,
-                    temperature: temperature ?? aiConfig.temperature,
+                    provider: registry.AI_CONFIG?.active_provider,
+                    model: model || registry.AI_CONFIG?.preferredModel || registry.AI_CONFIG?.model,
+                    temperature: temperature ?? registry.AI_CONFIG?.temperature,
                     systemPrompt
                 });
 
@@ -3320,7 +3329,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             const cached = await db.get("_help_content");
             if (cached) return success(deepParse(cached));
 
-            const ai = new AiService(env, { ai_config: registry.AI_CONFIG, db });
+            const ai = createAiService(env, registry);
             const text = await ai.chat(`Create help for section: ${id}. Language: ${lang}.`, [], { 
                 systemPrompt: "Return JSON: { \"title\": \"...\", \"content\": \"...\", \"description\": \"...\" }" 
             });
