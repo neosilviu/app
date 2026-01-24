@@ -15,6 +15,15 @@ import { AiService, getRegistry, clearRegistryCache, resolveCollection, getPrima
 import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin, checkAccessAsync } from './lib/auth-utils';
 import { ensureSystemTables, waitForDbReady, mapFieldType, ensureBaselineSync, syncEntityTable } from './lib/db-init.server';
 import { executeEntityAction } from './lib/brain-engine.server';
+import { 
+    deepParse, 
+    deepStringify, 
+    transformTranslations, 
+    convertToCSV, 
+    jsonHelper as json, 
+    successHelper as success, 
+    errorHelper as error 
+} from './lib/brain-utils.server';
 
 /**
  * THE BRAIN - Enterprise Level 8 Metaprogramming Interface
@@ -84,113 +93,29 @@ declare global {
 
 const global = globalThis as any;
 
-// --- CORE HELPERS ---
+/**
+ * WORKFLOW STATE MACHINE - Enterprise Level 8
+ */
 
 /**
- * UNIFIED API RESPONSE FORMAT (Enterprise Level 8)
- * 
- * ALL handlers MUST use:
- * - success(data) → { success: true, data: {...} }
- * - error(msg, status, lang) → { success: false, error: "..." }
- * 
- * This ensures consistent client-side error handling and middleware behavior.
+ * WORKFLOW STATE MACHINE - Enterprise Level 8
  */
-const json = (payload: any, status = 200) => Response.json(payload, { 
-    status, 
-    headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } 
-});
-const success = (data: any = true) => json({ success: true, data });
 
 /**
- * Enterprise Level 8: Centralized Error Response Helper
- * Supports both plain string errors and multilingual { ro, en } objects
+ * WORKFLOW STATE MACHINE - Enterprise Level 8
  */
-const error = (msg: string | Record<string, string>, status = 400, selectedLang = 'ro') => {
-    let errorMsg = msg;
-    if (typeof msg === 'object') {
-        errorMsg = msg[selectedLang] || msg.en || msg.ro || JSON.stringify(msg);
-    }
-    return json({ success: false, error: String(errorMsg) }, status);
-};
-
-const deepParse = (obj: any): any => {
-    if (typeof obj === 'string' && (obj.startsWith('{') || obj.startsWith('['))) {
-        try { return deepParse(JSON.parse(obj)); } catch { return obj; }
-    }
-    if (!obj || typeof obj !== 'object') return obj;
-    const result = Array.isArray(obj) ? [...obj] : { ...obj };
-    for (const key in result) result[key] = deepParse(result[key]);
-    return result;
-};
-
-const deepStringify = (obj: any): any => {
-    if (!obj || typeof obj !== 'object') return obj;
-    const result: any = Array.isArray(obj) ? [] : {};
-    for (const [k, v] of Object.entries(obj)) {
-        if (v && typeof v === 'object' && !Array.isArray(v)) {
-            try { result[k] = JSON.stringify(v); } catch { result[k] = v; }
-        } else result[k] = v;
-    }
-    return result;
-};
-
-const convertToCSV = (data: any[]): string => {
-    if (!data || data.length === 0) {
-        return "";
-    }
-    const headers = Object.keys(data[0]);
-    const csvRows = [];
-    csvRows.push(headers.join(','));
-
-    for (const row of data) {
-        const values = headers.map(header => {
-            let value = row[header];
-            if (value === null || value === undefined) {
-                value = '';
-            } else if (typeof value === 'object') {
-                value = JSON.stringify(value);
-            }
-            
-            const stringValue = String(value);
-            const escaped = stringValue.replace(/"/g, '""');
-            return `"${escaped}"`;
-        });
-        csvRows.push(values.join(','));
-    }
-    return csvRows.join('\n');
-};
 
 /**
- * TRANSLATION TRANSFORMER - Enterprise Level 8
- * Converts multilingual fields (e.g. { ro: "...", en: "..." }) to a single value
- * based on the requested language, recursively through the entire response tree.
+ * WORKFLOW STATE MACHINE - Enterprise Level 8
  */
-const transformTranslations = (obj: any, lang: string = 'ro'): any => {
-    if (!obj) return obj;
-    
-    // Handle translation objects: { ro: 'text', en: 'text' }
-    if (typeof obj === 'object' && !Array.isArray(obj) && 
-        typeof obj[lang] === 'string' && 
-        Object.keys(obj).every((k) => typeof obj[k] === 'string')) {
-        return obj[lang] || obj['en'] || obj['ro'] || '';
-    }
-    
-    // Recursively transform arrays
-    if (Array.isArray(obj)) {
-        return obj.map(item => transformTranslations(item, lang));
-    }
-    
-    // Recursively transform objects
-    if (typeof obj === 'object') {
-        const result: any = {};
-        for (const [key, value] of Object.entries(obj)) {
-            result[key] = transformTranslations(value, lang);
-        }
-        return result;
-    }
-    
-    return obj;
-};
+
+/**
+ * WORKFLOW STATE MACHINE - Enterprise Level 8
+ */
+
+/**
+ * WORKFLOW STATE MACHINE - Enterprise Level 8
+ */
 
 /**
  * WORKFLOW STATE MACHINE - Enterprise Level 8
