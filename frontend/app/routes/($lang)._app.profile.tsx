@@ -52,30 +52,13 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
   const [workspace, profile] = await Promise.all([
     db.query(workspaceQuery, queryParams).catch(e => {
       console.error("[Profile] Workspace query failed:", e);
-      return [];
+      // Don't hide the error - let it propagate so caller can handle it
+      throw e;
     }),
     db.get("contact", user.sub)
   ]);
 
-  let list = Array.isArray(workspace) ? workspace : [];
-  
-  // Superadmin failsafe: if no workspace found for superadmin, fetch all
-  if (isGlobal && list.length === 0) {
-    try {
-      const allWs = await db.query("SELECT *, ? as userRole FROM workspace WHERE archived = 0 AND deletedAt IS NULL", [user.role]);
-      list = Array.isArray(allWs) ? allWs : [];
-    } catch (e) {
-      console.error("[Profile] Superadmin failsafe query failed:", e);
-    }
-  }
-  
-  // Fallback for dev mode
-  if (list.length === 0 && user.workspaceId) {
-    const ws = await db.get("workspace", user.workspaceId);
-    if (ws) {
-      list.push({ ...ws, userRole: "admin" });
-    }
-  }
+  const list = Array.isArray(workspace) ? workspace : [];
 
   return { workspace: list, profile };
 }
