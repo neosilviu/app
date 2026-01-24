@@ -284,6 +284,101 @@ export const CONSTANT = {
     'general': 'GENERAL',
     'root': 'GENERAL'
   },
+  flowRules: {
+    // Contact Workflow: Lead → Customer → Partner
+    contact: {
+      lead: {
+        nextStates: ['customer', 'archived'],
+        label: { ro: 'Lead → Client', en: 'Lead → Customer' },
+        requiresFields: ['email', 'name'],
+        action: 'convert_to_customer',
+        icon: 'ArrowRight'
+      },
+      customer: {
+        nextStates: ['partner', 'archived'],
+        label: { ro: 'Client → Partener', en: 'Customer → Partner' },
+        requiresFields: ['email', 'phone'],
+        action: 'upgrade_to_partner',
+        icon: 'ArrowRight'
+      },
+      partner: {
+        nextStates: ['archived'],
+        label: { ro: 'Partener → Arhivat', en: 'Partner → Archived' },
+        requiresFields: [],
+        action: 'archive_partner',
+        icon: 'Archive'
+      },
+      archived: {
+        nextStates: ['lead'],
+        label: { ro: 'Arhivat → Reactivare', en: 'Archived → Reactivate' },
+        requiresFields: [],
+        action: 'reactivate',
+        icon: 'RotateCcw'
+      }
+    },
+    // Deal Workflow: proposal → negotiation → won/lost
+    deal: {
+      proposal: {
+        nextStates: ['negotiation', 'lost'],
+        label: { ro: 'Propunere → Negociere', en: 'Proposal → Negotiation' },
+        requiresFields: ['title', 'value', 'contact_id'],
+        action: 'start_negotiation',
+        icon: 'Handshake'
+      },
+      negotiation: {
+        nextStates: ['won', 'lost'],
+        label: { ro: 'Negociere → Finalizare', en: 'Negotiation → Close' },
+        requiresFields: ['title', 'value'],
+        action: 'close_deal',
+        icon: 'CheckCircle'
+      },
+      won: {
+        nextStates: ['archived'],
+        label: { ro: 'Câştigat → Arhivare', en: 'Won → Archive' },
+        requiresFields: [],
+        action: 'archive_won',
+        icon: 'Archive'
+      },
+      lost: {
+        nextStates: ['proposal', 'archived'],
+        label: { ro: 'Pierdut → Repriza', en: 'Lost → Retry/Archive' },
+        requiresFields: [],
+        action: 'reopen_deal',
+        icon: 'RotateCcw'
+      }
+    },
+    // Task Workflow: todo → in_progress → done/blocked
+    task: {
+      todo: {
+        nextStates: ['in_progress'],
+        label: { ro: 'De făcut → În lucru', en: 'To Do → In Progress' },
+        requiresFields: ['title'],
+        action: 'start_task',
+        icon: 'Play'
+      },
+      in_progress: {
+        nextStates: ['done', 'blocked'],
+        label: { ro: 'În lucru → Finalizat/Blocat', en: 'In Progress → Done/Blocked' },
+        requiresFields: [],
+        action: 'complete_or_block',
+        icon: 'CheckCircle'
+      },
+      done: {
+        nextStates: ['todo'],
+        label: { ro: 'Gata → Reînnoire', en: 'Done → Renew' },
+        requiresFields: [],
+        action: 'renew_task',
+        icon: 'RotateCcw'
+      },
+      blocked: {
+        nextStates: ['in_progress', 'todo'],
+        label: { ro: 'Blocat → Reluare', en: 'Blocked → Resume' },
+        requiresFields: [],
+        action: 'unblock_task',
+        icon: 'Play'
+      }
+    }
+  },
   pagination: {
     defaultLimit: 20,
     maxLimit: 100,

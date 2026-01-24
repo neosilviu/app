@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { useConfig } from '~/hooks/useConfig';
 import { toast } from 'sonner';
 import { EntityHistoryWidget } from '~/components/entity/EntityHistoryWidget';
+import { WorkflowWidget } from '~/components/entity/WorkflowWidget';
 
 interface DynamicEntityDetailProps {
     entityId: string;
@@ -1090,6 +1091,15 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                             entityId={recordId}
                             maxHeight="500px"
                             showUndoButton={true}
+                        />
+                    )}
+
+                    {/* Enterprise Level 8: Workflow State Machine */}
+                    {!isNew && formData.status && (
+                        <WorkflowWidget 
+                            entityType={entityId}
+                            entityId={recordId}
+                            currentStatus={formData.status}
                         />
                     )}
 

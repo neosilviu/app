@@ -116,6 +116,86 @@ const transformTranslations = (obj: any, lang: string = 'ro'): any => {
     return obj;
 };
 
+/**
+ * WORKFLOW STATE MACHINE - Enterprise Level 8
+ * Validates and enforces state transitions based on flowRules from Registry
+ */
+const validateStateTransition = async (
+    db: any,
+    entityType: string,
+    entityId: string,
+    fromStatus: string,
+    toStatus: string,
+    registry: any,
+    currentData: any
+): Promise<{ valid: boolean; error?: string; nextStates?: string[] }> => {
+    const flowRules = registry?.CONSTANT?.flowRules || {};
+    const entityRules = flowRules[entityType];
+    
+    if (!entityRules) {
+        // No flow rules defined for this entity type - allow any transition
+        return { valid: true };
+    }
+    
+    const currentStateRule = entityRules[fromStatus];
+    if (!currentStateRule) {
+        return { 
+            valid: false, 
+            error: `Current state '${fromStatus}' is not defined in workflow for ${entityType}`,
+            nextStates: Object.keys(entityRules)
+        };
+    }
+    
+    const allowedStates = currentStateRule.nextStates || [];
+    if (!allowedStates.includes(toStatus)) {
+        return {
+            valid: false,
+            error: `Cannot transition from '${fromStatus}' to '${toStatus}'. Allowed: ${allowedStates.join(', ')}`,
+            nextStates: allowedStates
+        };
+    }
+    
+    // Check required fields for the transition
+    const requiredFields = currentStateRule.requiresFields || [];
+    const missingFields = requiredFields.filter((f: string) => !currentData[f]);
+    
+    if (missingFields.length > 0) {
+        return {
+            valid: false,
+            error: `Cannot transition to '${toStatus}'. Missing required fields: ${missingFields.join(', ')}`
+        };
+    }
+    
+    return { 
+        valid: true,
+        nextStates: allowedStates
+    };
+};
+
+/**
+ * Get allowed transitions for current state
+ */
+const getNextTransitions = (entityType: string, currentStatus: string, registry: any): any[] => {
+    const flowRules = registry?.CONSTANT?.flowRules || {};
+    const entityRules = flowRules[entityType];
+    
+    if (!entityRules || !entityRules[currentStatus]) {
+        return [];
+    }
+    
+    const stateRule = entityRules[currentStatus];
+    const nextStates = stateRule.nextStates || [];
+    const lang = 'ro'; // Default language for metadata
+    
+    return nextStates.map((state: string) => ({
+        value: state,
+        label: entityRules[state]?.label || { ro: state, en: state },
+        icon: entityRules[state]?.icon || 'ArrowRight',
+        action: entityRules[state]?.action || `transition_to_${state}`,
+        requiresFields: entityRules[state]?.requiresFields || []
+    }));
+};
+
 // --- CONFIG CACHE & PENDING FETCHES ---
 if (global.CACHED_CONFIGS === undefined) global.CACHED_CONFIGS = {};
 if (global.PENDING_CONFIG_FETCHES === undefined) global.PENDING_CONFIG_FETCHES = {};
@@ -2958,6 +3038,163 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             return success();
         }
         return error("Tag operation not found");
+    },
+    workflow: async ({ op, parts, db, user, body }) => {
+        const registry = await getRegistry(db);
+        const selectedLang = user?.preferredLanguage || registry.language || 'ro';
+        const entityType = parts[2];
+        const entityId = parts[3];
+        
+        // WORKFLOW TRANSITION
+        if (op === "transition") {
+            const { toStatus } = body || {};
+            if (!entityType || !entityId || !toStatus) {
+                return error(renderString({ 
+                    ro: "Entity type, ID și status țintă sunt necesare", 
+                    en: "Entity type, ID and target status required" 
+                }, selectedLang));
+            }
+            
+            // Security check
+            if (!(await checkAccess(db, user, entityType, 'update'))) {
+                return error(renderString({ 
+                    ro: "Acces refuzat la această entitate", 
+                    en: "Access denied to this entity" 
+                }, selectedLang), 403);
+            }
+            
+            // Get current entity
+            const entity = await db.get(entityType, entityId);
+            if (!entity) {
+                return error(renderString({ 
+                    ro: "Entitatea nu a fost găsită", 
+                    en: "Entity not found" 
+                }, selectedLang), 404);
+            }
+            
+            const currentStatus = entity.status;
+            
+            // Validate transition
+            const validation = await validateStateTransition(
+                db, 
+                entityType, 
+                entityId, 
+                currentStatus, 
+                toStatus, 
+                registry, 
+                entity
+            );
+            
+            if (!validation.valid) {
+                return error(renderString({ 
+                    ro: validation.error || "Tranziție invalidă", 
+                    en: validation.error || "Invalid transition" 
+                }, selectedLang), 400);
+            }
+            
+            // Perform transition
+            await db.update(entityType, entityId, { 
+                status: toStatus,
+                updatedAt: new Date().toISOString()
+            });
+            
+            // Audit log
+            await db.create('audit_log', {
+                id: crypto.randomUUID(),
+                action: 'workflow-transition',
+                entityType,
+                entityId,
+                display_value: entity[entity.displayField || 'name'] || entityId,
+                details: renderString({ 
+                    ro: `Tranziție de stare: ${currentStatus} → ${toStatus}`, 
+                    en: `State transition: ${currentStatus} → ${toStatus}` 
+                }, selectedLang),
+                user: user?.email || user?.id || 'system',
+                workspaceId: user?.workspaceId || entity.workspaceId,
+                createdAt: new Date().toISOString()
+            });
+            
+            return success({
+                id: entityId,
+                oldStatus: currentStatus,
+                newStatus: toStatus,
+                message: renderString({
+                    ro: `Stare actualizată cu succes: ${currentStatus} → ${toStatus}`,
+                    en: `Status updated successfully: ${currentStatus} → ${toStatus}`
+                }, selectedLang)
+            });
+        }
+        
+        // GET AVAILABLE TRANSITIONS FOR CURRENT STATE
+        if (op === "get-transitions") {
+            if (!entityType || !entityId) {
+                return error(renderString({ 
+                    ro: "Entity type și ID necesare", 
+                    en: "Entity type and ID required" 
+                }, selectedLang));
+            }
+            
+            const entity = await db.get(entityType, entityId);
+            if (!entity) {
+                return error(renderString({ 
+                    ro: "Entitatea nu a fost găsită", 
+                    en: "Entity not found" 
+                }, selectedLang), 404);
+            }
+            
+            const transitions = getNextTransitions(entityType, entity.status, registry);
+            
+            return success({
+                currentStatus: entity.status,
+                availableTransitions: transitions,
+                entity: {
+                    id: entityId,
+                    type: entityType,
+                    status: entity.status,
+                    displayValue: entity[entity.displayField || 'name'] || entityId
+                }
+            });
+        }
+        
+        // GET FLOW RULES FOR ENTITY TYPE
+        if (op === "get-flow-rules") {
+            if (!entityType) {
+                return error(renderString({ 
+                    ro: "Entity type necesar", 
+                    en: "Entity type required" 
+                }, selectedLang));
+            }
+            
+            const flowRules = registry?.CONSTANT?.flowRules || {};
+            const rules = flowRules[entityType];
+            
+            if (!rules) {
+                return success({
+                    entityType,
+                    hasRules: false,
+                    rules: null,
+                    message: renderString({
+                        ro: `Nu sunt reguli de curgere definite pentru ${entityType}`,
+                        en: `No flow rules defined for ${entityType}`
+                    }, selectedLang)
+                });
+            }
+            
+            return success({
+                entityType,
+                hasRules: true,
+                rules: Object.entries(rules).map(([status, rule]: [string, any]) => ({
+                    status,
+                    label: rule.label,
+                    icon: rule.icon,
+                    nextStates: rule.nextStates,
+                    requiresFields: rule.requiresFields,
+                    action: rule.action
+                }))
+            });
+        }
+        
+        return error("Workflow operation not found", 404);
     },
     member: async ({ url, db, user, selectedLang, registry }) => {
         // Enterprise Level 8: Members List Specialized Handler
