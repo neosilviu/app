@@ -58,7 +58,39 @@ const deepStringify = (obj: any): any => {
     return result;
 };
 
-const convertToCSV = (data: any[]): string => {
+/**
+ * TRANSLATION TRANSFORMER - Enterprise Level 8
+ * Converts multilingual fields (e.g. { ro: "...", en: "..." }) to a single value
+ * based on the requested language, recursively through the entire response tree.
+ */
+const transformTranslations = (obj: any, lang: string = 'ro'): any => {
+    if (!obj) return obj;
+    
+    // Handle translation objects: { ro: 'text', en: 'text' }
+    if (typeof obj === 'object' && !Array.isArray(obj) && 
+        typeof obj[lang] === 'string' && 
+        Object.keys(obj).every((k) => typeof obj[k] === 'string')) {
+        return obj[lang] || obj['en'] || obj['ro'] || '';
+    }
+    
+    // Recursively transform arrays
+    if (Array.isArray(obj)) {
+        return obj.map(item => transformTranslations(item, lang));
+    }
+    
+    // Recursively transform objects
+    if (typeof obj === 'object') {
+        const result: any = {};
+        for (const [key, value] of Object.entries(obj)) {
+            result[key] = transformTranslations(value, lang);
+        }
+        return result;
+    }
+    
+    return obj;
+};
+
+const deepStringify = (obj: any): any => {
     if (!data || data.length === 0) {
         return "";
     }
@@ -2523,6 +2555,17 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
         // DELETE
         if (method === 'DELETE' && id) {
+            // Enterprise Level 8: Core Entity Protection
+            const coreEntityList = registry?.CONSTANT?.coreEntity || [];
+            const isCoreEntity = coreEntityList.map((e: string) => e.toLowerCase()).includes(collection.toLowerCase());
+            
+            if (isCoreEntity) {
+                return error(renderString({
+                    ro: `Entitatea sistem '${collection}' nu poate fi ștearsă. Este protejată de motorul V5.`,
+                    en: `System entity '${collection}' cannot be deleted. It is protected by the V5 engine.`
+                }, selectedLang), 403);
+            }
+            
             // Enterprise Level 8: Recursive Safety Check
             const force = url.searchParams.get("force") === "true";
             if (!force) {
@@ -3184,7 +3227,30 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
         }
 
         const handler = HANDLERS[resource];
-        if (handler) return await handler(ctx);
+        if (handler) {
+            const handlerResponse = await handler(ctx);
+            
+            // Enterprise Level 8: Apply Translation Transformer to JSON responses
+            if (handlerResponse.headers.get('content-type')?.includes('application/json')) {
+                try {
+                    const data = await handlerResponse.json();
+                    
+                    // Transform multilingual fields in response data
+                    if (data.data) {
+                        data.data = transformTranslations(data.data, selectedLang);
+                    } else if (Array.isArray(data)) {
+                        return Response.json(transformTranslations(data, selectedLang), { status: handlerResponse.status });
+                    }
+                    
+                    return Response.json(data, { status: handlerResponse.status });
+                } catch (e) {
+                    // If JSON parsing fails, return original response
+                    return handlerResponse;
+                }
+            }
+            
+            return handlerResponse;
+        }
         
         // Generic CRUD Fallback (Enterprise Level 8)
         if (request.method === 'GET') {
