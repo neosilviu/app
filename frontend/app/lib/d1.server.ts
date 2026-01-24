@@ -236,27 +236,31 @@ export class D1Driver {
             const result = await (this.rawBinding as any).exec(sql);
             return result || { count: 1, duration: 0 };
           } catch (e: any) {
-            const isMinorError = e?.message?.includes('duration') || e?.message?.includes('undefined') || !e?.message;
-            if (!isMinorError) {
-               console.error("[D1-EXEC] Fatal error during script execution:", e?.message || e);
-            }
+            console.error("[D1-EXEC] Fatal error during script execution:", e?.message || e);
             
+            // Fallback: Try executing individual statements
             const statements = sql
               .split(';')
               .map(s => s.trim())
               .filter(s => s.length > 0 && !s.startsWith('--'));
             
+            const failedStatements = [];
             for (const stmt of statements) {
                 try {
                     await (this.rawBinding as any).prepare(stmt).run();
                 } catch(err: any) {
                     const isExpectedError = err.message.includes('already exists') || err.message.includes('no such table');
                     if (!isExpectedError) {
-                        console.warn("[D1-EXEC] Fallback statement failed:", err.message);
+                        failedStatements.push({ statement: stmt, error: err.message });
                     }
                 }
             }
-            return { success: true };
+            
+            if (failedStatements.length > 0) {
+              console.error("[D1-EXEC] Fallback statements also failed:", failedStatements);
+            }
+            
+            throw e; // Propagate error instead of silently returning success
           }
         }, true),
         undefined, "EXEC", this.rawBinding
@@ -268,27 +272,31 @@ export class D1Driver {
         const result = await (this.rawBinding as any).exec(sql);
         return result || { count: 1, duration: 0 };
       } catch (e: any) {
-        const isMinorError = e?.message?.includes('duration') || e?.message?.includes('undefined') || !e?.message;
-        if (!isMinorError) {
-           console.error("[D1-EXEC] Fatal error during script execution:", e?.message || e);
-        }
+        console.error("[D1-EXEC] Fatal error during script execution:", e?.message || e);
         
+        // Fallback: Try executing individual statements
         const statements = sql
           .split(';')
           .map(s => s.trim())
           .filter(s => s.length > 0 && !s.startsWith('--'));
         
+        const failedStatements = [];
         for (const stmt of statements) {
             try {
                 await (this.rawBinding as any).prepare(stmt).run();
             } catch(err: any) {
                 const isExpectedError = err.message.includes('already exists') || err.message.includes('no such table');
                 if (!isExpectedError) {
-                    console.warn("[D1-EXEC] Fallback statement failed:", err.message);
+                    failedStatements.push({ statement: stmt, error: err.message });
                 }
             }
         }
-        return { success: true };
+        
+        if (failedStatements.length > 0) {
+          console.error("[D1-EXEC] Fallback statements also failed:", failedStatements);
+        }
+        
+        throw e; // Propagate error instead of silently returning success
       }
     }, undefined, "EXEC", this.rawBinding);
   }
