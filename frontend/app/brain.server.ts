@@ -15,11 +15,9 @@ import { AiService, getRegistry, clearRegistryCache, resolveCollection, getPrima
 import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin } from './lib/auth-utils';
 import { ensureSystemTables, waitForDbReady, mapFieldType, ensureBaselineSync, syncEntityTable } from './lib/db-init.server';
 
-// --- SYSTEM CONSTANTS (Level 8: Decoupled to Registry) ---
+// --- SYSTEM CONSTANTS (Level 8: Decoupled to Registry - NO FAILSAFES) ---
 const isGlobalEntity = (name: string, registry?: any) => {
-    const list = registry?.CONSTANT?.globalEntity || [
-        'workspace', 'workspace_setting', 'system_setting', 'entity_definition', 'config_version', 'audit_log', '_ai_prompt', 'user', 'role'
-    ];
+    const list = registry?.CONSTANT?.globalEntity || [];
     return list.map((e: string) => e.toLowerCase()).includes((name || '').toLowerCase());
 };
 
@@ -314,24 +312,7 @@ async function mergeRegistryWithD1(db: any, workspaceId: string = 'system'): Pro
             };
         
         // Logical Namespace Mapping (Enterprise Level 8 Standard)
-        const namespaceMapping = template.CONSTANT?.namespaceMapping || {
-            'ai': 'AI_CONFIG',
-            'ai_config': 'AI_CONFIG',
-            'theme': 'THEME',
-            'ui': 'THEME',
-            'uiconfig': 'THEME',
-            'ui_config': 'THEME',
-            'auth': 'AUTH_CONFIG',
-            'auth_config': 'AUTH_CONFIG',
-            'nav': 'NAV',
-            'system': 'SYSTEM_SETTING',
-            'system_setting': 'SYSTEM_SETTING',
-            'constants': 'CONSTANTS',
-            'integration': 'INTEGRATION',
-            'i18n': 'I18N_CONFIG',
-            'general': 'GENERAL',
-            'root': 'GENERAL'
-        };
+        const namespaceMapping = template.CONSTANT?.namespaceMapping || {};
 
         for (const [rawNs, values] of Object.entries(configFromD1)) {
             const normalizedNs = (rawNs || '').toLowerCase();
@@ -370,10 +351,7 @@ async function mergeRegistryWithD1(db: any, workspaceId: string = 'system'): Pro
                 const norm = normalizeEntity(ent);
                 
                 const baselineEntry = (template.ENTITY_CONFIG || {})[norm.name] || {};
-                const coreEntity = (template.CONSTANT?.coreEntity || [
-                    'contact', 'workspace', 'workspace_user', 'tag', 'file', 
-                    'system_setting', 'entity_definition', 'audit_log', 'collection'
-                ]).map((e: string) => e.toLowerCase());
+                const coreEntity = (template.CONSTANT?.coreEntity || []).map((e: string) => e.toLowerCase());
                 
                 const isCore = coreEntity.includes(norm.name);
                 
@@ -396,7 +374,7 @@ async function mergeRegistryWithD1(db: any, workspaceId: string = 'system'): Pro
 
         // 6. Merge Dynamic AI Prompts
         if (prompts.length > 0) {
-            const coreCategories = template.CONSTANT?.aiPromptCategory || ['system', 'global', 'workspaceTemplates', 'language_instruction'];
+            const coreCategories = template.CONSTANT?.aiPromptCategory || [];
             prompts.forEach((p: any) => {
                 // Filter archived in-memory to avoid SQL column missing issues
                 if (p.archived == 1 || p.archived === true) return;
@@ -466,9 +444,7 @@ function createAuditProxy(db: any, user: any) {
                         registry = await mergeRegistryWithD1(target);
                     } catch(e) {}
 
-                    const skipAuditList = registry?.CONSTANT?.auditExclusion || [
-                        'audit_log', '_metadata', 'session', 'account', '_help_content', 'config_version'
-                    ];
+                    const skipAuditList = registry?.CONSTANT?.auditExclusion || [];
                     
                     if (skipAuditList.includes(collection)) {
                         return await originalMethod.apply(target, args);
@@ -962,10 +938,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     // System entities are always global (workspaceId = 'system')
                     // Custom entities are scoped to the current user's workspace
                     const baselineEntry = (staticBaselineEntities[name] || staticBaselineEntities[name.toLowerCase()] || {});
-                    const coreList = (staticRegistry.CONSTANT?.coreEntity || [
-                        'contact', 'workspace', 'workspace_user', 
-                        'tag', 'file', 'SYSTEM_SETTING', 'entity_definition', 'audit_log', 'collection'
-                    ]).map((e: string) => e.toLowerCase());
+                    const coreList = (staticRegistry.CONSTANT?.coreEntity || []).map((e: string) => e.toLowerCase());
                     
                     const isCore = coreList.includes(name);
                     const isSystem = isCore || !!baselineEntry.isSystem;
@@ -1089,10 +1062,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             // 1. Core items defined in the CONSTANT.coreEntity list are ALWAYS protected.
             // 2. Baseline entities that explicitly have isSystem: true are protected.
             const staticBaseline = await getRegistry();
-            const coreList = (staticBaseline.CONSTANT?.coreEntity || [
-                'contact', 'workspace', 'workspace_user', 'tag', 'file', 
-                'system_setting', 'entity_definition', 'audit_log', 'collection'
-            ]).map((e: string) => e.toLowerCase());
+            const coreList = (staticBaseline.CONSTANT?.coreEntity || []).map((e: string) => e.toLowerCase());
             
             const baselineEntry = (staticBaseline.ENTITY_CONFIG || {})[entityName] || {};
             const isCore = coreList.includes(entityName);
@@ -2066,7 +2036,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         if (op === 'collection' && parts[2]) {
             collection = parts[2];
             
-            const isGlobal = isGlobalEntity(collection);
+            const isGlobal = isGlobalEntity(collection, registry);
 
             // Level 8 Robust Parsing
             const isUuid = (str: string | undefined) => str ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) : false;
@@ -2175,7 +2145,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
         console.log(`[BRAIN-DB] ${method} ${collection} ws:${effectiveWorkspaceId}${id ? ` id:${id}` : ''}${subAction ? ` [${subAction}]` : ''}`);
 
-        const isGlobal = isGlobalEntity(collection);
+        const isGlobal = isGlobalEntity(collection, registry);
 
         if (method === 'GET' && subAction === 'export') {
             const format = url.searchParams.get('format') || 'json';
@@ -2256,7 +2226,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 }
 
                 // Mandatory Workspace Isolation
-                if (!isGlobalEntity(targetCollection)) {
+                if (!isGlobalEntity(targetCollection, registry)) {
                     if (!data.workspaceId || !isWsAdmin) {
                         data.workspaceId = effectiveWorkspaceId;
                     }
@@ -2326,7 +2296,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         if (method === 'GET' && !id) {
             // Enterprise Level 8: Workspace-Aware Filtering
             let filters: any = {};
-            const isGlobal = isGlobalEntity(collection);
+            const isGlobal = isGlobalEntity(collection, registry);
             
             // Map workspaceId from path or params for explicit filtering
             const explicitWS = pathWorkspaceId || url.searchParams.get("workspaceId");
@@ -2488,7 +2458,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         // POST (Create)
         if (method === 'POST' && !id) {
             const data: any = { ...deepStringify(body), createdBy: user.id };
-            const isGlobal = isGlobalEntity(collection);
+            const isGlobal = isGlobalEntity(collection, registry);
             if (!isGlobal) data.workspaceId = effectiveWorkspaceId;
             
             // Level 8 Workspace Isolation (Block tampering)

@@ -54,13 +54,7 @@ export async function getRegistry(db?: any) {
         const settingsObj: any = {};
         
         // Legacy Mappings (Enterprise Level 8 Standard)
-        const nsMap: Record<string, string> = {
-            'ai': 'AI_CONFIG', 'ai_config': 'AI_CONFIG',
-            'theme': 'THEME', 'ui': 'THEME', 'ui_config': 'THEME', 'uiconfig': 'THEME',
-            'auth': 'AUTH_CONFIG', 'auth_config': 'AUTH_CONFIG',
-            'system': 'SYSTEM_SETTING', 'system_setting': 'SYSTEM_SETTING', 'SYSTEM_SETTING': 'SYSTEM_SETTING',
-            'general': 'GENERAL', 'root': 'GENERAL'
-        };
+        const nsMap: Record<string, string> = _registry?.CONSTANT?.namespaceMapping || {};
 
         dbSettings.forEach((s: any) => {
             try {

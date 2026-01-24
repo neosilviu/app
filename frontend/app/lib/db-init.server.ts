@@ -1,5 +1,4 @@
-import { getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, clearRegistryCache } from './core';
-import { clearColumnCache } from './d1.server';
+import { getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, clearRegistryCache, loadBaseline } from './core';
 
 /**
  * AUTO-HEAL: Sync Table Schema (Enterprise Level 8)
@@ -112,7 +111,7 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
 
             // Ensure physical tables for ALL entities in Registry
             for (const [name, def] of Object.entries(coreEntities)) {
-                await syncEntityTable(db, { ...def, name });
+                await syncEntityTable(db, { ...(def as any), name }, baseline);
             }
 
             // Step 3: Specific Migrations / Fixes (Keep only what's absolutely necessary)
@@ -131,6 +130,9 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             // Level 8: Set initialized BEFORE baseline sync
             global.IS_DB_INITIALIZED = true;
             console.log(`[DB-INIT] Core schema applied in ${Date.now() - start}ms; starting baseline sync in ${typeof ctx?.waitUntil === 'function' ? 'background' : 'foreground'}`);
+
+            // Load registry for baseline sync
+            const registry = await getRegistry();
 
             // Run baseline sync (use waitUntil if on Cloudflare Workers)
             if (ctx && typeof ctx.waitUntil === 'function') {
@@ -164,7 +166,7 @@ export async function ensureBaselineSync(db: any, registry: any) {
         for (const [name, config] of Object.entries(baselineEntities)) {
             try {
                 // syncEntityTable handles DDL (CREATE/ALTER) - keep individual as it's sensitive
-                const normalized = await syncEntityTable(db, { name, ...(config as any) });
+                const normalized = await syncEntityTable(db, { name, ...(config as any) }, registry);
                 
                 if (normalized) {
                     metaStatements.push(
@@ -274,14 +276,15 @@ export async function syncRolesBaseline(db: any, registry: any) {
 }
 
 export async function syncSystemSettingsBaseline(db: any, registry: any) {
-    const namespaces: Record<string, string> = {
-        'SYSTEM_SETTING': 'SYSTEM_SETTING',
-        'AI_CONFIG': 'ai',
-        'AUTH_CONFIG': 'auth',
-        'THEME': 'theme',
-        'INTEGRATION': 'integrations',
-        'WAPP_CONFIG': 'whatsapp'
-    };
+    // Enterprise Level 8: Invert the namespace mapping to find registry keys to sync
+    const nsConfig = registry?.CONSTANT?.namespaceMapping || {};
+    const namespaces: Record<string, string> = {};
+    for (const [dbNs, regKey] of Object.entries(nsConfig)) {
+        // We only sync keys that exist in the registry object
+        if (registry[regKey as string]) {
+            namespaces[regKey as string] = dbNs;
+        }
+    }
 
     console.log('[DB-INIT] Syncing system settings baseline (Batched)...');
     const statements: any[] = [];
@@ -336,8 +339,8 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
         hasTemplate = !!columns.find((c: any) => c.name === 'template');
     } catch (e) {}
 
-    // Categories that contain arrays of prompts
-    const categories = ['system', 'global', 'workspaceTemplates'];
+    // Categories that contain arrays of prompts - Defined in Registry
+    const categories = registry?.CONSTANT?.aiPromptCategory || [];
     
     for (const category of categories) {
         const promptList = prompts[category];
@@ -391,7 +394,7 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
     }
 }
 
-export async function syncEntityTable(db: any, rawDef: any) {
+export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
     // Enterprise Level 8: Unified Normalization Lens
     const entityDef = normalizeEntity(rawDef);
     if (!entityDef || !entityDef.name) return;
@@ -426,9 +429,9 @@ export async function syncEntityTable(db: any, rawDef: any) {
                 }
             });
             
-            // Add standard fields (Enterprise Level 8)
-            const std = ['workspaceId', 'createdAt', 'updatedAt', 'deletedAt', 'archived', 'createdBy', 'updatedBy'];
-            std.forEach(s => {
+            // Add standard fields (Enterprise Level 8) - Defined in Registry
+            const std = registry?.CONSTANT?.systemFields || [];
+            std.forEach((s: string) => {
                 // Skip workspaceId for workspace table (redundant)
                 if (s === 'workspaceId' && tableName === 'workspace') return;
                 
@@ -449,9 +452,9 @@ export async function syncEntityTable(db: any, rawDef: any) {
                 return fname && !existingCols.includes(fname);
             });
             
-            // Core system fields check
-            const std = ['workspaceId', 'createdAt', 'updatedAt', 'deletedAt', 'archived', 'createdBy', 'updatedBy'];
-            std.forEach(s => {
+            // Core system fields check - From Registry
+            const std = registry?.CONSTANT?.systemFields || [];
+            std.forEach((s: string) => {
                 // Skip workspaceId for workspace table
                 if (s === 'workspaceId' && tableName === 'workspace') return;
                 

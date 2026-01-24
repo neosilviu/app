@@ -163,7 +163,7 @@ export function normalizeEntity(raw: any): EntityDefinition {
   // 6. Metadata Normalization (Menu, Dashboard, Relationships)
   const menuConfig = {
     showInMainMenu: true,
-    showInNewMenu: (name === 'contact' || name === 'task'),
+    showInNewMenu: false,
     priority: 50,
     ...safeParse(raw.menuConfig, {})
   };
@@ -172,8 +172,8 @@ export function normalizeEntity(raw: any): EntityDefinition {
     widgetType: 'table',
     summaryFields: [],
     showRecent: true,
-    // Enterprise Level 8: Only "contact" is shown by default on the dashboard
-    showInDashboard: (name === 'contact'), 
+    // Enterprise Level 8: Defaults to false; must be explicit in DNA
+    showInDashboard: false, 
     ...safeParse(raw.dashboardConfig || raw.dashboard, {})
   };
 

@@ -256,6 +256,15 @@ export const CONSTANT = {
     'workspaceTemplates', 
     'language_instruction'
   ],
+  systemFields: [
+    'workspaceId', 
+    'createdAt', 
+    'updatedAt', 
+    'deletedAt', 
+    'archived', 
+    'createdBy', 
+    'updatedBy'
+  ],
   namespaceMapping: {
     'ai': 'AI_CONFIG',
     'ai_config': 'AI_CONFIG',
