@@ -21,6 +21,13 @@ const isGlobalEntity = (name: string, registry?: any) => {
     return list.map((e: string) => e.toLowerCase()).includes((name || '').toLowerCase());
 };
 
+// --- CACHING STRATEGY (Enterprise Level 8) ---
+// UNIFIED CACHING STRATEGY:
+// 1. Registry (CACHED_CONFIGS) - Merges D1 SYSTEM_SETTING with template, cached for 30 sec
+// 2. Column Schema Cache (D1Driver.columnCache) - Column metadata per table
+// 3. IndexedDB Cache (useEntity) - Frontend only, for offline capability
+// These are the ONLY caches. Middleware request -> brain -> D1Driver handles all lookups.
+
 // --- TYPING ---
 declare global {
     var CACHED_CONFIGS: Record<string, any>;

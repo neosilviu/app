@@ -116,6 +116,14 @@ export function wrapD1Binding(db: any): any {
 const columnCache = new Map<string, string[]>();
 const pendingColumnFetches = new Map<string, Promise<string[]>>();
 
+/**
+ * ✅ UNIFIED CACHING STRATEGY (Enterprise Level 8)
+ * 
+ * This is THE ONLY column schema cache in the system.
+ * All schema metadata lookups go through here.
+ * 
+ * clearColumnCache() - call after DDL changes (CREATE/ALTER/DROP)
+ */
 export function clearColumnCache(table?: string) {
     if (table) {
         columnCache.delete(resolveCollection(table));
