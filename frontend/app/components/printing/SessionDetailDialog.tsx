@@ -1,15 +1,11 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
-    Dialog, 
-    DialogContent, 
-    DialogHeader, 
-    DialogTitle, 
-    DialogFooter 
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter 
 } from "~/components/ui/dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { FileText, User, Phone, Save, RotateCcw } from "lucide-react";
+import { FileText, User, Phone, Save, RotateCcw } from 'lucide-react';
 import { toast } from "sonner";
 
 interface SessionDetailDialogProps {

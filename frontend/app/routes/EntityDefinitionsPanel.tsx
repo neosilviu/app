@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useConfig } from '~/hooks/useConfig';
 import { useTranslation } from 'react-i18next';
 import { 
-    api, 
-    cn,
-    normalizeEntity
+    api, cn, normalizeEntity
 } from '~/lib/core';
 import { toast } from 'sonner';
 import { Search, Plus, Save, Trash2, Edit2, X, Box, Columns, Code, Layout, Settings, RefreshCw, ChevronRight, HelpCircle, Menu, LayoutGrid, Eye, EyeOff, LayoutDashboard, Zap } from 'lucide-react';

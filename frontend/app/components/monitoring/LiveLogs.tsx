@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "~/components/ui/card";
-import { Terminal as TerminalIcon, Search, Trash2, Filter, Activity, Maximize2, Eye } from "lucide-react";
+import { Terminal as TerminalIcon, Search, Trash2, Filter, Activity, Maximize2, Eye } from 'lucide-react';
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";

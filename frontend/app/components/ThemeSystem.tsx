@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Moon, Sun, Laptop, Palette, Save, RotateCcw, X, Keyboard, Layers, ArrowRight, Check, Zap, Pin, LayoutGrid } from "lucide-react";
+import { Moon, Sun, Laptop, Palette, Save, RotateCcw, X, Keyboard, Layers, ArrowRight, Check, Zap, Pin, LayoutGrid } from 'lucide-react';
 import { useParams } from "react-router";
 import { renderString } from "~/lib/utils";
 import { useConfig } from '~/hooks/useConfig';

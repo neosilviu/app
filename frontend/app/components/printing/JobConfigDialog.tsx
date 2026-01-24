@@ -1,11 +1,5 @@
 import React from 'react';
-import { 
-    Dialog, 
-    DialogContent, 
-    DialogHeader, 
-    DialogTitle, 
-    DialogDescription, 
-    DialogFooter 
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
 } from "~/components/ui/dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -13,7 +7,7 @@ import { Label } from "~/components/ui/label";
 import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
 import { Separator } from "~/components/ui/separator";
-import { Settings2, Minus, Plus } from "lucide-react";
+import { Settings2, Minus, Plus } from 'lucide-react';
 import { getTierPrice, calculateJobPrice, renderString } from "../../lib/core";
 
 interface JobConfigDialogProps {

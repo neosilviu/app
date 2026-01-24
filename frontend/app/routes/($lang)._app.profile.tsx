@@ -11,7 +11,7 @@ import { Label } from "~/components/ui/label";
 import { Badge } from "~/components/ui/badge";
 import { Switch } from "~/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
-import { User, Briefcase, Shield, Check, Save, RefreshCcw, LogOut, Bell, Globe, Languages, Clock } from "lucide-react";
+import { User, Briefcase, Shield, Check, Save, RefreshCcw, LogOut, Bell, Globe, Languages, Clock } from 'lucide-react';
 import { toast } from "sonner";
 import { getDb } from '~/lib/d1.server';
 import { verifyAuth } from '~/lib/auth-core.server';

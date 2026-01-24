@@ -1,6 +1,6 @@
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { XIcon, GripHorizontal } from "lucide-react"
+import { XIcon, GripHorizontal } from 'lucide-react';
 
 import { cn } from '~/lib/core'
 

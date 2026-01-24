@@ -4,52 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useSettings } from "~/hooks/useSettings";
 import { toast } from "sonner";
 import { 
-    Printer, 
-    RefreshCcw, 
-    Clock, 
-    CheckCircle2, 
-    XCircle, 
-    FileText, 
-    List, 
-    Settings, 
-    History, 
-    Search,
-    Save,
-    ChevronRight,
-    Globe,
-    Play,
-    Square,
-    Trash2,
-    Eye,
-    Activity,
-    AlertCircle,
-    HardDrive,
-    Server,
-    Shield,
-    Zap,
-    Lock,
-    Plus,
-    Minus,
-    Loader2,
-    Palette,
-    Star,
-    AlertTriangle,
-    FileSpreadsheet,
-    Presentation,
-    User,
-    Download,
-    Layers,
-    ShoppingCart,
-    Edit2,
-    Euro,
-    Info,
-    Settings2,
-    Phone,
-    RotateCcw,
-    BookOpen,
-    EyeOff,
-    CheckSquare
-} from "lucide-react";
+    Printer, RefreshCcw, Clock, CheckCircle2, XCircle, FileText, List, Settings, History, Search, Save, ChevronRight, Globe, Play, Square, Trash2, Eye, Activity, AlertCircle, HardDrive, Server, Shield, Zap, Lock, Plus, Minus, Loader2, Palette, Star, AlertTriangle, FileSpreadsheet, Presentation, User, Download, Layers, ShoppingCart, Edit2, Euro, Info, Settings2, Phone, RotateCcw, BookOpen, EyeOff, CheckSquare } from 'lucide-react';
 import { useAuth } from "~/hooks/useAuth";
 import { DocumentPreview } from "~/components/printing/DocumentPreview";
 

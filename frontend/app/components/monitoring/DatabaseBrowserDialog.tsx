@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "~/components/ui/dialog";
-import { Database, Search, Table as TableIcon, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "~/components/ui/dialog";
+import { Database, Search, Table as TableIcon, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Badge } from "~/components/ui/badge";

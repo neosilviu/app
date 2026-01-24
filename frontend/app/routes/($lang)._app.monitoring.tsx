@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Activity,  Database, Terminal as TerminalIcon, History, RefreshCcw, ChevronRight, Server } from "lucide-react";
+import { Activity, Database, Terminal as TerminalIcon, History, RefreshCcw, ChevronRight, Server } from 'lucide-react';
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "~/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";

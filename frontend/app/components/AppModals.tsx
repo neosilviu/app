@@ -3,30 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { renderString } from '~/lib/utils';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "~/components/ui/dialog";
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { 
-  HelpCircle, 
-  Sparkles, 
-  RefreshCw, 
-  BookOpen, 
-  History, 
-  X,  
-  BadgeCheck, 
-  Bug, 
-  Zap, 
-  Send,
-  AlertTriangle 
-} from "lucide-react";
+  HelpCircle, Sparkles, RefreshCw, BookOpen, History, X, BadgeCheck, Bug, Zap, Send, AlertTriangle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { api, socket } from '~/lib/core';
 import { useAuth } from '~/hooks/useAuth';

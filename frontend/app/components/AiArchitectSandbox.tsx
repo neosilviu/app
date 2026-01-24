@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import {  Brain, Sparkles, Play, Code, Layout, Eye, Database, RefreshCw, X, AlertTriangle, Box } from 'lucide-react';
+import { Brain, Sparkles, Play, Code, Layout, Eye, Database, RefreshCw, X, AlertTriangle, Box } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
 import { GlassCard } from '~/components/ui/GlassCard';

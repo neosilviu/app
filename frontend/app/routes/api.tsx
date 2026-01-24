@@ -9,7 +9,7 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
     
     // Force JSON content type if it's missing
     if (!response.headers.get("Content-Type")) {
-      response.headers.set("Content-Type", "application/json");
+      response.headers.set("Content-Type");
     }
     
     return response;

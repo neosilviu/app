@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Cpu, Activity, RotateCcw, Zap } from "lucide-react";
+import { Cpu, Activity, RotateCcw, Zap } from 'lucide-react';
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/core";
 import { useTranslation } from "react-i18next";

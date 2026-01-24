@@ -1,21 +1,11 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
-    Dialog, 
-    DialogContent, 
-    DialogTitle, 
-    DialogDescription 
+    Dialog, DialogContent, DialogTitle, DialogDescription 
 } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { 
-    FileText, 
-    Download, 
-    XCircle, 
-    AlertTriangle, 
-    ExternalLink,
-    Edit2,
-    Info
-} from "lucide-react";
+    FileText, Download, XCircle, AlertTriangle, ExternalLink, Edit2, Info } from 'lucide-react';
 import { FileDetailsPanel } from './FileDetailsPanel';
 
 interface DocumentPreviewProps {

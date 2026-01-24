@@ -1,10 +1,4 @@
-import {
-  CircleCheckIcon,
-  InfoIcon,
-  Loader2Icon,
-  OctagonXIcon,
-  TriangleAlertIcon,
-} from "lucide-react"
+import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon } from 'lucide-react';
 import { useEffect } from "react"
 import { useTheme } from "~/hooks/useTheme"
 import { Toaster as Sonner, type ToasterProps, toast } from "sonner"

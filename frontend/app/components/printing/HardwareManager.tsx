@@ -1,35 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { 
-    Printer, 
-    RefreshCcw, 
-    Settings, 
-    Search,
-    Save,
-    ChevronRight,
-    Globe,
-    Zap,
-    HardDrive,
-    Server,
-    Shield,
-    Activity,
-    AlertCircle,
-    CheckCircle2,
-    Layers,
-    RotateCcw,
-    EyeOff,
-    CheckSquare,
-    Settings2,
-    Plus,
-    Minus,
-    Loader2,
-    Square,
-    AlertTriangle,
-    Info,
-    Inbox,
-    ListX,
-    Star,
-} from "lucide-react";
+    Printer, RefreshCcw, Settings, Search, Save, ChevronRight, Globe, Zap, HardDrive, Server, Shield, Activity, AlertCircle, CheckCircle2, Layers, RotateCcw, EyeOff, CheckSquare, Settings2, Plus, Minus, Loader2, Square, AlertTriangle, Info, Inbox, ListX, Star } from 'lucide-react';
 import { Button } from "~/components/ui/button";
 import { 
     Card, 

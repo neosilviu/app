@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router";
 import { Button } from "~/components/ui/button";
 import { useConfig } from "~/hooks/useConfig";
-import { FileQuestion } from "lucide-react";
+import { FileQuestion } from 'lucide-react';
 import { getLocalizedPath } from "~/lib/core";
 
 export default function NotFound() {

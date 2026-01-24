@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Search, Sparkles, Command, ArrowRight, X, MessageSquare, Bot, User, Activity, Settings, LayoutGrid, Users, Briefcase, CheckCircle2, Bug, Tag, Send, Minus, Maximize2, HardDrive, FileText } from "lucide-react";
+import { Search, Sparkles, Command, ArrowRight, X, MessageSquare, Bot, User, Activity, Settings, LayoutGrid, Users, Briefcase, CheckCircle2, Bug, Tag, Send, Minus, Maximize2, HardDrive, FileText } from 'lucide-react';
 import { useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { cn, getLocalizedPath, api, renderString } from "~/lib/core";

@@ -1,17 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
-    Dialog, 
-    DialogContent, 
-    DialogHeader, 
-    DialogTitle, 
-    DialogDescription, 
-    DialogFooter 
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
 } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { Save, User, Phone, Tag, Search, XCircle, Loader2 } from "lucide-react";
+import { Save, User, Phone, Tag, Search, XCircle, Loader2 } from 'lucide-react';
 import { api } from "~/lib/core";
 
 interface SaveSessionDialogProps {

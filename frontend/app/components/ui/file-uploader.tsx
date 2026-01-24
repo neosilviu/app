@@ -1,7 +1,7 @@
 import React from "react";
 import { Button } from "./button";
 import { Input } from "./input";
-import { Loader2, Upload, X, FileIcon, ExternalLink } from "lucide-react";
+import { Loader2, Upload, X, FileIcon, ExternalLink } from 'lucide-react';
 import { toast } from "sonner";
 import { cn } from "~/lib/core";
 

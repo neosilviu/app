@@ -6,52 +6,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
 import { 
-  Search, 
-  MessageSquare, 
-  Mail, 
-  MoreVertical, 
-  Paperclip, 
-  SendHorizontal, 
-  Circle, 
-  Archive, 
-  Inbox, 
-  CheckCircle2,
-  RefreshCw,
-  Clock,
-  Filter,
-  Trash2,
-  Star,
-  Pin,
-  Tag,
-  Square,
-  CheckSquare,
-  ChevronDown,
-  ChevronLeft,
-  ArrowRight,
-  CornerUpLeft,
-  Settings,
-  Bot,
-  Sparkles,
-  Check,
-  CheckCheck,
-  Eye,
-  Pencil,
-  RotateCcw,
-  Smile,
-  MapPin,
-  Mic,
-  BookOpen,
-  File,
-  FileText,
-  AlertCircle,
-  Image,
-  X,
-  Plus,
-  Map as MapIcon,
-  Phone,
-  Video,
-  Copy
-} from "lucide-react";
+  Search, MessageSquare, Mail, MoreVertical, Paperclip, SendHorizontal, Circle, Archive, Inbox, CheckCircle2, RefreshCw, Clock, Filter, Trash2, Star, Pin, Tag, Square, CheckSquare, ChevronDown, ChevronLeft, ArrowRight, CornerUpLeft, Settings, Bot, Sparkles, Check, CheckCheck, Eye, Pencil, RotateCcw, Smile, MapPin, Mic, BookOpen, File, FileText, AlertCircle, Image, X, Plus, Map as MapIcon, Phone, Video, Copy } from 'lucide-react';
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";

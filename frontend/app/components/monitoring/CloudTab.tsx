@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "~/components/ui/card";
-import { Cloud, Database, HardDrive, Brain, Zap, RotateCcw, CheckCircle2, Settings } from "lucide-react";
+import { Cloud, Database, HardDrive, Brain, Zap, RotateCcw, CheckCircle2, Settings } from 'lucide-react';
 import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/core";
 import { useTranslation } from "react-i18next";
