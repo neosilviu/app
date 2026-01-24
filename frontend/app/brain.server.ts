@@ -3039,6 +3039,118 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         }
         return error("Tag operation not found");
     },
+    search: async ({ db, user, url, selectedLang }) => {
+        // Enterprise Level 8: Polymorphic (Global) Search
+        // Search across ALL entity types simultaneously, respecting workspace + RBAC
+        
+        const query = url.searchParams.get("q") || "";
+        const entityTypeFilter = url.searchParams.get("type") || ""; // Optional: filter by entity type
+        const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 200);
+        const offset = parseInt(url.searchParams.get("offset") || "0");
+        
+        if (!query || query.trim().length < 2) {
+            return success([]);
+        }
+        
+        const searchTerm = `%${query.toLowerCase()}%`;
+        const registry = await getRegistry(db);
+        const isSuper = isGlobalAdmin(user, registry);
+        
+        const results: any[] = [];
+        const entityConfigs = registry.ENTITY_CONFIG || {};
+        
+        try {
+            // Iterate over all entities and search across defined searchFields
+            for (const [entityName, config] of Object.entries(entityConfigs)) {
+                const cfg = config as any;
+                const tableName = cfg.tableName || entityName;
+                
+                // Skip if filtering by type and this isn't the right one
+                if (entityTypeFilter && entityTypeFilter !== entityName) continue;
+                
+                // Skip system entities that user shouldn't see
+                const isGlobal = isGlobalEntity(entityName, registry);
+                const searchFields = cfg.searchFields || cfg.displayField ? [cfg.displayField] : [];
+                
+                // Skip if no search fields configured
+                if (!searchFields || searchFields.length === 0) continue;
+                
+                // Security check: can user read this entity?
+                if (!(await checkAccess(db, user, entityName, 'view'))) {
+                    continue;
+                }
+                
+                try {
+                    // Build search WHERE clause
+                    const whereConditions = searchFields.map((f: string) => `LOWER("${f}") LIKE ?`).join(' OR ');
+                    const params = searchFields.map(() => searchTerm);
+                    
+                    // Add workspace isolation (unless global entity or superadmin viewing system workspace)
+                    let sql = `SELECT * FROM "${tableName}" WHERE (${whereConditions})`;
+                    const sqlParams = [...params];
+                    
+                    if (!isGlobal && !isSuper) {
+                        sql += ` AND workspaceId = ?`;
+                        sqlParams.push(user?.workspaceId || 'system');
+                    } else if (!isGlobal && isSuper) {
+                        // Superadmin: can see any workspace
+                        // No additional filter needed
+                    }
+                    
+                    // Soft delete filter
+                    if (cfg.features?.softDelete) {
+                        sql += ` AND deletedAt IS NULL`;
+                    }
+                    
+                    // Add limit + offset for pagination
+                    sql += ` LIMIT ? OFFSET ?`;
+                    sqlParams.push(String(limit), String(offset));
+                    
+                    const entityResults = await db.query(sql, sqlParams);
+                    
+                    // Format results
+                    for (const item of entityResults) {
+                        const displayValue = item[cfg.displayField || 'name'] || item.id;
+                        results.push({
+                            id: item.id,
+                            type: entityName,
+                            displayValue,
+                            workspaceId: item.workspaceId,
+                            createdAt: item.createdAt,
+                            match_fields: searchFields.filter((f: string) => 
+                                item[f] && String(item[f]).toLowerCase().includes(query.toLowerCase())
+                            ),
+                            icon: cfg.icon || 'Box',
+                            label: renderString(cfg.label || {}, selectedLang),
+                            link: `/${entityName}/${item.id}`
+                        });
+                    }
+                } catch (e: any) {
+                    // Log error but continue with next entity
+                    console.warn(`[SEARCH-ERROR] Failed to search ${entityName}:`, e.message);
+                }
+            }
+            
+            // Sort results by relevance (exact matches first, then by creation date)
+            results.sort((a, b) => {
+                const aExact = a.displayValue.toLowerCase() === query.toLowerCase() ? 1 : 0;
+                const bExact = b.displayValue.toLowerCase() === query.toLowerCase() ? 1 : 0;
+                if (aExact !== bExact) return bExact - aExact;
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+            
+            return success({
+                query,
+                total: results.length,
+                results,
+                limit,
+                offset
+            });
+        } catch (e: any) {
+            console.error("[SEARCH-FATAL]", e.message);
+            return error(`Search failed: ${e.message}`, 500);
+        }
+    },
     workflow: async ({ op, parts, db, user, body }) => {
         const registry = await getRegistry(db);
         const selectedLang = user?.preferredLanguage || registry.language || 'ro';

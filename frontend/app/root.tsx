@@ -20,6 +20,7 @@ import { SystemProvider } from "~/hooks/useSystem";
 import { ThemeProvider } from "~/hooks/useTheme";
 import { SettingsProvider } from "~/hooks/useSettings";
 import { ConnectionManager, ShortcutManager } from "~/components/SystemShell";
+import { SearchDialog } from "~/components/search";
 
 import { REGISTRY_BASELINE, renderString } from '~/lib/core';
 
@@ -77,6 +78,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </SuperAdminGate>
                   <ShortcutManager />
                   <ConnectionManager />
+                  <SearchDialog />
                   <Toaster 
                     position="top-right" 
                     closeButton 
