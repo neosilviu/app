@@ -87,6 +87,13 @@ export const EntityParser = {
 export function resolveCollection(name: string): string {
     if (!name) return name;
     if (name.startsWith('_')) return name;
+
+    // Enterprise Level 8: Check ENTITY_CONFIG mappings from Registry first
+    const entityConfigs = _registry?.ENTITY_CONFIG || {};
+    if (entityConfigs[name] && entityConfigs[name].tableName) {
+        return entityConfigs[name].tableName;
+    }
+
     const overrides = _registry?.COLLECTION_OVERRIDES || {};
     if (overrides[name]) return overrides[name];
     

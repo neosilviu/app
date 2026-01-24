@@ -103,7 +103,14 @@ export default defineConfig(({ command, isSsrBuild }) => ({
     legalComments: 'none',
   },
   build: {
-    minify: true,
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+      },
+    },
+    reportCompressedSize: true, // Useful for monitoring the 1MB limit
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       onwarn(warning, warn) {

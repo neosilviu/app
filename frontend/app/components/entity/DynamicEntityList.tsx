@@ -66,7 +66,9 @@ export function DynamicEntityList({ entityId, config: initialConfig, initialData
         });
     };
 
-    const data = config.mockup ? (config.data || []) : (initialData || realData || []);
+    const data = Array.isArray(config.mockup ? (config.data || []) : (initialData || realData || [])) 
+        ? (config.mockup ? (config.data || []) : (initialData || realData || []))
+        : [];
 
     const [search, setSearch] = useState('');
     const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');

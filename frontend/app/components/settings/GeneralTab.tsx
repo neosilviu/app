@@ -104,7 +104,12 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                 { label: renderString(t('settings:node_version'), lang), value: systemInfo?.nodeVersion ?? '...', mono: true },
                                 { label: renderString(t('settings:platform'), lang), value: systemInfo ? `${systemInfo.platform} (${systemInfo.arch})` : '...' },
                                 { label: renderString(t('settings:cpu_cores'), lang), value: systemInfo?.cpus ?? '...' },
-                                { label: "Memory (RAM)", value: systemInfo ? `${Math.round((systemInfo.memory.total - systemInfo.memory.free) / 1024 / 1024 / 1024 * 10) / 10} / ${Math.round(systemInfo.memory.total / 1024 / 1024 / 1024 * 10) / 10} GB` : '...' },
+                                { 
+                                    label: "Memory (RAM)", 
+                                    value: (systemInfo?.memory?.total && systemInfo?.memory?.free) 
+                                        ? `${Math.round((systemInfo.memory.total - systemInfo.memory.free) / 1024 / 1024 / 1024 * 10) / 10} / ${Math.round(systemInfo.memory.total / 1024 / 1024 / 1024 * 10) / 10} GB` 
+                                        : '...' 
+                                },
                                 { label: renderString(t('settings:local_ip'), lang), value: systemInfo?.localIps?.[0] ?? '...', mono: true }
                             ].map((stat, i) => (
                                 <div key={i} className="p-3 rounded-xl bg-white border border-slate-50 shadow-sm">

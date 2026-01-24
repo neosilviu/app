@@ -18,9 +18,9 @@ const REGISTRY_BASELINE_MOCK = {
     SYSTEM_ROLE
 };
 
-// Keys that are NOT needed by the Brain Engine (Backend)
+// Keys that are NOT needed by the Brain Engine (Backend) - but we keep labels for SSR
 const UI_KEYS = [
-    'ui', 'label', 'labelPlural', 'description', 'icon', 
+    'ui', 
     'placeholder', 'helpText', 'variant', 'className', 
     'group', 'dashboard', 'entityMenu', 'dashboardConfig',
     'layout', 'form', 'sections', 'tabs', 'cards', 'widgets',

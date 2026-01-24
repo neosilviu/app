@@ -108,7 +108,7 @@ export const ENTITY_CONFIG = {
     },
     menuConfig: {
       showInMainMenu: true,
-      category: 'main_menu',
+      category: 'crm',
       icon: 'Users',
       label: { ro: 'Contacte', en: 'Contacts' },
       priority: 5
@@ -194,59 +194,8 @@ export const ENTITY_CONFIG = {
       showInMainMenu: true,
       category: 'administration',
       icon: 'Briefcase',
-      label: { ro: 'Spații de Lucru', en: 'Workspaces' },
+      label: { ro: 'Workspace', en: 'Workspace' },
       priority: 20
-    }
-  },
-  tag: {
-    label: { ro: 'Etichetă', en: 'Tag' },
-    labelPlural: { ro: 'Etichete', en: 'Tags' },
-    icon: 'Tag',
-    description: { ro: 'Etichete de clasificare pentru contacte și elemente', en: 'Categorization tag for contact and items' },
-    tableName: 'tag',
-    displayField: 'name',
-    isSystem: true,
-    sortField: 'createdAt',
-    searchFields: ['name', 'description'],
-    dashboardConfig: {
-      enabled: true,
-      showInDashboard: false,
-      priority: 4,
-      category: 'CORE'
-    },
-    fields: {
-      id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
-      workspaceId: { 
-        type: 'relation', 
-        relation: { target: 'workspace', field: 'name' }, 
-        hidden: true 
-      },
-      name: { type: 'string', required: true, maxLength: 255, searchable: true },
-      description: { type: 'string' },
-      color: { type: 'string', format: 'color', default: '#3b82f6' },
-      icon: { type: 'string' },
-      entityType: { 
-        type: 'enum', 
-        options: [
-          { label: { ro: 'Contact', en: 'Contact' }, value: 'contact' },
-          { label: { ro: 'Item', en: 'Item' }, value: 'item' },
-          { label: { ro: 'Toate', en: 'All' }, value: 'all' }
-        ], 
-        defaultValue: 'all' 
-      },
-      createdAt: { type: 'datetime', generated: 'now' },
-      updatedAt: { type: 'datetime', generated: 'now' },
-    },
-    indexes: ['workspaceId', 'entityType'],
-    menuConfig: {
-      showInMainMenu: true,
-      category: 'data_systems',
-      icon: 'Tag',
-      priority: 10
-    },
-    features: {
-      softDelete: true,
-      auditable: true,
     }
   },
   file: {
@@ -261,10 +210,10 @@ export const ENTITY_CONFIG = {
     isSystem: true,
     fields: {
       id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
-      workspaceId: { 
-        type: 'relation', 
-        relation: { target: 'workspace', field: 'name' }, 
-        hidden: true 
+      workspaceId: {
+        type: 'relation',
+        relation: { target: 'workspace', field: 'name' },
+        hidden: true
       },
       filename: { type: 'string', required: true, searchable: true },
       originalName: { type: 'string' },
@@ -273,16 +222,16 @@ export const ENTITY_CONFIG = {
       category: { type: 'enum', options: ['document', 'image', 'media', 'archive', 'other'] },
       url: { type: 'string', format: 'url' },
       storagePath: { type: 'string' },
-      uploadedBy: { 
-        type: 'relation', 
+      uploadedBy: {
+        type: 'relation',
         relation: { target: 'contact', field: 'name' },
-        hidden: true 
+        hidden: true
       },
       description: { type: 'string' },
-      tag: { 
-        type: 'relation-many', 
+      tag: {
+        type: 'relation-many',
         relation: { target: 'tag', field: 'name' },
-        ui: { width: 12, icon: 'Tag' } 
+        ui: { width: 12, icon: 'Tag' }
       },
       metadata: { type: 'json' },
       createdAt: { type: 'datetime', generated: 'now' },
@@ -292,9 +241,10 @@ export const ENTITY_CONFIG = {
     indexes: ['workspaceId', 'uploadedBy', 'category', 'createdAt'],
     menuConfig: {
       showInMainMenu: true,
-      category: 'main_menu',
+      category: 'data_systems',
       icon: 'FileText',
-      priority: 5
+      label: { ro: 'Fișiere', en: 'Files' },
+      priority: 35
     },
     features: {
       softDelete: true,
@@ -349,9 +299,10 @@ export const ENTITY_CONFIG = {
     },
     menuConfig: {
       showInMainMenu: true,
-      category: 'main_menu',
+      category: 'crm',
       icon: 'CheckSquare',
-      priority: 20
+      label: { ro: 'Taskuri', en: 'Tasks' },
+      priority: 40
     }
   },
   deal: {
@@ -376,6 +327,7 @@ export const ENTITY_CONFIG = {
       showInMainMenu: true,
       category: 'sales',
       icon: 'DollarSign',
+      label: { ro: 'Deal-uri', en: 'Deals' },
       priority: 30
     }
   },
@@ -396,7 +348,10 @@ export const ENTITY_CONFIG = {
       createdAt: { type: 'datetime', generated: 'now' },
     },
     menuConfig: {
-      showInMainMenu: false
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'Bell',
+      priority: 200
     }
   },
   audit_log: {
@@ -462,6 +417,12 @@ export const ENTITY_CONFIG = {
       content: { type: 'text', required: true, searchable: true },
       authorId: { type: 'relation', relation: { target: 'contact', field: 'name' } },
       createdAt: { type: 'datetime', generated: 'now' },
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'StickyNote',
+      priority: 160
     }
   },
   system_setting: {
@@ -492,7 +453,7 @@ export const ENTITY_CONFIG = {
       description: { type: 'text', ui: { width: 12 } },
     },
     menuConfig: {
-      showInMainMenu: false,
+      showInMainMenu: true,
       category: 'administration',
       icon: 'Settings',
       priority: 100
@@ -575,7 +536,7 @@ export const ENTITY_CONFIG = {
     },
     menuConfig: {
       showInMainMenu: true,
-      category: 'administration',
+      category: 'security',
       icon: 'Shield',
       priority: 120
     }
@@ -620,8 +581,8 @@ export const ENTITY_CONFIG = {
       permission: { type: 'json', hidden: true },
     },
     menuConfig: {
-      showInMainMenu: false,
-      category: 'administration',
+      showInMainMenu: true,
+      category: 'security',
       icon: 'Users',
       priority: 130
     }
@@ -644,14 +605,17 @@ export const ENTITY_CONFIG = {
       id: { type: 'uuid', primaryKey: true, hidden: true },
       name: { type: 'string', required: true, ui: { width: 6 } },
       email: { type: 'string', required: true, unique: true, ui: { width: 6 } },
+      emailVerified: { type: 'boolean', defaultValue: false, ui: { width: 6 } },
       image: { type: 'image', ui: { width: 12 } },
       role: { type: 'string', ui: { width: 6 } },
       workspaceId: { type: 'string', hidden: true },
+      lastWorkspaceId: { type: 'string', hidden: true },
+      preferredLanguage: { type: 'string', defaultValue: 'ro', ui: { width: 6 } },
       active: { type: 'boolean', defaultValue: true, ui: { width: 6 } },
     },
     menuConfig: {
       showInMainMenu: true,
-      category: 'administration',
+      category: 'security',
       icon: 'User',
       priority: 80
     }
@@ -670,6 +634,12 @@ export const ENTITY_CONFIG = {
       expiresAt: { type: 'datetime', required: true },
       ipAddress: { type: 'string' },
       userAgent: { type: 'string' }
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'security',
+      icon: 'Key',
+      priority: 210
     }
   },
   account: {
@@ -687,8 +657,16 @@ export const ENTITY_CONFIG = {
       accessToken: { type: 'string' },
       refreshToken: { type: 'string' },
       idToken: { type: 'string' },
-      expiresAt: { type: 'datetime' },
+      accessTokenExpiresAt: { type: 'datetime' },
+      refreshTokenExpiresAt: { type: 'datetime' },
+      scope: { type: 'string' },
       password: { type: 'password' }
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'security',
+      icon: 'Fingerprint',
+      priority: 220
     }
   },
   verification: {
@@ -703,6 +681,12 @@ export const ENTITY_CONFIG = {
       identifier: { type: 'string', required: true },
       value: { type: 'string', required: true },
       expiresAt: { type: 'datetime', required: true }
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'security',
+      icon: 'ShieldCheck',
+      priority: 230
     }
   },
   config_version: {
@@ -719,6 +703,12 @@ export const ENTITY_CONFIG = {
       configJson: { type: 'json' },
       changedBy: { type: 'string' },
       description: { type: 'string' }
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'History',
+      priority: 240
     }
   },
   _ai_prompt: {
@@ -739,6 +729,12 @@ export const ENTITY_CONFIG = {
       category: { type: 'string' },
       description: { type: 'string' },
       isLocked: { type: 'boolean', defaultValue: false }
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'MessageSquare',
+      priority: 190
     }
   },
   workspace_invitation: {
@@ -778,8 +774,8 @@ export const ENTITY_CONFIG = {
       },
     },
     menuConfig: {
-      showInMainMenu: false,
-      category: 'administration',
+      showInMainMenu: true,
+      category: 'security',
       icon: 'Mail',
       priority: 140
     }
@@ -812,6 +808,43 @@ export const ENTITY_CONFIG = {
       },
       entityType: { type: 'string', ui: { width: 6 } },
       entityId: { type: 'string', ui: { width: 6 } },
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'Tag',
+      priority: 155
+    }
+  },
+  tag: {
+    label: { ro: 'Etichetă', en: 'Tag' },
+    labelPlural: { ro: 'Etichete', en: 'Tags' },
+    icon: 'Tag',
+    tableName: 'tag',
+    displayField: 'name',
+    isSystem: true,
+    features: {
+      creatable: true,
+      editable: true,
+      deletable: true,
+      auditable: true,
+      timestamps: true
+    },
+    fields: {
+      id: { type: 'uuid', primaryKey: true, hidden: true },
+      workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
+      name: { type: 'string', required: true, searchable: true, ui: { width: 6 } },
+      color: { type: 'color', defaultValue: '#3b82f6', ui: { width: 6 } },
+      icon: { type: 'string', ui: { width: 6 } },
+      description: { type: 'text', ui: { width: 12 } },
+      createdAt: { type: 'datetime', generated: 'now', hidden: true },
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'Tag',
+      label: { ro: 'Tag', en: 'Tags' },
+      priority: 150
     }
   },
   collection: {
@@ -919,6 +952,12 @@ export const ENTITY_CONFIG = {
       entityId: { type: 'string', required: true },
       category: { type: 'string' },
       createdAt: { type: 'datetime', generated: 'now' },
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'Paperclip',
+      priority: 170
     }
   },
   workspace_setting: {
@@ -938,6 +977,12 @@ export const ENTITY_CONFIG = {
       logoUrl: { type: 'string' },
       language: { type: 'string' },
       ai: { type: 'json' },
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'Settings',
+      priority: 180
     }
   },
 } as const;

@@ -82,7 +82,7 @@ export const SYSTEM_ROLE = {
       'contact:delete',
       'file:manage',
     ],
-    allowedPage: ['dashboard', 'monitoring', 'setting', 'profile', 'entity', 'worker'],
+    allowedPage: ['dashboard', 'monitoring', 'setting', 'profile', 'entity', 'worker', 'superadmin'],
   },
   workspace_admin: {
     label: { ro: 'Administrator', en: 'Workspace Admin' },

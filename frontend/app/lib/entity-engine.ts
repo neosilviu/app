@@ -205,14 +205,24 @@ export function normalizeEntity(raw: any): EntityDefinition {
   // Enterprise Level 8: Labels can be pluralized for UI display, 
   // but NEVER use this for database table names (tableName).
   const getAutoPlural = (l: any) => {
-    if (typeof l === 'string') return `${l}s`;
+    const pluralizeEn = (s: string) => {
+      if (!s) return '';
+      if (s.endsWith('s')) return s;
+      if (s.endsWith('y')) return s.slice(0, -1) + 'ies';
+      return `${s}s`;
+    };
+
+    if (typeof l === 'string') {
+        return l.length < 3 ? l : pluralizeEn(l);
+    }
+    
     if (typeof l === 'object' && l !== null) {
         return {
-            ro: `${l.ro || autoLabel}e`,
-            en: `${l.en || autoLabel}s`
+            ro: l.ro || autoLabel, // Don't guess 'e' for Romanian, it's too complex
+            en: pluralizeEn(l.en || autoLabel)
         };
     }
-    return { ro: `${autoLabel}e`, en: `${autoLabel}s` };
+    return { ro: autoLabel, en: pluralizeEn(autoLabel) };
   };
 
   return {

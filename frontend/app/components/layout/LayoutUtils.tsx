@@ -405,39 +405,45 @@ export function BrandText({ name, hasSystemIssues, lang }: { name?: string, hasS
 // ============================================================================
 
 export function UserMenuContent({ onClose, onOpenChangelog }: { onClose: () => void, onOpenChangelog: () => void }) {
-  const { user, logout } = useAuth();
+  const { user, logout, navigationAuthorized } = useAuth();
   const { t } = useTranslation();
   const { lang } = useParams();
   const navigate = useNavigate();
 
-  const menuItems = [
-    { id: 'profile', icon: User, label: t('sidebar:profile'), path: '/profile' },
-    { id: 'settings', icon: Settings, label: t('sidebar:settings'), path: '/settings' },
-    { id: 'changelog', icon: Sparkles, label: t('sidebar:changelog'), action: () => { onOpenChangelog(); onClose(); } },
-  ];
+  const menuItems = navigationAuthorized.user || [];
+  
+  // Always add Changelog as it's not strictly a "page" but a modal
+  const finalMenuItems = [...menuItems];
+  if (!finalMenuItems.some(i => i.id === 'changelog')) {
+    finalMenuItems.push({ id: 'changelog', icon: 'Sparkles', label: t('sidebar:changelog'), action: () => { onOpenChangelog(); onClose(); } } as any);
+  }
 
   return (
     <div className="flex flex-col">
        <div className="px-6 py-4 border-b border-slate-50 dark:border-slate-900 mb-2">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('common:welcome_back')}</p>
             <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{renderString(user?.name)}</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{user?.role || 'user'}</p>
        </div>
 
        <div className="px-2 space-y-1">
-           {menuItems.map(item => (
-                <button
-                    key={item.id}
-                    onClick={() => {
-                        if (item.action) item.action();
-                        else if (item.path) navigate(getLocalizedPath(item.path, lang));
-                        onClose();
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-indigo-600 transition-all group"
-                >
-                    <item.icon size={18} className="text-slate-400 group-hover:text-indigo-500" />
-                    {renderString(item.label)}
-                </button>
-           ))}
+           {finalMenuItems.map(item => {
+                const Icon = resolveIcon(item.icon);
+                return (
+                    <button
+                        key={item.id || item.path}
+                        onClick={() => {
+                            if (item.action) item.action();
+                            else if (item.path) navigate(getLocalizedPath(item.path, lang));
+                            onClose();
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-indigo-600 transition-all group"
+                    >
+                        <Icon size={18} className="text-slate-400 group-hover:text-indigo-500" />
+                        {renderString(item.label, lang)}
+                    </button>
+                );
+           })}
 
            <div className="h-px bg-slate-50 dark:bg-slate-900 my-2 mx-4" />
 
@@ -606,6 +612,32 @@ export const Sidebar = ({
     return undefined;
   };
 
+  const entityGroups = React.useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    (navigation.entity || []).forEach(item => {
+      const cat = item.category || 'data_systems';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    });
+    return groups;
+  }, [navigation.entity]);
+
+  const getCategoryIcon = (cat: string) => {
+    const map: Record<string, any> = {
+        crm: Icons.Users,
+        sales: Icons.Target,
+        inventory: Icons.Package,
+        hr: Icons.Briefcase,
+        comms: Icons.MessageSquare,
+        data_systems: Icons.Database,
+        administration: Icons.ShieldCheck,
+        marketing: Icons.Megaphone,
+        finance: Icons.Wallet,
+        project: Icons.FolderKanban,
+    };
+    return map[cat.toLowerCase()] || Icons.Layers;
+  };
+
   const Section = ({ title, icon: Icon, items }: { title: string, icon: any, items: any[] }) => {
     if (!items || items.length === 0) return null;
     return (
@@ -661,8 +693,18 @@ export const Sidebar = ({
          <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-6 scrollbar-hide">
             <Section title="sidebar:shortcuts" icon={Zap} items={navigation.shortcuts} />
             <Section title="sidebar:main_menu" icon={LayoutDashboard} items={navigation.main} />
-            <Section title="sidebar:app_worker" icon={Sparkles} items={navigation.worker} />
-            <Section title="sidebar:data_system" icon={Database} items={navigation.entity} />
+            <Section title="sidebar:apps_workers" icon={Sparkles} items={navigation.worker} />
+            
+            {/* Dynamic Entity Categories (CRM, Sales, etc) */}
+            {Object.entries(entityGroups).map(([cat, items]) => (
+                <Section 
+                    key={cat} 
+                    title={cat.includes(':') ? cat : `sidebar:${cat}`} 
+                    icon={getCategoryIcon(cat)} 
+                    items={items} 
+                />
+            ))}
+
             <Section title="sidebar:administration" icon={ShieldCheck} items={navigation.admin} />
          </nav>
 

@@ -38,7 +38,6 @@ Acest repository folosește o arhitectură **100% Registry-Driven & No-Code Engi
 - **Componenta Formular**: `frontend/app/components/entity/DynamicEntityDetail.tsx`
 
 - **Excludere Folder OLD si backend**: 🚨 **INTERZISĂ** orice modificare, ștergere sau citire în afara contextului de backup a folderului `OLD`. Acest folder este rezervat exclusiv pentru copii de siguranță manuale și fișiere istorice ale utilizatorului. Nu muta fișiere acolo și nu rula scripturi în interiorul lui.
-- ❌ **INTERZIS**: Multi-line imports pentru iconițe.
 ---
 *Acest sistem este optimizat pentru Cloudflare Workers (The Brain) și D1. Gândește modular și scalabil.*
 

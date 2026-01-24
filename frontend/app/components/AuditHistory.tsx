@@ -56,7 +56,7 @@ export function AuditHistory() {
   const loadHistory = async () => {
     setLoading(true);
     try {
-      const data = await api.post('/api/action/history', {
+      const data = await api.post('action/history', {
         limit,
         offset,
         entityType: entityTypeFilter || undefined,
@@ -76,7 +76,7 @@ export function AuditHistory() {
 
   const loadStats = async () => {
     try {
-      const data = await api.post('/api/action/stats', {});
+      const data = await api.post('action/stats', {});
       
       if (data) {
         setStats(data);
@@ -92,7 +92,7 @@ export function AuditHistory() {
     }
 
     try {
-      const data = await api.post(`/api/action/undo/${logId}`, {});
+      const data = await api.post(`action/undo/${logId}`, {});
       
       if (data && !data.error) {
         alert(renderString({ ro: 'Modificare restaurată cu succes!', en: 'Change successfully reverted!' }, lang));

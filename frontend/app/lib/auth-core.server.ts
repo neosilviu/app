@@ -3,6 +3,7 @@ import { cloudflare } from "better-auth-cloudflare";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 import { wrapD1Binding, getDb } from "./d1.server";
+import { bootstrapDatabase } from "./db-init.server";
 
 let _cachedAuth: any = null;
 
@@ -116,6 +117,10 @@ export async function verifyAuth(request: Request, env: any) {
   const masterKey = safeEnv.API_KEY;
   
   try {
+    const driver = getDb(safeEnv);
+    // Level 8: Always bootstrap and wait for DB initialization before checking sessions
+    await bootstrapDatabase(driver, safeEnv, null, request.url);
+    
     const auth = getAuth(safeEnv, request);
     const session = await auth.api.getSession({ headers: request.headers });
     

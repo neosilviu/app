@@ -16,5 +16,15 @@
   "main_menu": "Meniu Principal",
   "apps_workers": "Aplicații",
   "data_systems": "Sisteme de Date",
-  "administration": "Administrare"
+  "administration": "Administrare",
+  "crm": "Sistem CRM",
+  "sales": "Vânzări",
+  "comms": "Comunicare",
+  "security": "Securitate",
+  "system": "Mentenanță",
+  "hr": "Resurse Umane",
+  "inventory": "Inventar",
+  "marketing": "Marketing",
+  "finance": "Finanțe",
+  "project": "Proiecte"
 }

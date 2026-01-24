@@ -48,7 +48,7 @@ export function EntityHistoryWidget({
   const loadHistory = async () => {
     setLoading(true);
     try {
-      const data = await api.post(`/api/action/entity-history/${entityType}/${entityId}`, {});
+      const data = await api.post(`action/entity-history/${entityType}/${entityId}`, {});
       
       if (data) {
         setLogs(data || []);
@@ -66,7 +66,7 @@ export function EntityHistoryWidget({
     }
 
     try {
-      const data = await api.post(`/api/action/undo/${logId}`, {});
+      const data = await api.post(`action/undo/${logId}`, {});
       
       if (data && !data.error) {
         alert(renderString({ ro: 'Modificare restaurată cu succes!', en: 'Change successfully reverted!' }, lang));

@@ -45,8 +45,13 @@ const deepStringify = (obj: any): any => {
 };
 
 const isGlobalEntity = (name: string, registry: any) => {
+    const normalizedName = (name || '').toLowerCase();
+    // Level 8: Hardcoded safety for core system tables to prevent SQL errors (no-such-column: workspaceId)
+    if (['workspace', 'user', 'role', 'entity_definition', 'system_setting', 'audit_log', '_ai_prompt', 'tag', 'verification', 'session', 'account'].includes(normalizedName)) {
+        return true;
+    }
     const list = registry?.CONSTANT?.globalEntity || [];
-    return list.map((e: string) => e.toLowerCase()).includes((name || '').toLowerCase());
+    return list.map((e: string) => e.toLowerCase()).includes(normalizedName);
 };
 
 /**
@@ -54,11 +59,21 @@ const isGlobalEntity = (name: string, registry: any) => {
  * Handles CRUD, Search, Stats, Workflow and AI extraction for ANY entity defined in Registry.
  */
 export async function executeEntityAction(ctx: any) {
-    const { db, user, method, body, url, parts, op, registry, selectedLang, env } = ctx;
+    const { db, user, method, body, url, parts, op, registry, selectedLang, env, resource } = ctx;
     
     // 1. Resolve Path Segmenting (Enterprise Level 8)
-    let collection = (parts[1] === 'collection' ? parts[2] : (parts[0] === 'db' ? (parts[1] === 'collection' ? parts[2] : parts[1]) : parts[0])).toLowerCase();
+    const rawParts = parts || [];
+    let collection = (resource === 'db' 
+        ? (rawParts[1] === 'collection' ? rawParts[2] : (rawParts[1] || '')) 
+        : (resource || rawParts[0] || 'unknown')).toLowerCase();
     
+    // Safety: If resource is 'db' but no collection provided, or if collection resolved to 'db'
+    if (resource === 'db' && (!collection || collection === 'db')) {
+        return error("Missing collection name", 400, selectedLang);
+    }
+    
+    console.log(`[BRAIN-ENGINE] [${method}] resource="${resource}" collection="${collection}" op="${op}" parts=[${rawParts.join(',')}]`);
+
     if (collection.startsWith('ws_') && collection.includes('_')) {
         collection = collection.split('_').slice(2).join('_'); 
     }

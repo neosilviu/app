@@ -1,4 +1,4 @@
-import { Type, AlignLeft, Hash, DollarSign, Calendar, Clock, ToggleRight, ChevronDown, Tag, Mail, Phone, Globe, Image, FileText, Palette, Star, Percent, FileCode, Code2, MapPin, Users, CheckCircle2, Circle, Clock3, ListTodo, List, Bug, Briefcase, Handshake, CheckSquare, MessageSquare, FileDigit, Inbox, Package, ArrowDownUp, Bell, History, LayoutDashboard, Activity, Sparkles, Database, ArrowRight, RefreshCw, WifiOff, AlertCircle, Wifi, Zap, ZapOff, Settings, Search, PanelLeft, HelpCircle, User, LogOut, ShieldCheck, CreditCard, Plus, Trash2, Edit, Save, X, Filter, Download, Upload, MoreVertical, ChevronRight, ChevronLeft, CalendarDays, ExternalLink, Copy, TrendingUp, Stethoscope, UserCircle, FolderKanban, Ticket, Map as LucideMap, Box, Layout, ShoppingBag, Printer, File, Shield, BarChart, HardDrive, MessageSquareQuote, Play, Music, Calculator, Edit3, QrCode, Webhook, PlusCircle, ArrowRightLeft, Trello, Wallet, Coins, Gem, Landmark, Building, Building2, Store, Factory, Warehouse, Truck, Ship, Plane, Train, Car, Clock4, RotateCcw, Undo, Redo, ClipboardList, Heart, HeartPulse, Brain, Microscope, Tablets, ShieldAlert, ShieldQuestion, Key, Lock, Unlock, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, MailOpen, Send, Share, Share2, Link, Link2, Code, Terminal, Cpu, Monitor, Smartphone, Tablet, Laptop, Tv, Camera, Video, Mic, Volume2, Headphones, Navigation, Compass, Sunrise, Sunset, CloudSun, CloudRain, CloudLightning, Snowflake, Wind, Thermometer, Droplets, Flame, Moon, Sun, UserPlus, UserMinus, UserX, UserCheck, Contact, Fingerprint, Languages, Globe2, LayoutTemplate, Kanban, Table as TableIcon, PieChart, LineChart, AreaChart, ListOrdered, ListFilter, IterationCcw, Workflow, GanttChart, CalendarCheck, CalendarHeart, FileSearch, FileQuestion, FolderOpen, FolderPlus, Archive, Book, Bookmark, Library, GraduationCap, Award, Medal, Trophy, Hammer, Wrench, Construction, Pencil, Eraser, PenTool, Brush, Feather, Umbrella, Gift, Coffee, Pizza, GlassWater, Recycle, Leaf, Sprout, Flower2, PawPrint, Dog, Cat, Fish, Bird, Squirrel, Rabbit, Turtle, Ghost, Smile, Frown, Meh, Rocket, Milestone, Flag, Target, Dumbbell, MonitorCheck, ClipboardCheck, FileCheck, FolderCheck, CalendarCheck2, ListChecks, SearchCode, Network, Users2, LockKeyhole, LockKeyholeOpen, Banknote, PiggyBank, HandCoins, Receipt, ShoppingCart, Earth, MessagesSquare, BellDot, BellRing, PhoneCall, FileJson, FileImage, FileVideo, FileAudio, FileArchive, FileSpreadsheet, Folder, FolderSearch, Keyboard, Mouse, Power, CloudMoon, CloudSnow, Scissors, Lightbulb, LightbulbOff, BrainCircuit, Bot, Stars, HeartOff, Crown, Cake, Cherry, Beer, Wine, TreeDeciduous, TreePine, Flower, Annoyed, Loader, RefreshCcw, Timer, Hourglass, CalendarRange, LayoutList, LayoutPanelLeft, LayoutPanelTop, Rows, Maximize, Minimize, Minus, MinusCircle, XCircle, CheckCircle, Trash, Move, GripHorizontal, GripVertical } from './lucide-wrapper';
+import { Type, AlignLeft, Hash, DollarSign, Calendar, Clock, ToggleRight, ChevronDown, Tag, Mail, Phone, Globe, Image, FileText, Palette, Star, Percent, FileCode, Code2, MapPin, Users, CheckCircle2, Circle, Clock3, ListTodo, List, Bug, Briefcase, Handshake, CheckSquare, MessageSquare, FileDigit, Inbox, Package, ArrowDownUp, Bell, History, LayoutDashboard, Activity, Sparkles, Database, ArrowRight, RefreshCw, WifiOff, AlertCircle, Wifi, Zap, ZapOff, Settings, Search, PanelLeft, HelpCircle, User, LogOut, ShieldCheck, CreditCard, Plus, Trash2, Edit, Save, X, Filter, Download, Upload, MoreVertical, ChevronRight, ChevronLeft, CalendarDays, ExternalLink, Copy, TrendingUp, Stethoscope, UserCircle, FolderKanban, Ticket, Map as LucideMap, Box, Layout, ShoppingBag, Printer, File, Shield, BarChart, HardDrive, MessageSquareQuote, Play, Music, Calculator, Edit3, QrCode, Webhook, PlusCircle, ArrowRightLeft, Trello, Wallet, Coins, Gem, Landmark, Building, Building2, Store, Factory, Warehouse, Truck, Ship, Plane, Train, Car, Clock4, RotateCcw, Undo, Redo, ClipboardList, Heart, HeartPulse, Brain, Microscope, Tablets, ShieldAlert, ShieldQuestion, Key, Lock, Unlock, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, MailOpen, Send, Share, Share2, Link, Link2, Code, Terminal, Cpu, Monitor, Smartphone, Tablet, Laptop, Tv, Camera, Video, Mic, Volume2, Headphones, Navigation, Compass, Sunrise, Sunset, CloudSun, CloudRain, CloudLightning, Snowflake, Wind, Thermometer, Droplets, Flame, Moon, Sun, UserPlus, UserMinus, UserX, UserCheck, Contact, Fingerprint, Languages, Globe2, LayoutTemplate, Kanban, Table as TableIcon, PieChart, LineChart, AreaChart, ListOrdered, ListFilter, IterationCcw, Workflow, GanttChart, CalendarCheck, CalendarHeart, FileSearch, FileQuestion, FolderOpen, FolderPlus, Archive, Book, Bookmark, Library, GraduationCap, Award, Medal, Trophy, Hammer, Wrench, Construction, Pencil, Eraser, PenTool, Brush, Feather, Umbrella, Gift, Coffee, Pizza, GlassWater, Recycle, Leaf, Sprout, Flower2, PawPrint, Dog, Cat, Fish, Bird, Squirrel, Rabbit, Turtle, Ghost, Smile, Frown, Meh, Rocket, Milestone, Flag, Target, Dumbbell, MonitorCheck, ClipboardCheck, FileCheck, FolderCheck, CalendarCheck2, ListChecks, SearchCode, Network, Users2, LockKeyhole, LockKeyholeOpen, Banknote, PiggyBank, HandCoins, Receipt, ShoppingCart, Earth, MessagesSquare, BellDot, BellRing, PhoneCall, FileJson, FileImage, FileVideo, FileAudio, FileArchive, FileSpreadsheet, Folder, FolderSearch, Keyboard, Mouse, Power, CloudMoon, CloudSnow, Scissors, Lightbulb, LightbulbOff, BrainCircuit, Bot, Stars, HeartOff, Crown, Cake, Cherry, Beer, Wine, TreeDeciduous, TreePine, Flower, Annoyed, Loader, RefreshCcw, Timer, Hourglass, CalendarRange, LayoutList, LayoutPanelLeft, LayoutPanelTop, Rows, Maximize, Minimize, Minus, MinusCircle, XCircle, CheckCircle, Trash, Move, GripHorizontal, GripVertical, StickyNote, Paperclip } from './lucide-wrapper';
 
 export const IconMap: Record<string, any> = {
   Type, 
@@ -65,7 +65,10 @@ export const IconMap: Record<string, any> = {
   HelpCircle,
   User,
   LogOut,
+  Shield,
   ShieldCheck,
+  ShieldAlert,
+  ShieldQuestion,
   CreditCard,
   Plus,
   Trash2,
@@ -83,7 +86,6 @@ export const IconMap: Record<string, any> = {
   Copy,
   Printer,
   File,
-  Shield,
   BarChart,
   HardDrive,
   MessageSquareQuote,
@@ -120,8 +122,6 @@ export const IconMap: Record<string, any> = {
   Brain,
   Microscope,
   Tablets,
-  ShieldAlert,
-  ShieldQuestion,
   Key,
   Lock,
   Unlock,
@@ -298,7 +298,9 @@ export const IconMap: Record<string, any> = {
   Trash,
   Move,
   GripHorizontal,
-  GripVertical
+  GripVertical,
+  StickyNote,
+  Paperclip
 };
 
 export const resolveIcon = (iconName: any) => {

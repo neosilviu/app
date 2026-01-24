@@ -96,7 +96,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
         console.error("[SETTINGS-LOADER] Error fetching data:", e);
     }
 
-    const setting = workspace?.setting ? (typeof workspace.setting === 'string' ? JSON.parse(workspace.setting) : workspace.setting) : {};
+    const settings = workspace?.settings ? (typeof workspace.settings === 'string' ? JSON.parse(workspace.settings) : workspace.settings) : {};
 
     return {
         lang: params.lang,
@@ -106,7 +106,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
             id: workspace?.id,
             workspaceId: workspace?.id,
             workspaceName: workspace?.name,
-            ...setting
+            ...settings
         }
     };
 }

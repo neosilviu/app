@@ -105,7 +105,47 @@ export const I18N = {
         user: "User"
       }
     },
-    // ... [Rest of EN]
+    auth: {
+      welcome_back: "Welcome back",
+      initial_setup: "Initial Setup",
+      setup_description: "Create the first administrator account to start using the system.",
+      full_name: "Full Name",
+      full_name_placeholder: "Enter full name",
+      email: "Email",
+      email_placeholder: "Enter email address",
+      password: "Password",
+      password_placeholder: "Enter password",
+      create_admin: "Create Administrator",
+      registering: "Creating account...",
+      setup_success: "Administrator account created successfully!",
+      setup_error: "Failed to create administrator account.",
+      already_have_account: "Already have an account?",
+      login_here: "Login here",
+      login: "Login",
+      sign_in: "Sign In",
+      signing_in: "Signing in...",
+      login_success: "Logged in successfully",
+      login_error: "Invalid email or password",
+      no_account: "Don't have an account?",
+      register: "Register"
+    },
+    sidebar: {
+      shortcuts: "Shortcuts",
+      main_menu: "Main Menu",
+      apps_workers: "Apps & Workers",
+      data_systems: "Data Systems",
+      administration: "Administration",
+      crm: "CRM",
+      sales: "Sales",
+      inventory: "Inventory",
+      hr: "Human Resources",
+      comms: "Communications",
+      marketing: "Marketing",
+      finance: "Finance",
+      project: "Projects",
+      user_profile: "My Profile",
+      changelog: "Changelog"
+    }
   },
   ro: {
     common: {
@@ -208,6 +248,49 @@ export const I18N = {
         user: "Utilizator"
       }
     },
-    // ... [Rest of RO]
+    auth: {
+      welcome_back: "Bine ai revenit",
+      initial_setup: "Configurare Inițială",
+      setup_description: "Creează primul cont de administrator pentru a începe utilizarea sistemului.",
+      full_name: "Nume Complet",
+      full_name_placeholder: "Introdu numele complet",
+      email: "Email",
+      email_placeholder: "Introdu adresa de email",
+      password: "Parolă",
+      password_placeholder: "Introdu parola",
+      create_admin: "Creează Administrator",
+      registering: "Se creează contul...",
+      setup_success: "Contul de administrator a fost creat cu succes!",
+      setup_error: "Eroare la crearea contului de administrator.",
+      already_have_account: "Ai deja un cont?",
+      login_here: "Autentifică-te aici",
+      login: "Autentificare",
+      sign_in: "Autentificare",
+      signing_in: "Se autentifică...",
+      login_success: "Autentificare reușită",
+      login_error: "Email sau parolă incorectă",
+      logout: "Deconectare",
+      session_expired: "Sesiune expirată",
+      please_sign_in: "Vă rugăm să vă autentificați",
+      no_account: "Nu ai un cont?",
+      register: "Înregistrare"
+    },
+    sidebar: {
+      shortcuts: "Comenzi Rapide",
+      main_menu: "Meniu Principal",
+      apps_workers: "Aplicații și Fluxuri",
+      data_systems: "Sisteme de Date",
+      administration: "Administrare",
+      crm: "Clientelă (CRM)",
+      sales: "Vânzări",
+      inventory: "Inventar",
+      hr: "Resurse Umane",
+      comms: "Comunicare",
+      marketing: "Marketing",
+      finance: "Finanțe",
+      project: "Proiecte",
+      user_profile: "Profilul meu",
+      changelog: "Istoric Versiuni"
+    }
   }
 } as const;

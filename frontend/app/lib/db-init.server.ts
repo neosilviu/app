@@ -66,6 +66,27 @@ export async function waitForDbReady(db: any, maxWaitMs = 15000) {
 }
 
 /**
+ * HIGH-LEVEL BOOTSTRAP: Enterprise Level 8
+ * Ensures DB is fully initialized, synced and ready for traffic.
+ * Can be called from API handlers, loaders or middleware.
+ */
+export async function bootstrapDatabase(db: any, env: any, cfCtx?: any, requestUrl?: string) {
+    if (global.IS_DB_INITIALIZED) return;
+
+    // Trigger initialization if not started
+    if (!global.DB_INIT_PROMISE) {
+        // We don't await here because ensureSystemTables has its own internal promise handling
+        // and we want to enter waitForDbReady immediately after.
+        ensureSystemTables(db, requestUrl, cfCtx).catch(e => {
+            console.error("[DB-BOOTSTRAP] Initialization failed to start:", e.message);
+        });
+    }
+
+    // Wait for it to finish
+    await waitForDbReady(db, 15000); 
+}
+
+/**
  * Ensures system tables exist and migrations are applied
  */
 export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any) {
@@ -112,8 +133,9 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             // Enterprise Level 8: Namespace Normalization Migration (After tables are synced)
             try {
                 // Remove duplicates and normalize to lowercase
-                await db.exec(`DELETE FROM "SYSTEM_SETTING" WHERE rowid NOT IN (SELECT MIN(rowid) FROM "SYSTEM_SETTING" GROUP BY LOWER(namespace), LOWER(id))`);
-                await db.exec(`UPDATE "SYSTEM_SETTING" SET namespace = LOWER(namespace), id = LOWER(id)`);
+                // Using 'key' instead of 'id' for logical deduplication
+                await db.exec(`DELETE FROM "SYSTEM_SETTING" WHERE rowid NOT IN (SELECT MIN(rowid) FROM "SYSTEM_SETTING" GROUP BY LOWER(namespace), LOWER("key"))`);
+                await db.exec(`UPDATE "SYSTEM_SETTING" SET namespace = LOWER(namespace), "key" = LOWER("key")`);
             } catch (e: any) {
                 console.warn("[DB-INIT] Namespace normalization partially failed or skipped:", e.message);
             }
@@ -270,6 +292,14 @@ export async function syncWorkspaceSettingsBaseline(db: any, registry: any) {
 export async function syncRolesBaseline(db: any, registry: any) {
     const roles = registry.SYSTEM_ROLE || registry.roles || {};
     if (!roles || Object.keys(roles).length === 0) return;
+
+    // Enterprise Level 8: Ensure schema sync for role table before inserting
+    // This handles cases where Better-Auth might have created a partial 'role' table
+    try {
+        await syncTableSchema(db, 'role', ['name', 'color', 'description', 'permission', 'workspaceId']);
+    } catch (e: any) {
+        console.warn("[DB-INIT] Role schema auto-heal failed, but proceeding:", e.message);
+    }
 
     console.log('[DB-INIT] Syncing system roles baseline (Batched)...');
     const statements: any[] = [];

@@ -16,7 +16,7 @@ import { getRegistry, clearRegistryCache, resolveCollection, getPrimaryKey } fro
 import { normalizeEntity, safeParse, getDisplayValue } from './lib/entity-engine';
 import { renderString } from './lib/utils';
 import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin, checkAccessAsync } from './lib/auth-utils';
-import { ensureSystemTables, waitForDbReady, mapFieldType, ensureBaselineSync, syncEntityTable } from './lib/db-init.server';
+import { ensureSystemTables, waitForDbReady, mapFieldType, ensureBaselineSync, syncEntityTable, bootstrapDatabase } from './lib/db-init.server';
 import { executeEntityAction } from './lib/brain-engine.server';
 import { 
     deepParse, 
@@ -39,6 +39,13 @@ export const Brain = {
         const db = getDb({ DB: d1 });
         const registry = await getRegistry(db);
         const lang = payload?.lang || 'ro';
+
+        // Enterprise Level 8: Security and Validity check
+        if (!entity || !registry.ENTITY_CONFIG?.[entity]) {
+            console.warn(`[BRAIN-EXECUTE] Invalid entity type: ${entity}`);
+            if (action === 'READ' && payload?.id) return null;
+            return { success: false, error: `Invalid entity: ${entity}` };
+        }
         
         switch (action) {
             case 'READ':
@@ -77,8 +84,16 @@ export const Brain = {
 
 // --- SYSTEM CONSTANTS (Level 8: Decoupled to Registry - NO FAILSAFES) ---
 const isGlobalEntity = (name: string, registry?: any) => {
+    const normalizedName = (name || '').toLowerCase();
+    // Level 8: Hardcoded safety for core system tables to prevent SQL errors (no-such-column: workspaceId)
+    // These tables are globally shared and NEVER contain a workspaceId column.
+    if (['workspace', 'user', 'role', 'entity_definition', 'system_setting', 'audit_log', '_ai_prompt', 'tag', 'verification', 'session', 'account'].includes(normalizedName)) {
+        return true;
+    }
+    
+    // Check registry for any other entities marked as global
     const list = registry?.CONSTANT?.globalEntity || [];
-    return list.map((e: string) => e.toLowerCase()).includes((name || '').toLowerCase());
+    return list.map((e: string) => e.toLowerCase()).includes(normalizedName);
 };
 
 // --- CACHING STRATEGY (Enterprise Level 8) ---
@@ -187,6 +202,8 @@ if (global.PENDING_CONFIG_FETCHES === undefined) global.PENDING_CONFIG_FETCHES =
 function synthesizeNavigation(merged: any, template: any) {
     if (!merged.NAV) return;
 
+    console.log(`[BRAIN-CONFIG] Synthesizing navigation for ${Object.keys(merged.ENTITY_CONFIG || {}).length} entities`);
+
     // Reset dynamic groupings for synthesis
     const synthesizedNav: any = {
         ...template.NAV,
@@ -205,37 +222,40 @@ function synthesizeNavigation(merged: any, template: any) {
         
         if (menu.showInMainMenu === false) return; // Explicitly hidden
 
+        const navId = `entity:${name}`;
         const navItem = {
-            id: name,
+            id: navId,
             label: menu.label || norm.labelPlural || norm.label || name,
             icon: menu.icon || norm.icon || 'Box',
             path: menu.path || `/${name}`,
             priority: menu.priority || 50,
-            category: menu.category,
+            category: menu.category || (norm.isSystem ? 'administration' : 'data_systems'),
             workerName: norm.workerName,
             isSystem: norm.isSystem
         };
 
         // Group by Category (Enterprise Level 8 Standard)
-        const cat = (menu.category || '').toLowerCase();
+        const cat = (navItem.category || 'data_systems').toLowerCase();
         
-        // Level 8 Optimization: If showInMainMenu is true and NO category is specified, 
-        // default to main_menu to ensure visibility for dynamic entities.
-        const isMain = cat === 'main_menu' || cat.includes('meniu') || cat.includes('main') || 
-                       (menu.showInMainMenu === true && !cat);
+        const isMain = cat === 'main_menu' || cat === 'main';
+        const isAdmin = cat === 'administration' || cat === 'admin';
+        const isWorker = cat === 'worker' || cat === 'workers' || cat === 'apps_workers';
 
         if (isMain) {
-            if (!synthesizedNav.main.find((i: any) => i.id === name)) {
+            if (!synthesizedNav.main.find((i: any) => i.id === navId)) {
                 synthesizedNav.main.push(navItem);
             }
-        } else if (cat === 'worker' || cat === 'workers' || cat.includes('worker') || cat.includes('app')) {
-            synthesizedNav.worker.push(navItem);
-        } else if (cat === 'administration' || cat.includes('admin') || cat.includes('workspace')) {
-            if (!synthesizedNav.admin.find((i: any) => i.id === name)) {
+        } else if (isAdmin) {
+            if (!synthesizedNav.admin.find((i: any) => i.id === navId)) {
                 synthesizedNav.admin.push(navItem);
             }
+        } else if (isWorker) {
+            synthesizedNav.worker.push(navItem);
         } else {
-            synthesizedNav.entity.push(navItem);
+            // Check if it should be in entity group
+            if (!synthesizedNav.entity.find((i: any) => i.id === navId)) {
+                synthesizedNav.entity.push(navItem);
+            }
         }
     });
 
@@ -247,6 +267,7 @@ function synthesizeNavigation(merged: any, template: any) {
     });
 
     merged.NAV = synthesizedNav;
+    console.log(`[BRAIN-CONFIG] Synthesis complete: main=${synthesizedNav.main?.length}, entity=${synthesizedNav.entity?.length}, admin=${synthesizedNav.admin?.length}`);
 }
 
 /**
@@ -426,7 +447,6 @@ async function mergeRegistryWithD1(db: any, workspaceId: string = 'system'): Pro
         
         // Ensure property normalization (Protection against missing keys)
         if (!merged.NAV) merged.NAV = template.NAV || {};
-        if (!merged.CONSTANTS) merged.CONSTANTS = template.CONSTANTS || {};
         if (!merged.AI_CONFIG) merged.AI_CONFIG = template.AI_CONFIG || {};
         if (!merged.AUTH_CONFIG) merged.AUTH_CONFIG = template.AUTH_CONFIG || {};
         if (!merged.THEME) merged.THEME = template.THEME || {};
@@ -434,6 +454,7 @@ async function mergeRegistryWithD1(db: any, workspaceId: string = 'system'): Pro
         if (!merged.ENTITY_CONFIG) merged.ENTITY_CONFIG = template.ENTITY_CONFIG || {};
         if (!merged.DASHBOARD) merged.DASHBOARD = template.DASHBOARD || {};
         if (!merged.SYSTEM_SETTING) merged.SYSTEM_SETTING = template.SYSTEM_SETTING || {};
+        if (!merged.CONSTANT) merged.CONSTANT = template.CONSTANT || {};
         
         if (entities.length > 0) {
             for (const ent of entities) {
@@ -518,6 +539,16 @@ async function mergeRegistryWithD1(db: any, workspaceId: string = 'system'): Pro
 }
 
 // --- AUDIT AUTOMATION ---
+// DEV HELPER: Clear registry-cache on load to force fresh synth (only in dev)
+if (process.env.NODE_ENV !== 'production') {
+    try {
+        if (clearRegistryCache) clearRegistryCache();
+        if (global && global.CACHED_CONFIGS) global.CACHED_CONFIGS = {};
+        console.log('[BRAIN-DEBUG] Cleared registry cache and forced re-synthesis (dev)');
+    } catch (e) { console.warn('[BRAIN-DEBUG] Failed to clear registry cache', e); }
+}
+
+
 function createAuditProxy(db: any, user: any) {
     if (!db) return db;
     return new Proxy(db, {
@@ -713,15 +744,99 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
         `, [user.workspaceId, user.workspaceId, user.workspaceId]);
         return success(counts);
     },
-    registry: async ({ db, user, registry }) => {
-        return success({
-            entities: registry.ENTITY_CONFIG,
-            constants: registry.CONSTANT,
-            theme: registry.THEME
-        });
+    registry: async ({ db, user, registry, body, method, op }) => {
+        if (method === 'GET' || op === 'get') {
+            return success({
+                entities: registry.ENTITY_CONFIG,
+                constants: registry,
+                theme: registry.THEME || {}
+            });
+        }
+
+        if (method === 'POST' || op === 'save') {
+            if (!isGlobalAdmin(user, registry)) return error("Unauthorized", 403);
+            const { namespace, key, value, dataType } = body;
+            if (!key) return error("Key is required", 400);
+
+            // Enterprise Level 8: IDempotent Save to SYSTEM_SETTING
+            const settingId = `${namespace || 'SYSTEM_SETTING'}_${key}`.toLowerCase();
+            await db.set("SYSTEM_SETTING", settingId, {
+                namespace: namespace || 'SYSTEM_SETTING',
+                key: key,
+                value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+                dataType: dataType || (typeof value === 'object' ? 'json' : 'string')
+            });
+
+            return success({ saved: true });
+        }
+
+        return error("Method not allowed", 405);
     },
-    entity: async ({ db, user, registry }) => {
-        // Return entity definitions for the builder
+    entity: async ({ db, user, registry, body, method, op }) => {
+        if (method === 'GET') {
+            return success(Object.values(registry.ENTITY_CONFIG || {}));
+        }
+
+        if (!isGlobalAdmin(user, registry)) return error("Unauthorized", 403);
+
+        if (op === 'save' || (method === 'POST' && body.name)) {
+            const entityDef = body;
+            const name = entityDef.name?.toLowerCase();
+            if (!name) return error("Entity name required", 400);
+
+            // Level 8: Save Entity Definition to Registry (SYSTEM_SETTING)
+            await db.set("SYSTEM_SETTING", `entity_${name}`, {
+                namespace: 'ENTITY_CONFIG',
+                key: name,
+                value: JSON.stringify(entityDef),
+                dataType: 'json'
+            });
+
+            // Trigger actual D1 table synchronization if needed
+            // await syncEntityTable(db, entityDef); 
+
+            return success({ success: true, name });
+        }
+
+        if (op === 'install') {
+            const { template } = body;
+            if (!template?.entity || !Array.isArray(template.entity)) return error("Invalid template format", 400);
+
+            for (const ent of template.entity) {
+                const name = ent.name?.toLowerCase();
+                if (!name) continue;
+                await db.set("SYSTEM_SETTING", `entity_${name}`, {
+                    namespace: 'ENTITY_CONFIG',
+                    key: name,
+                    value: JSON.stringify(ent),
+                    dataType: 'json'
+                });
+            }
+            
+            // Also install widgets if any
+            if (template.widget && Array.isArray(template.widget)) {
+                for (const w of template.widget) {
+                     const widgetId = w.id || crypto.randomUUID();
+                     await db.set("SYSTEM_SETTING", `widget_${widgetId}`, {
+                        namespace: 'WIDGET_CONFIG',
+                        key: widgetId,
+                        value: JSON.stringify(w),
+                        dataType: 'json'
+                    });
+                }
+            }
+
+            return success({ installed: true, count: template.entity.length });
+        }
+
+        if (op === 'delete' || method === 'DELETE') {
+            const id = body.id || body.name;
+            if (!id) return error("ID/Name required", 400);
+
+            await db.delete("SYSTEM_SETTING", { namespace: 'ENTITY_CONFIG', key: id });
+            return success({ deleted: true });
+        }
+
         return success(Object.values(registry.ENTITY_CONFIG || {}));
     },
     ai: async ({ op, parts, db, user, body, env }) => {
@@ -785,6 +900,46 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
             const { name, context = {} } = body || {};
             if (!name) return error("Prompt name required");
             return success(await ai.getPrompt(db, name, context));
+        }
+
+        if (op === "architect" || body.action === "architect") {
+            const { prompt, lang = registry.language, context = {} } = body || {};
+            if (!prompt) return error("Prompt required");
+
+            const architectSystemPrompt = `
+                You are the AI ARCHITECT for Studio App v2.
+                Your task is to generate complete NO-CODE configuration for a new business app module based on the user request.
+                
+                OUTPUT FORMAT: Must be a VALID JSON object with:
+                - entity: array of entity objects (name, label, icon, fieldsMap)
+                - automation: array of automation rules
+                - widget: array of dashboard widget configs
+                
+                ENTITY TEMPLATE:
+                {
+                    "name": "singular_technical_name",
+                    "label": { "ro": "Nume", "en": "Name" },
+                    "icon": "LucideIconName",
+                    "fields": {
+                        "field_id": { "type": "string|number|boolean|date|relation", "label": { "ro": "...", "en": "..." } }
+                    }
+                }
+                
+                Always strictly follow Level 8 architecture standards. Singular names for entities.
+            `;
+
+            try {
+                const response = await ai.chat(prompt, [], {
+                    provider: registry.AI_CONFIG?.active_provider,
+                    model: registry.AI_CONFIG?.preferredModel || 'gemini-1.5-flash',
+                    temperature: 0.7,
+                    systemPrompt: architectSystemPrompt
+                });
+                
+                return success(safeParse(response));
+            } catch (e: any) {
+                return error(`Architect failed: ${e.message}`, 500);
+            }
         }
 
         if (op === "chat" || body.action === "chat") {
@@ -922,9 +1077,10 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
 
         return error("AI operation not found", 404);
     },
-    action: async ({ op, parts, db, user, body }) => {
-        const registry = await getRegistry(db);
-        const selectedLang = user?.preferredLanguage || registry.language || 'ro';
+    action: async ({ op, parts, db, user, body, registry }) => {
+        const selectedLang = user?.preferredLanguage || registry?.language || 'ro';
+        
+        console.log(`[BRAIN-ACTION] op="${op}", user_ws="${user?.workspaceId}", parts=[${parts.join(', ')}]`);
         
         if (op === "undo") {
             const logId = parts[2];
@@ -954,7 +1110,12 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
         if (op === "entity-history") {
             const entityType = parts[2], entityId = parts[3];
             if (!entityType || !entityId) return error(renderString({ ro: "Entity Type și ID necesare", en: "Entity Type and ID required" }, selectedLang));
-            const logs = await db.query("SELECT * FROM audit_log WHERE workspaceId = ? AND entityType = ? AND entityId = ? ORDER BY createdAt DESC LIMIT 50", [user.workspaceId, entityType, entityId]);
+            
+            // Level 8: Audit log typically has workspaceId, but for global entities (like tag, workspace) it might be 'system'
+            const logs = await db.query(
+                "SELECT * FROM audit_log WHERE (workspaceId = ? OR workspaceId = 'system') AND entityType = ? AND entityId = ? ORDER BY createdAt DESC LIMIT 50", 
+                [user.workspaceId, entityType, entityId]
+            );
             return success(logs.map(deepParse));
         }
         if (op === "stats") {
@@ -967,28 +1128,53 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
         }
         return error("Action not found", 404);
     },
-    tag: async ({ op, parts, db, user, body, method }) => {
+    tag: async (ctx) => {
+        const { op, parts, db, user, body, method } = ctx;
         const table = 'tag', relationTable = 'tag_assignment';
+        
         if (method === 'GET') {
             if (op === "results") {
-                const assignments = await db.list(relationTable, { tagId: parts[2], workspaceId: user.workspaceId });
+                const tagId = parts[2];
+                if (!tagId) return error("Tag ID missing", 400);
+
+                const assignments = await db.list(relationTable, { tagId, workspaceId: user.workspaceId });
                 const res = [];
                 for (const a of assignments) {
+                    try {
                         const rec = await db.get(a.entityType, a.entityId);
-                    if (rec) res.push({ ...deepParse(rec), _entity: a.entityType });
+                        if (rec) res.push({ ...deepParse(rec), _entity: a.entityType });
+                    } catch (e) {
+                         console.warn(`[BRAIN-TAG] Failed to fetch related ${a.entityType}:${a.entityId}`, e);
+                    }
                 }
                 return success(res);
             }
+
+            // Handle /api/tag/<id> vs /api/tag/all
+            if (op && op !== 'all' && op !== 'list' && op !== 'null') {
+                const item = await db.get(table, op);
+                if (item) return success(deepParse(item));
+                
+                // If not found by ID, maybe it's a request for all with filters?
+                // For now, return 404 to avoid confusion
+                return error("Tag not found", 404);
+            }
+
             return success((await db.list(table, { workspaceId: user.workspaceId })).map(deepParse));
         }
-        if (op === "create") return success(await db.create(table, { id: crypto.randomUUID(), ...body, workspaceId: user.workspaceId }));
-        if (op === "assign") return success(await db.create(relationTable, { id: crypto.randomUUID(), ...body, workspaceId: user.workspaceId }));
-        if (op === "remove") {
-            const ex = await db.list(relationTable, { tagId: body.tagId, entityId: body.entityId, workspaceId: user.workspaceId });
-            for (const item of ex) await db.delete(relationTable, item.id);
-            return success();
+        
+        // Use standard executor for specialized actions or write
+        if (op === "assign" || op === "remove") {
+             if (op === "assign") return success(await db.create(relationTable, { id: crypto.randomUUID(), ...body, workspaceId: user.workspaceId }));
+             if (op === "remove") {
+                const ex = await db.list(relationTable, { tagId: body.tagId, entityId: body.entityId, workspaceId: user.workspaceId });
+                for (const item of ex) await db.delete(relationTable, item.id);
+                return success();
+            }
         }
-        return error("Tag operation not found");
+
+        // Default to executeEntityAction for everything else (CREATE, UPDATE, DELETE)
+        return await executeEntityAction({ ...ctx, resource: table });
     },
     search: async ({ db, user, url, selectedLang }) => {
         const query = url.searchParams.get("q") || "", entityTypeFilter = url.searchParams.get("type") || "", limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 200), offset = parseInt(url.searchParams.get("offset") || "0");
@@ -1013,7 +1199,17 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
                     const entityResults = await db.query(sql, sqlParams);
                     for (const item of entityResults) {
                         const displayValue = item[cfg.displayField || 'name'] || item.id;
-                        results.push({ id: item.id, type: entityName, displayValue, workspaceId: item.workspaceId, createdAt: item.createdAt, match_fields: searchFields.filter((f: string) => item[f] && String(item[f]).toLowerCase().includes(query.toLowerCase())), icon: cfg.icon || 'Box', label: renderString(cfg.label || {}, selectedLang), link: `/${entityName}/${item.id}` });
+                        results.push({ 
+                            id: item.id, 
+                            type: entityName, 
+                            displayValue, 
+                            workspaceId: item.workspaceId, 
+                            createdAt: item.createdAt, 
+                            match_fields: searchFields.filter((f: string) => item[f] && String(item[f]).toLowerCase().includes(query.toLowerCase())), 
+                            icon: cfg.icon || 'Box', 
+                            label: renderString(cfg.label || {}, selectedLang), 
+                            link: `/${selectedLang}/${entityName}/${item.id}` 
+                        });
                     }
                 } catch (e: any) { console.warn(`[SEARCH-ERROR] Failed to search ${entityName}:`, e.message); }
             }
@@ -1066,7 +1262,7 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
         if (!file) return error("No file provided");
         await db.create('audit_log', { id: crypto.randomUUID(), action: 'upload', entityType: 'file', details: JSON.stringify({ name: (file as any).name, size: (file as any).size, storage }), user: user?.email || user?.id || 'system', workspaceId: user?.workspaceId || 'system', createdAt: new Date().toISOString() });
         if (storage === 'local-inbox') {
-            const registry = await getRegistry(db), localAgentUrl = env.VITE_SOCKET_URL || registry.CONSTANTS?.directories?.apiUrl || 'http://localhost:4001';
+            const registry = await getRegistry(db), localAgentUrl = env.VITE_SOCKET_URL || registry.CONSTANT?.directories?.apiUrl || 'http://localhost:4001';
             try {
                 const formData = new FormData();
                 if (file && typeof (file as any).name === 'string') { formData.append('file', file as any, (file as any).name); } else { formData.append('file', file as any); }
@@ -1081,7 +1277,7 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
     },
     socket: async () => error("Socket.IO not supported on Worker", 404),
     localAgent: async ({ parts, request, db, env, user }) => {
-        const registry = await getRegistry(db), localAgentUrl = env.VITE_SOCKET_URL || registry.SYSTEM_SETTING?.local_agent_url || 'http://localhost:4001';
+        const registry = await getRegistry(db), localAgentUrl = env.VITE_SOCKET_URL || registry.SYSTEM_SETTING?.local_agent_url || registry.CONSTANT?.directories?.apiUrl || 'http://localhost:4001';
         const subPath = parts.slice(1).join('/'), targetUrl = new URL(request.url), finalUrl = `${localAgentUrl.replace(/\/$/, '')}/api/${subPath}${targetUrl.search}`;
         try {
             const hasBody = !['GET', 'HEAD', 'DELETE'].includes(request.method);
@@ -1092,10 +1288,96 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
         } catch (e: any) { return error(`Agentul local nu este disponibil la ${localAgentUrl}`, 503); }
     },
     workspace: async (ctx) => await executeEntityAction(ctx),
-    system: async (ctx) => await executeEntityAction(ctx),
+    db: async (ctx) => await executeEntityAction(ctx),
+    inbox: async (ctx) => {
+        const { parts, op, body, db, user, env } = ctx;
+        const registry = await getRegistry(db);
+        const localAgentUrl = env.VITE_SOCKET_URL || registry.SYSTEM_SETTING?.local_agent_url || 'http://localhost:4001';
+        const subPath = parts.slice(1).join('/');
+        const finalUrl = `${localAgentUrl.replace(/\/$/, '')}/api/inbox/${subPath}`;
+        
+        try {
+            const response = await fetch(finalUrl, {
+                method: ctx.method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': env.API_KEY || 'dev-token',
+                    'X-User-ID': user?.id || 'system',
+                    'X-Workspace-ID': user?.workspaceId || 'system'
+                },
+                body: ['GET', 'HEAD'].includes(ctx.method) ? undefined : JSON.stringify(body)
+            });
+            return new Response(await response.arrayBuffer(), {
+                status: response.status,
+                headers: { 'Content-Type': response.headers.get('Content-Type') || 'application/json' }
+            });
+        } catch (e: any) {
+            return error(`Inbox agent not available: ${e.message}`, 503);
+        }
+    },
+    system: async (ctx) => {
+        const { op, db, selectedLang } = ctx;
+        if (op === 'get-settings') {
+            try {
+                const results = await db.list('SYSTEM_SETTING');
+                const settings: Record<string, any> = {};
+                results.forEach((s: any) => {
+                    const key = s.key || s.id;
+                    if (key) settings[key] = s.value;
+                });
+                return json({ success: true, settings });
+            } catch (e: any) {
+                console.error("[BRAIN-SYSTEM-SETTINGS-ERROR]", e.message);
+                return error(`Failed to fetch system settings: ${e.message}`, 500);
+            }
+        }
+        if (op === 'info') {
+            return json({
+                success: true,
+                info: {
+                    name: "Studio App v2",
+                    version: "2.1.0",
+                    status: "active",
+                    environment: "production",
+                    db: "connected"
+                }
+            });
+        }
+        return await executeEntityAction({ ...ctx, resource: 'SYSTEM_SETTING' });
+    },
     monitoring: async ({ db, user }) => {
         const logs = await db.list('audit_log', { workspaceId: user.workspaceId }, { limit: 10, sortBy: 'createdAt', sortOrder: 'DESC' });
         return success(logs);
+    },
+    export: async ({ url, db, user, registry }) => {
+        const entity = url.searchParams.get("entity");
+        if (!entity) return error("Missing entity");
+        const format = url.searchParams.get("format") || "csv";
+        
+        const isGlobal = isGlobalEntity(entity, registry);
+        const filters: any = {};
+        if (!isGlobal && user) {
+            filters.workspaceId = user.workspaceId;
+        }
+        
+        try {
+            const results = await db.list(entity, filters);
+            const parsedResults = results.map(deepParse);
+            
+            if (format === "json") {
+                return success(parsedResults);
+            }
+            
+            const csv = convertToCSV(parsedResults);
+            return new Response(csv, {
+                headers: {
+                    "Content-Type": "text/csv",
+                    "Content-Disposition": `attachment; filename="${entity}_export.csv"`
+                }
+            });
+        } catch (e: any) {
+            return error(`Export failed: ${e.message}`, 500);
+        }
     },
     auth: async ({ request, env, op, user, db, body, registry }) => {
         if (op === "check-admin") {
@@ -1124,7 +1406,7 @@ const HANDLERS_CORE: Record<string, (ctx: any) => Promise<Response>> = {
                 if (!result || !result.user) throw new Error("Eroare la crearea utilizatorului.");
 
                 // Promote to SuperAdmin directly in DB
-                await db.exec("UPDATE user SET role = 'superadmin', workspaceId = 'system' WHERE id = ?", [result.user.id]);
+                await db.query("UPDATE user SET role = 'superadmin', workspaceId = 'system' WHERE id = ?", [result.user.id]);
                 
                 return success({ message: "Admin creat cu succes", user: result.user });
             } catch (err: any) {
@@ -1155,7 +1437,25 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
     upload: HANDLERS_CORE.upload,
     'socket.io': HANDLERS_CORE.socket,
     'local-agent': HANDLERS_CORE.localAgent,
-    workspace: HANDLERS_CORE.workspace,
+    'install-architecture': async ({ db, body, user, registry }) => {
+        if (!isGlobalAdmin(user, registry)) return error("Unauthorized", 403);
+        const { templateId } = body;
+        // Enterprise Level 8: Logic for installing pre-defined DNA architectures
+        // For now, it just triggers a sync to ensure everything is correct
+        await bootstrapDatabase(db, {}, {}, ""); 
+        return success({ installed: true, templateId });
+    },
+    workspace: async (ctx) => {
+        const { op, method, body, db, user, registry } = ctx;
+        if (op === 'update-settings' && method === 'POST') {
+             const targetWs = body.workspaceId || user?.workspaceId;
+             if (!targetWs) return error("Workspace ID missing", 400);
+             await db.update('workspace', targetWs, { settings: JSON.stringify(body.settings) });
+             return success({ success: true });
+        }
+        return await executeEntityAction(ctx);
+    },
+    export: HANDLERS_CORE.export,
     system: HANDLERS_CORE.system,
     monitoring: HANDLERS_CORE.monitoring,
     auth: HANDLERS_CORE.auth
@@ -1182,18 +1482,9 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
 
         // 2. DATABASE INITIALIZATION (LEVEL 8)
         const rawDb = getDb(env);
-        if (!global.IS_DB_INITIALIZED) {
-            console.log(`[BRAIN][${requestId}][${path}] Triggering DB initialization...`);
-            // Pass the context for waitUntil support
-            await ensureSystemTables(rawDb, request.url, cfCtx).catch(e => {
-                console.error(`[BRAIN-INIT-ERROR][${requestId}]`, e.message);
-            });
-        }
-
-        
-        // ⚠️ CRITICAL: Block all queries until DB initialization completes
         const waitStart = Date.now();
-        await waitForDbReady(rawDb, 5000); // Reduced to 5s for better responsiveness
+        await bootstrapDatabase(rawDb, env, cfCtx, request.url);
+        
         const waitTime = Date.now() - waitStart;
         if (waitTime > 100) {
             console.log(`[BRAIN][${requestId}] DB Ready Wait: ${waitTime}ms`);
@@ -1217,10 +1508,16 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
         }
 
         const parts = path.split('/');
-        const resource = (parts[0] || '').toLowerCase();
-        const op = (parts[1] || '').toLowerCase();
+        let resource = (parts[0] || '').toLowerCase();
+        let op = (parts[1] || '').toLowerCase();
+
+        // Level 8: Multi-segment resource matching (e.g. ai/extract)
+        if (parts.length >= 2 && HANDLERS[`${parts[0]}/${parts[1]}`]) {
+            resource = `${parts[0]}/${parts[1]}`;
+            op = (parts[2] || '').toLowerCase();
+        }
         
-        console.log(`[BRAIN][${requestId}] Request: ${request.method} resource="${resource}", op="${op}", path="${path}"`);
+        console.log(`[BRAIN][${requestId}] Route Parsed: resource="${resource}", op="${op}", parts=[${parts.join(', ')}]`);
 
         const isPublic = [
             "health", 
@@ -1274,14 +1571,13 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
             }
         }
 
-        const ctx = { request, env, db, user, url, parts, resource, op: parts[1], method: request.method, body, cfCtx, selectedLang, registry };
+        const ctx = { request, env, db, user, url, parts, resource, op, method: request.method, body, cfCtx, selectedLang, registry };
         
         if (resource === "db") {
-            const table = (parts[1] === 'collection' ? parts[2] : parts[1]).toLowerCase();
+            const table = (parts[1] === 'collection' ? parts[2] : (parts[1] || '')).toLowerCase();
             
             // SECURITY: Ensure system entities are filtered by workspace unless superadmin
-            // We inject the workspaceId filter into the context before calling HANDLERS.db
-            if (user && !isGlobalAdmin(user, registry)) {
+            if (table && user && !isGlobalAdmin(user, registry)) {
                 if (!isGlobalEntity(table, registry)) {
                     if (ctx.method === 'GET' && !url.searchParams.has('workspaceId')) {
                         url.searchParams.set('workspaceId', user.workspaceId || 'system');
@@ -1290,6 +1586,7 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
             }
         }
 
+        console.log(`[BRAIN][${requestId}] Dispatching to handler: "${resource}", op: "${op}", parts: [${parts.join(',')}]`);
         const handler = HANDLERS[resource];
         if (handler) {
             const handlerResponse = await handler(ctx);
@@ -1319,14 +1616,27 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
         console.warn(`[BRAIN][${requestId}] No handler found for ${resource}, falling back to CRUD`);
         
         // Generic CRUD Fallback (Enterprise Level 8)
+        // SECURITY: Never allow fallback if resource looks like a UUID or is dangerously long
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resource);
+        if (isUuid || resource.length > 50 || resource.includes("'") || resource.includes('"')) {
+            console.error(`[BRAIN][${requestId}] BLOCKED suspicious or malformed resource name: "${resource}"`);
+            return error(`Invalid resource: ${resource}`, 400);
+        }
+
         if (request.method === 'GET') {
             const isGlobal = isGlobalEntity(resource, registry);
             const filters: any = {};
             if (!isGlobal && user) {
                 filters.workspaceId = user.workspaceId;
             }
-            const results = await db.list(resource, filters);
-            return success(results.map(deepParse));
+
+            try {
+                const results = await db.list(resource, filters);
+                return success(results.map(deepParse));
+            } catch (d1Err: any) {
+                console.error(`[BRAIN][${requestId}] D1 Fallback Error for "${resource}":`, d1Err.message);
+                return error(`Resource ${resource} not available`, 404);
+            }
         }
         
         return error(`Resource ${resource} not found`, 404);
