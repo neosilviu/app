@@ -67,16 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsAdminExists(true);
       } else {
         console.log("[AUTH] No active session, checking for admin user...");
-        try {
-          // Use 'auth/check-admin' directly (not /api/auth/) to avoid interception by Better-Auth middleware
-          const res = await api.brain.get(`auth/check-admin?t=${Date.now()}`);
-          const exists = !!res.data?.data?.exists;
-          console.log(`[AUTH] Admin exists: ${exists}`);
-          setIsAdminExists(exists);
-        } catch (error) {
-          console.error("[AUTH] Error checking admin:", error);
-          setIsAdminExists(false);
-        }
+        // Use 'check-admin' directly (not /api/auth/) to avoid interception by Better-Auth middleware
+        const res = await api.brain.get(`check-admin?t=${Date.now()}`);
+        const exists = !!res.data?.data?.exists;
+        console.log(`[AUTH] Admin exists: ${exists}`);
+        setIsAdminExists(exists);
       }
 
       if (sessionData?.user) {

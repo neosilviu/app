@@ -1223,15 +1223,15 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
     },
     auth: async ({ op, method, db, env, body, request, user, selectedLang }) => {
         if (op === "check-admin") {
-            // In development, always return exists: true to allow setup
-            if (env.API_KEY === "dev-key-123") {
-                return success({ exists: true });
-            }
+            console.log(`[CHECK-ADMIN] API_KEY: ${env.API_KEY}`);
             try {
                 // Enterprise Level 8: Check if any user exists to determine setup status
                 const result = await db.query("SELECT COUNT(*) as count FROM user");
-                return success({ exists: (result?.[0]?.count || 0) > 0 });
+                const exists = (result?.[0]?.count || 0) > 0;
+                console.log(`[CHECK-ADMIN] User count: ${result?.[0]?.count}, exists: ${exists}`);
+                return success({ exists });
             } catch (e) {
+                console.log(`[CHECK-ADMIN] Error: ${e.message}`);
                 // If table doesn't exist or DB is not initialized, return exists: false
                 return success({ exists: false });
             }
