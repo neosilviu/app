@@ -1223,6 +1223,10 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
     },
     auth: async ({ op, method, db, env, body, request, user, selectedLang }) => {
         if (op === "check-admin") {
+            // In development, always return exists: true to allow setup
+            if (env.API_KEY === "dev-key-123") {
+                return success({ exists: true });
+            }
             try {
                 // Enterprise Level 8: Check if any user exists to determine setup status
                 const result = await db.query("SELECT COUNT(*) as count FROM user");
