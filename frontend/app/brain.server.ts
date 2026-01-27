@@ -1231,7 +1231,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 console.log(`[CHECK-ADMIN] User count: ${result?.[0]?.count}, exists: ${exists}`);
                 return success({ exists });
             } catch (e) {
-                console.log(`[CHECK-ADMIN] Error: ${e.message}`);
+                console.log(`[CHECK-ADMIN] Error: ${(e as Error).message}`);
                 // If table doesn't exist or DB is not initialized, return exists: false
                 return success({ exists: false });
             }

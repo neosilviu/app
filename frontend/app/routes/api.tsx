@@ -19,12 +19,6 @@ export async function loader({ request, context, params }: LoaderFunctionArgs) {
     const { handleBrainRequest } = await import("../brain.server");
     console.log(`[API-LOADER] handleBrainRequest imported successfully`);
 
-    // Special handling for check-admin in dev
-    if (wildcard === "auth/check-admin") {
-      console.log(`[API-LOADER] Handling check-admin directly`);
-      return Response.json({ exists: true }, { status: 200 });
-    }
-
     // Pre-parse body to prevent consumption issues
     let preParsedBody: any = undefined;
     if (!['GET', 'DELETE', 'OPTIONS', 'HEAD'].includes(request.method)) {
