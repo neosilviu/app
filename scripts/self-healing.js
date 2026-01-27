@@ -554,7 +554,7 @@ async function deepClean() {
     const targets = [
         path.join(projectRoot, 'frontend', '.next'),
         path.join(projectRoot, 'frontend', 'out'),
-        path.join(projectRoot, 'frontend', '.wrangler'),
+        path.join(projectRoot, '.dev', '.wrangler'),
         path.join(projectRoot, 'node_modules', '.cache')
     ];
 
@@ -577,7 +577,7 @@ async function backupDatabase() {
     const backupDir = path.join(projectRoot, 'backups');
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
 
-    const d1StateDir = path.join(projectRoot, 'frontend', '.wrangler', 'state', 'v3', 'd1');
+    const d1StateDir = path.join(projectRoot, '.dev', '.wrangler', 'state', 'v3', 'd1');
     if (!fs.existsSync(d1StateDir)) {
         console.log('    \x1b[33m⚠\x1b[0m D1 state directory not found. Skipping backup.');
         return false;
@@ -1365,7 +1365,7 @@ async function syncDatabase() {
         });
 
         console.log('   - Applying migrations to local D1...');
-        execSync('npx wrangler d1 migrations apply studio-db --local --persist-to .wrangler/state', {
+        execSync('npx wrangler d1 migrations apply studio-db --local --persist-to ../.dev/.wrangler/state', {
             cwd: frontendPath,
             env: { ...process.env, CI: 'true' },
             stdio: 'inherit'

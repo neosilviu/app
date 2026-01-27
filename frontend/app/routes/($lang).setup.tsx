@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useParams, Link, type ActionFunctionArgs, type LoaderFunctionArgs } from 'react-router';
+import { useNavigate, useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '~/hooks/useAuth';
 import { getLocalizedPath, renderString } from '~/lib/core';
@@ -9,7 +9,6 @@ import { Label } from '~/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '~/components/ui/card';
 import { toast } from 'sonner';
 import { useConfig } from '~/hooks/useConfig';
-import { getDb } from '~/lib/d1.server';
 import { GlassCard } from '~/components/ui/GlassCard';
 import { Shield, Rocket, User, Mail, Lock, Brain, Sparkles } from 'lucide-react';
 
@@ -17,19 +16,6 @@ export const handle = {
     i18n: ["common", "auth"],
 };
 
-export async function loader({ context }: LoaderFunctionArgs) {
-    const env = (context as any).cloudflare?.env || (process as any).env;
-    const db = getDb(env);
-    try {
-        // Verificăm în tabelul 'user' (Better-Auth) - Dacă există măcar un utilizator, sistemul este considerat inițializat
-        const result = await db.query("SELECT COUNT(*) as count FROM user");
-        const count = result[0]?.count || 0;
-        return { hasAdmin: count > 0 };
-    } catch (e: any) {
-        // Dacă tabelul nu există, înseamnă că nu avem admini
-        return { hasAdmin: false };
-    }
-}
 
 // REMOVED redundant action here.
 // The form submits via the registerAdmin method in useAuth which calls /api/auth/setup-admin
@@ -39,36 +25,31 @@ export default function SetupPage() {
     const { t } = useTranslation(['common', 'auth']);
     const { uiConfig, buildInfo } = useConfig();
     const { lang } = useParams();
+    const { registerAdmin, isAdminExists, loading: authLoading } = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         email: "",
         password: "",
         name: ""
     });
-    const { registerAdmin, isAdminExists } = useAuth();
+
     const navigate = useNavigate();
 
-    // If admin already exists, redirect to login via side-effect
     React.useEffect(() => {
-        if (isAdminExists === true) {
-            console.log("[Setup] Admin exists, redirecting to login");
+        if (!authLoading && isAdminExists === true) {
             navigate(getLocalizedPath('/login', lang), { replace: true });
         }
-    }, [isAdminExists, navigate, lang]);
+    }, [authLoading, isAdminExists, navigate, lang]);
 
-    if (isAdminExists === true) {
-        return null;
-    }
+    if (authLoading || isAdminExists === true) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         try {
-            const response = await registerAdmin(formData);
-            if (response.success) {
-                toast.success(t('auth:setup_success'));
-                navigate(getLocalizedPath('/', lang));
-            }
+            await registerAdmin(formData);
+            toast.success(t('auth:setup_success'));
+            navigate(getLocalizedPath('/', lang));
         } catch (err: any) {
             toast.error(err.message || t('auth:setup_error'));
         } finally {
@@ -95,11 +76,8 @@ export default function SetupPage() {
                             <Rocket className="text-white" size={38} />
                         </div>
                         <h2 className="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-lg">
-                            {renderString(uiConfig?.layout?.appName, lang) || 'Studio App'} <span className="text-white/40">v2</span>
+                            {renderString(uiConfig?.layout?.appName, lang)} <span className="text-white/40">{uiConfig?.layout?.appVersion}</span>
                         </h2>
-                        <p className="text-indigo-100 font-black uppercase tracking-[0.3em] text-[10px] mt-4 opacity-70">
-                            Enterprise Level 8 Deployment
-                        </p>
                     </div>
                 </div>
 

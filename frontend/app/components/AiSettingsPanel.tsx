@@ -11,6 +11,7 @@ import { GlassCard } from '~/components/ui/GlassCard';
 import { Settings as Save, RefreshCw, Sparkles, Cloud, Plus, Trash, Shield, Database, MessageSquare } from 'lucide-react';
 import { cn } from '~/lib/utils';
 import { toast } from 'sonner';
+import { getErrorMessage } from '~/lib/utils';
 import { useConfig } from '~/hooks/useConfig';
 import { api, renderString } from '~/lib/core';
 
@@ -85,7 +86,7 @@ export function AiSettingsPanel() {
             toast.success("AI Infrastructure saved!");
             await refreshConfig(true);
         } catch (e: any) {
-            toast.error("Failed to update registry: " + e.message);
+            toast.error(getErrorMessage(e, 'Failed to update registry'));
         } finally {
             setIsSaving(false);
         }
@@ -107,7 +108,7 @@ export function AiSettingsPanel() {
             toast.success("Prompt DNA updated!");
             await refreshConfig(true);
         } catch (e: any) {
-            toast.error("Failed to update prompts: " + e.message);
+            toast.error(getErrorMessage(e, 'Failed to update prompts'));
         } finally {
             setIsSaving(false);
         }

@@ -6,6 +6,7 @@ import {
     cn,
     normalizeEntity
 } from '~/lib/core';
+import { getErrorMessage } from '~/lib/utils';
 import { toast } from 'sonner';
 import { Search, Plus, Save, Trash2, Edit2, X, Box, Columns, Code, Layout, Settings, RefreshCw, ChevronRight, HelpCircle, Menu, LayoutGrid, Eye, EyeOff, LayoutDashboard, Zap } from 'lucide-react';
 import { GlassCard } from '~/components/ui/GlassCard';
@@ -53,10 +54,10 @@ export function EntityDefinitionsPanel() {
                 setEditingEntity(null);
                 await refreshConfig(true);
             } else {
-                toast.error(res.error || "Save failed");
+                toast.error(getErrorMessage(res.error, "Save failed"));
             }
         } catch (e: any) {
-            toast.error(e.message);
+            toast.error(getErrorMessage(e, 'Save failed'));
         } finally {
             setSaving(false);
         }

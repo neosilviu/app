@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate, useParams } from 'react-router';
 import { Button } from '~/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { socket, api, socketRequest, debounce, renderString, getRegistry } from '~/lib/core';
+import { getErrorMessage } from '~/lib/utils';
 import { useAuth } from '~/hooks/useAuth';
 import { useConfig } from '~/hooks/useConfig'; 
 import { useTheme } from '~/hooks/useTheme'; 
@@ -244,6 +245,10 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
     const [isAIOperating, setIsAIOperating] = useState(false);
     const [aiTestOutput, setAiTestOutput] = useState<string | null>(null);
 
+    // Guard maps to serialize concurrent registry.save calls per namespace+key
+    const pendingSavePromises = useRef<Map<string, Promise<any>>>(new Map());
+    const lastRequestedValues = useRef<Map<string, any>>(new Map());
+
     const updateSystemSetting = useCallback((key: string, value: any, namespace?: string) => {
         setSystemSettings((prev: any) => {
             const next = { ...prev };
@@ -251,7 +256,7 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             const ns = (namespace || 'SYSTEM_SETTING').toLowerCase();
             if (!next[ns]) next[ns] = {};
             next[ns][key] = value;
-            
+
             // Root mirror for core settings (Enterprise Level 8 Consistency)
             if (ns === 'system_setting' || ns === 'general' || ns === 'system') {
                 next[key] = value;
@@ -259,37 +264,89 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             return next;
         });
 
-        // Enterprise Level 8: Always save system settings via Brain API (DB) 
-        // because socket connection depends on the setting itself (Catch-22).
-        api.brain.post('registry/save', { 
-            namespace: namespace || 'SYSTEM_SETTING', 
-            key, 
-            value,
-            dataType: typeof value === 'boolean' ? 'boolean' : (typeof value === 'object' ? 'json' : 'string')
-        }).then((res: any) => {
-            if (res.success) {
-                toast.success(t('common:saved'));
-                if (key === 'use_local_agent' || key === 'enable_worker') {
-                    // Force refresh config to update navigation / sidebar guards
-                    refreshConfig(true);
+        const ns = (namespace || 'SYSTEM_SETTING');
+        const id = `${ns}::${key}`;
+        lastRequestedValues.current.set(id, { value, namespace: ns });
+
+        // If a save is already in-flight for this key, let it finish; it will re-check lastRequestedValues
+        if (pendingSavePromises.current.has(id)) return;
+
+        const sendSave = async () => {
+            const latest = lastRequestedValues.current.get(id);
+            // prepare payload from latest
+            const payload = {
+                namespace: latest?.namespace || ns,
+                key,
+                value: latest?.value,
+                dataType: typeof (latest?.value) === 'boolean' ? 'boolean' : (typeof (latest?.value) === 'object' ? 'json' : 'string')
+            };
+
+            try {
+                // Debug: log payload and target for diagnostics
+                try { console.debug('[SETTINGS] registry/save ->', { id, payload, target: 'brain' }); } catch (e) {}
+                const p = api.brain.post('registry/save', payload);
+                pendingSavePromises.current.set(id, p);
+                const res: any = await p;
+                pendingSavePromises.current.delete(id);
+
+                if (res && res.success) {
+                    toast.success(t('common:saved'));
+                    if (key === 'use_local_agent' || key === 'enable_worker') {
+                        refreshConfig(true);
+                    }
+                } else {
+                    toast.error(getErrorMessage(res?.error, t('common:error_saving')));
                 }
-            } else toast.error(res.error || t('common:error_saving'));
-        }).catch(err => {
-            console.error("[SETTINGS] Registry save failed:", err);
-            toast.error(t('common:error_saving'));
-        });
+            } catch (err) {
+                pendingSavePromises.current.delete(id);
+                console.error('[SETTINGS] Registry save failed:', err);
+                toast.error(getErrorMessage(err, t('common:error_saving')));
+            }
+
+            // If during the save we got a newer requested value, send it now
+            const nowLatest = lastRequestedValues.current.get(id);
+            if (nowLatest && nowLatest.value !== payload.value) {
+                // Schedule next send (loop)
+                sendSave();
+            }
+        };
+
+        // Kick off save
+        sendSave();
+
     }, [t, refreshConfig]);
 
     useEffect(() => {
         if (activeTab === 'maintenance' || activeTab === 'local-agent') {
-            socketRequest('system:info').then((res: any) => {
-                if (res?.success) setSystemInfo(res.info || null);
-            });
-            socketRequest('system:get-settings').then((res: any) => {
-                if (res?.success && res.settings) {
-                    setSystemSettings(res.settings);
+            // Prefer HTTP call to local agent first, fallback to socketRequest
+            (async () => {
+                try {
+                    const res: any = await api.local.get('system/info');
+                    if (res?.success) {
+                        setSystemInfo(res.info || null);
+                    } else {
+                        const sock: any = await socketRequest('system:info').catch(() => null);
+                        if (sock?.success) setSystemInfo(sock.info || null);
+                    }
+                } catch (e) {
+                    const sock: any = await socketRequest('system:info').catch(() => null);
+                    if (sock?.success) setSystemInfo(sock.info || null);
                 }
-            });
+
+                // system settings: try HTTP then socket
+                try {
+                    const sres: any = await api.local.get('system/get-settings');
+                    if (sres?.success && sres.settings) {
+                        setSystemSettings(sres.settings);
+                    } else {
+                        const ssock: any = await socketRequest('system:get-settings').catch(() => null);
+                        if (ssock?.success && ssock.settings) setSystemSettings(ssock.settings);
+                    }
+                } catch (e) {
+                    const ssock: any = await socketRequest('system:get-settings').catch(() => null);
+                    if (ssock?.success && ssock.settings) setSystemSettings(ssock.settings);
+                }
+            })();
         }
         if (activeTab === 'cloudflare') {
             api.brain.get("monitoring/cloudflare").then(res => setCloudflareStats(res.data || res)).catch(() => {});
@@ -418,10 +475,10 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             if (response.success) {
                 toast.success(t('settings:settings_saved'));
             } else {
-                toast.error(response.error || t('settings:failed_save'));
+                toast.error(getErrorMessage(response.error, t('settings:failed_save')));
             }
         } catch (error) {
-            toast.error(t('settings:failed_save'));
+            toast.error(getErrorMessage(error, t('settings:failed_save')));
         }
     };
 

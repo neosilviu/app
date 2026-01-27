@@ -23,6 +23,7 @@ import { ConnectionManager, ShortcutManager } from "~/components/SystemShell";
 import { SearchDialog } from "~/components/search";
 
 import { REGISTRY_BASELINE, renderString } from '~/lib/core';
+import { formatForRender } from '~/lib/utils';
 
 export const handle = {
   // In the handle export, we can add a i18n key with namespaces our route needs
@@ -52,8 +53,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { i18n } = useTranslation();
   const location = useLocation();
 
-  if (typeof window !== 'undefined' && location.pathname.startsWith('/api')) {
-    console.error(`[ROOT-ROUTING-ERROR] API request fell through to Root Layout! Path: ${location.pathname}`);
+  if (typeof window !== 'undefined') {
+    // Enterprise Level 8: Force diagnostic logging for the user
+    console.log(`[STUDIO-V2] App Layout Mounting. Path: ${location.pathname} Locale: ${data?.locale}`);
+    if (location.pathname.startsWith('/api')) {
+      console.error(`[ROOT-ROUTING-ERROR] API request fell through to Root Layout! Path: ${location.pathname}`);
+    }
   }
 
   return (
@@ -126,10 +131,13 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     details = error;
   }
 
+  // Ensure details is a safe string for rendering (use shared helper)
+  const detailsStr = formatForRender(details, lang);
+
   return (
     <main className="pt-16 p-4 container mx-auto">
       <h1 className="text-2xl font-black italic uppercase tracking-tighter text-slate-950 mb-4">{message}</h1>
-      <p className="text-slate-600 font-medium mb-8">{details}</p>
+      <p className="text-slate-600 font-medium mb-8">{detailsStr}</p>
       {stack && (
         <pre className="w-full p-4 overflow-x-auto">
           <code>{stack}</code>

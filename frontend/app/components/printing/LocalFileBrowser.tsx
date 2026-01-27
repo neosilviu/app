@@ -12,6 +12,7 @@ import { TagSelector } from '~/components/ui/tag-selector';
 import { api, socket, socketRequest } from '~/lib/core';
 import { toast } from 'sonner';
 import { cn } from '~/lib/core';
+import { getErrorMessage } from '~/lib/utils';
 import { FileDetailsPanel } from './FileDetailsPanel';
 import { DocumentPreview } from './DocumentPreview';
 
@@ -31,7 +32,6 @@ interface BrowserItem {
 
 export function LocalFileBrowser() {
     const [path, setPath] = useState('');
-    const [items, setItems] = useState<BrowserItem[]>([]);
     const [recentArrivals, setRecentArrivals] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
@@ -43,6 +43,7 @@ export function LocalFileBrowser() {
     const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
     const [previewItem, setPreviewItem] = useState<BrowserItem | null>(null);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [items, setItems] = useState<BrowserItem[]>([]);
     
     const [searchParams] = useSearchParams();
     const initialPath = searchParams.get('path');

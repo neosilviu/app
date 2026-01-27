@@ -94,7 +94,7 @@ export default function Dashboard() {
     try {
       if (!confirm(t('dashboard:confirm_restart'))) return;
       
-      const resp = await localAgentApi.post('/system/control/restart-workers');
+      const resp = await api.local.post('system/control/restart-workers');
       if (resp.data?.success) {
         toast.success(t('dashboard:workers_restarting'));
         setTimeout(() => window.location.reload(), 3000);

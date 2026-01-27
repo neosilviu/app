@@ -2,24 +2,23 @@ import { type RouteConfig, route } from "@react-router/dev/routes";
 import { flatRoutes } from "@react-router/fs-routes";
 
 export default (async () => {
-    // 1. Get all routes from the routes folder
+    // 1. Get all routes from the routes folder (UI routes)
     const fsRoutes = await flatRoutes({
         ignoredRouteFiles: [
             "**/.*", 
+            "**/*.test.*",
+            "**/__*",
             "**/api/**", 
             "**/api.*"
         ],
     });
 
-    // 2. Define the main dynamic API route
-    // We use multiple patterns to ensure we catch all depths and outrank UI routes
-    // Giving unique IDs for each route definition to avoid React Router errors
+    // 2. Define the main dynamic API route FIRST with higher priority
+    // This MUST come before UI routes to intercept /api/* paths
+    // React Router v7 processes routes in order, first match wins
     const apiRoutes = [
-        route("api/:p1/:p2/:p3/:p4", "routes/api.tsx", { id: "api-4" }),
-        route("api/:p1/:p2/:p3", "routes/api.tsx", { id: "api-3" }),
-        route("api/:p1/:p2", "routes/api.tsx", { id: "api-2" }),
-        route("api/:p1", "routes/api.tsx", { id: "api-1" }),
-        route("api/*", "routes/api.tsx", { id: "api-splat" })
+        // API routes - these must come FIRST and match BEFORE any UI routes
+        route("api/*", "routes/api.tsx", { id: "api-catch-all" })
     ];
 
     // 3. Combine them, putting API at the VERY START
@@ -28,6 +27,6 @@ export default (async () => {
         ...fsRoutes
     ];
 
-    console.log(`[ROUTES] Total routes: ${finalRoutes.length}, API routes: ${apiRoutes.length}`);
+    console.log(`[ROUTES-CONFIG] Total: ${finalRoutes.length}, API: ${apiRoutes.length}`);
     return finalRoutes;
 })() as any;

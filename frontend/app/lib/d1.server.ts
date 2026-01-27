@@ -543,7 +543,7 @@ export function getDb(env: any): D1Driver {
     if (dbInstance && dbInstance.rawBinding && typeof dbInstance.rawBinding.prepare === 'function') {
         return dbInstance;
     }
-    console.warn("[D1] Database binding 'DB' not found, using mock driver");
+    console.warn(`[D1] MISSING BINDING 'DB' in env keys: ${Object.keys(safeEnv).join(', ')}. Using mock driver.`);
     return new D1Driver({
       prepare: () => ({
         bind: () => ({ 

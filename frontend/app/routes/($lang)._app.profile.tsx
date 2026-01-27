@@ -87,7 +87,32 @@ export async function action({ request, context }: ActionFunctionArgs) {
 
   if (!user) return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
-  const formData = await request.formData();
+  const contentType = request.headers.get('content-type') || '';
+  let formData: FormData | null = null;
+  
+  if (contentType.includes('multipart/form-data') || contentType.includes('application/x-www-form-urlencoded')) {
+    try {
+      formData = await request.formData();
+    } catch (e) {
+      console.error("[PROFILE-ACTION] Error parsing form data:", e);
+    }
+  }
+
+  // Fallback for API calls masquerading as UI routes (e.g. /api/profile)
+  if (!formData && contentType.includes('application/json')) {
+    try {
+      const { handleBrainRequest } = await import("../brain.server");
+      const ctx = (context as any).cloudflare?.ctx;
+      return await handleBrainRequest(request, env, ctx);
+    } catch (err) {
+      console.error("[PROFILE-ACTION] Proxy failed:", err);
+    }
+  }
+
+  if (!formData) {
+    return Response.json({ success: false, error: "Invalid Content-Type or body empty" }, { status: 400 });
+  }
+
   const name = formData.get("name") as string;
   const phone = formData.get("phone") as string;
   const language = formData.get("language") as string;

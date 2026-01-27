@@ -22,15 +22,14 @@ export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login, isAdminExists } = useAuth();
+    const { login, isAdminExists, loading: authLoading } = useAuth();
     const navigate = useNavigate();
 
-    // Auto-redirect to setup if no admin exists
     React.useEffect(() => {
-        if (isAdminExists === false) {
+        if (!authLoading && isAdminExists === false) {
             navigate(getLocalizedPath('/setup', lang));
         }
-    }, [isAdminExists, navigate, lang]);
+    }, [authLoading, isAdminExists, navigate, lang]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

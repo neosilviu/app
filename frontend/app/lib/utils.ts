@@ -179,6 +179,102 @@ export function renderString(value: any, lang: string = 'ro'): string {
     return final === '[object Object]' ? '' : final;
 }
 
+/**
+ * Safe render for short descriptions/messages used in UI components.
+ * Prefer `renderString` for i18n-aware values, but fall back to extracting
+ * common identity fields or JSON-stringifying objects to avoid React errors.
+ */
+export function safeRender(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (typeof value === 'object') {
+    if (value.label) return renderString(value.label);
+    if (value.message) return renderString(value.message);
+    if (value.text) return renderString(value.text);
+    try { return JSON.stringify(value); } catch (e) { return renderString(value); }
+  }
+  return renderString(value);
+}
+
+/**
+ * Assert that a value is safe to render as text. In development this will
+ * throw if an unexpected object is provided (helps catch upstream bugs).
+ */
+export function assertRenderable(value: any, name = 'value') {
+  if (process.env.NODE_ENV === 'production') return;
+  if (value === null || value === undefined) return;
+  if (typeof value !== 'object') return;
+
+  // Allow arrays (validate their items)
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (item === null || item === undefined) continue;
+      if (typeof item === 'object') assertRenderable(item, name);
+    }
+    return;
+  }
+
+  const keys = Object.keys(value);
+  const looksLikeI18n = keys.some(k => /^[a-z]{2}(-[A-Z]{2})?$/.test(k));
+  const hasIdentity = ['label', 'name', 'title', 'text', 'message'].some(k => k in value);
+
+  if (!looksLikeI18n && !hasIdentity) {
+    // Log a developer-friendly warning but do not throw — fall back to stringification
+    // eslint-disable-next-line no-console
+    console.warn(`[assertRenderable] Unexpected object for ${name}:`, value);
+    return;
+  }
+}
+
+/**
+ * Format any value to a safe string for rendering in UI components.
+ * Uses `renderString` when possible (i18n-aware), asserts in dev for
+ * unexpected objects, and falls back to JSON.stringify.
+ */
+export function formatForRender(value: any, lang = 'ro'): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+
+  // Arrays: render each item and join with commas
+  if (Array.isArray(value)) {
+    try {
+      const parts = value.map((v: any) => {
+        if (v === null || v === undefined) return '';
+        if (typeof v === 'string' || typeof v === 'number') return String(v);
+        // Try i18n-aware render or recurse
+        const s = formatForRender(v, lang);
+        return s;
+      }).filter((p: string) => p !== '');
+      return parts.join(', ');
+    } catch (e) {
+      // fall through to stringify
+    }
+  }
+
+  // Try i18n-aware rendering first
+  try {
+    const s = renderString(value, lang);
+    if (s) return s;
+  } catch (e) {
+    // ignore and continue
+  }
+
+  // In dev, surface unexpected object shapes early
+  try {
+    assertRenderable(value, 'formatForRender');
+  } catch (e) {
+    // still fall back to string output so UI doesn't crash
+    // eslint-disable-next-line no-console
+    console.warn('[formatForRender] assertRenderable failed:', e);
+  }
+
+  try {
+    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  } catch (e) {
+    return String(value);
+  }
+}
+
 export function isValidEmail(email: string): boolean {
   if (typeof email !== 'string') return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -234,6 +330,22 @@ export function checkIsWorkingHours(date: Date = new Date()): boolean {
   return roTime.hours >= hours.start && roTime.hours < hours.end;
 }
 
+/**
+ * Normalize various error shapes into a safe string for UI toasts/logs.
+ */
+export function getErrorMessage(err: any, fallback = ''): string {
+  if (!err) return fallback || '';
+  if (typeof err === 'string') return err;
+  if (typeof err === 'number' || typeof err === 'boolean') return String(err);
+  if (err?.message && typeof err.message === 'string') return err.message;
+  if (err?.error && typeof err.error === 'string') return err.error;
+  try {
+    return JSON.stringify(err);
+  } catch (e) {
+    return String(err);
+  }
+}
+
 export const CoreUtils = {
     generateId,
     formatDate,
@@ -243,5 +355,9 @@ export const CoreUtils = {
     sanitizeFilename,
     getRomanianTime,
     checkIsWorkingHours,
-    cn
+    cn,
+    safeRender,
+    assertRenderable,
+  formatForRender,
+  getErrorMessage
 };

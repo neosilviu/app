@@ -14,6 +14,7 @@ import { AIInsights } from '~/components/monitoring/AIInsights';
 
 import { useParams } from 'react-router';
 import { renderString } from '~/lib/core';
+import { formatForRender } from '~/lib/utils';
 
 interface AITabProps {
     settings: any; // Workspace Settings
@@ -137,7 +138,7 @@ export const AITab: React.FC<AITabProps> = ({
                                             <Label className="text-[9px] font-black uppercase italic text-slate-400 ml-2">Google AI Studio API Key</Label>
                                             <BufferedInput 
                                                 type="password"
-                                                value={systemSettings?.ai?.gemini_api_key || ''}
+                                                value={formatForRender(systemSettings?.ai?.gemini_api_key || '', lang)}
                                                 onChange={(v) => updateSystemSetting('gemini_api_key', v, 'ai')}
                                                 placeholder="AIzaSy..."
                                                 className="h-11 rounded-2xl border-none bg-white shadow-sm font-mono text-xs"

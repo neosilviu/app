@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { socket, whatsappSocket } from '~/lib/core';
-import { brainApi } from '~/lib/core';
+import { api } from '~/lib/core';
 import { authClient } from '~/lib/core';
 import { useConfig } from "./useConfig";
 
@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     setUserLoading(true);
     try {
-      const response = await brainApi.get(`workspace/member?workspaceId=${user.workspaceId || ""}`);
+      const response = await api.brain.get(`workspace/member?workspaceId=${user.workspaceId || ""}`);
       if (response.data?.success) {
         setUserList(Array.isArray(response.data.data) ? response.data.data : []);
       }
@@ -60,42 +60,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const init = useCallback(async () => {
     try {
-      console.log("[AUTH] Initializing session check...");
-      const start = Date.now();
-      
-      // 1. Verificăm sesiunea prin Better-Auth
-      // Adăugăm un mic delay pentru a evita race conditions la boot în dev
       const { data: sessionData } = await authClient.getSession();
-      
-      console.log(`[AUTH] getSession completed in ${Date.now() - start}ms`, sessionData?.user?.email || "No session");
       
       if (sessionData?.user) {
         setUser(sessionData.user);
         setIsAdminExists(true);
       } else {
-        // Clear stale local tokens if no central session exists
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('token');
-          localStorage.removeItem('userEmail');
-        }
-
-        // 2. Dacă nu avem sesiune, verificăm dacă există măcar un admin (pentru setup inițial)
-        try {
-          console.log("[AUTH] No session, checking if admin exists...");
-          const res = await brainApi.get('auth/check-admin');
-          const checkData = res.data?.data;
-          setIsAdminExists(!!(checkData?.exists || checkData?.hasAdmin));
-          console.log("[AUTH] Admin check result:", !!(checkData?.exists || checkData?.hasAdmin));
-        } catch (e) {
-          console.warn("[AUTH] check-admin failed:", e);
-          setIsAdminExists(false);
-        }
+        console.log("[AUTH] No active session, checking for admin user...");
+        // Use 'check-admin' directly (not /api/auth/) to avoid interception by Better-Auth middleware
+        const res = await api.brain.get(`check-admin?t=${Date.now()}`);
+        const exists = !!res.data?.data?.exists;
+        console.log(`[AUTH] Admin exists: ${exists}`);
+        setIsAdminExists(exists);
       }
 
-      // 3. ONLY fetch local token for Local Agent authentication IF LOGGED IN
-      if (typeof window !== 'undefined' && sessionData?.user) {
+      if (sessionData?.user) {
         try {
-          const res = await brainApi.get('auth/local-token');
+          const res = await api.brain.get('auth/local-token');
           const tokenRes = res.data;
           if (tokenRes?.success && tokenRes.data?.token) {
             localStorage.setItem('token', tokenRes.data.token);
@@ -103,13 +84,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               localStorage.setItem('userEmail', sessionData.user.email);
             }
           }
-        } catch (e) {
-          console.warn("[AUTH] Failed to fetch local token:", e);
-        }
+        } catch (e) {}
       }
-    } catch (e) {
-      console.error("[AUTH] Init failed:", e);
-      setIsAdminExists(null); // Keep as unknown on fatal error to prevent wrong redirects
+    } catch (e: any) {
+      console.error("[AUTH-FATAL] Initialization failed:", e);
+      // Fallback: If backend is down/crashing, assume admin exists to prevent setup loop if possible, 
+      // OR let the user see the login page.
+      setIsAdminExists(true); 
     } finally {
       setLoading(false);
     }
@@ -196,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Get local agent token AFTER login
         try {
-          const res = await brainApi.get('auth/local-token');
+          const res = await api.brain.get('auth/local-token');
           const tokenRes = res.data;
           if (tokenRes?.success && tokenRes.data?.token) {
             localStorage.setItem('token', tokenRes.data.token);
@@ -211,6 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTimeout(() => setLoading(false), 500);
 
       // Token fetch (don't wait for it to block UI)
+      return { success: true };
     } catch (err: any) {
       setLoading(false);
       throw err;
@@ -232,7 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerAdmin = async (data: any) => {
     // Folosim endpoint-ul nostru de setup-admin care are permisiuni să seteze role și workspaceId
-    const res = await brainApi.post('auth/setup-admin', data);
+    const res = await api.brain.post('auth/setup-admin', data);
     
     if (!res.data?.success) {
       throw new Error(res.data?.error || "Setup failed");
@@ -249,6 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // După succes, facem login-ul propriu-zis
     await login({ email: data.email, password: data.password });
+    return res.data;
   };
 
   const hasPermission = (perm: string | any, action?: string) => {
@@ -299,7 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const switchWorkspace = async (id: string) => {
     try {
-      const res = await brainApi.post("workspace/switch", { id });
+      const res = await api.brain.post("workspace/switch", { id });
       if (res.data?.success) {
         // Re-inițializăm auth-ul pentru a reflecta noul workspaceId în state-ul React
         await init();

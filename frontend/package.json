@@ -9,7 +9,7 @@
     "deploy": "node ../scripts/validate-deployment.js && node copy-prod-config.js && npm run build && wrangler pages deploy ./build/client",
     "start": "wrangler pages dev ./build/client",
     "typecheck": "wrangler types --config ../.dev/wrangler-dev.toml && react-router typegen && tsc",
-    "db:migrate:local": "wrangler d1 migrations apply studio-db --local --config ../.dev/wrangler-dev.toml --persist-to ../.dev/.wrangler",
+    "db:migrate:local": "wrangler d1 migrations apply studio-db --local --config ../.dev/wrangler-dev.toml --persist-to ../.dev/.wrangler/state",
     "db:migrate:remote": "node ../scripts/migrate-d1-remote.js"
   },
   "dependencies": {

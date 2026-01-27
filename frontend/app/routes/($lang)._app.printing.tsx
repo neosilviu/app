@@ -114,6 +114,7 @@ import {
     renderString
 } from "~/lib/core";
 import { cn } from '~/lib/core';
+import { getErrorMessage } from '~/lib/utils';
 
 const getShared = (wrapper: any, name?: string) => {
     if (!wrapper) return null;
@@ -343,7 +344,7 @@ export default function PrintingPage() {
             setIsSaveModalOpen(false);
             setLocalJobs([]); // Clear queue after save
         } catch (e: any) {
-            toast.error(renderString(t("printing:error_saving_session"), lang) + ": " + e.message);
+            toast.error(getErrorMessage(e, renderString(t("printing:error_saving_session"), lang)));
         } finally {
             setRefreshing(false);
         }
@@ -419,7 +420,7 @@ export default function PrintingPage() {
             localStorage.setItem('print_queue', JSON.stringify([]));
             setIsJobDialogOpen(false);
         } catch (e: any) {
-            toast.error(renderString(t("printing:error_prefix"), lang) + e.message);
+            toast.error(getErrorMessage(e, renderString(t("printing:error_prefix"), lang)));
         } finally {
             setRefreshing(false);
             refreshAll();
@@ -452,10 +453,10 @@ export default function PrintingPage() {
             if (res.success) {
                 setPrinters(res.printers || []);
             } else {
-                toast.error(t('printing:error_fetching_printers') + ': ' + (res.error || 'Unknown error'));
+                toast.error(getErrorMessage(res.error, t('printing:error_fetching_printers')));
             }
         } catch (e: any) {
-             toast.error(t('printing:error_fetching_printers') + ': ' + e.message);
+             toast.error(getErrorMessage(e, t('printing:error_fetching_printers')));
         }
     };
 
@@ -554,10 +555,10 @@ const refreshAll = () => {
                 toast.success(renderString(t('printing:job_cancelled'), lang));
                 fetchSpoolerJobs();
             } else {
-                toast.error(res.error || renderString(t("printing:error_cancelling_job"), lang));
+                toast.error(getErrorMessage(res.error, renderString(t("printing:error_cancelling_job"), lang)));
             }
         } catch (e: any) {
-            toast.error(e.message);
+            toast.error(getErrorMessage(e, renderString(t("printing:error_cancelling_job"), lang)));
         }
     };
 
@@ -582,10 +583,10 @@ const refreshAll = () => {
                 setPrices(sortedPrices); // Update local state with sorted values
                 toast.success(renderString(t("printing:config_saved_success"), lang));
             } else {
-                toast.error(res.error || renderString(t("printing:failed_save_config"), lang));
+                toast.error(getErrorMessage(res.error, renderString(t("printing:failed_save_config"), lang)));
             }
         } catch (e: any) {
-            toast.error(renderString(t("printing:failed_save_config"), lang) + ": " + e.message);
+            toast.error(getErrorMessage(e, renderString(t("printing:failed_save_config"), lang)));
         } finally {
             setRefreshing(false);
         }

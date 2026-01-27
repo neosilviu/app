@@ -68,7 +68,9 @@ export function EntityDefinitionsPanel() {
         console.log("[ENTITY-BUILDER] Saving entity:", editingEntity.name, editingEntity);
 
         try {
-            const res = await api.brain.post('entity/save', editingEntity);
+            // Ensure we send an explicit `entity` array so the Brain handler
+            // always receives `body.entity` even if body parsing is fragile.
+            const res = await api.brain.post('entity/save', { entity: [editingEntity] });
             console.log("[ENTITY-BUILDER] Save result:", res);
 
             if (res.success || res.status === 'synced' || (Array.isArray(res) && res.length > 0)) {
@@ -140,7 +142,8 @@ export function EntityDefinitionsPanel() {
                 toast.error(res.error || "Delete failed");
             }
         } catch (e: any) {
-            toast.error("Delete failed");
+            const serverMsg = e?.response?.data?.error || e?.message;
+            toast.error(serverMsg || "Delete failed");
         }
     };
 

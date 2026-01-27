@@ -5,6 +5,7 @@ import { socket, api, getLocalizedPath } from "~/lib/core";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
+import { getErrorMessage } from '~/lib/utils';
 import { 
   Search, 
   MessageSquare, 
@@ -175,13 +176,13 @@ export default function UnifiedComms() {
   }, []);
 
   const handleSavePredefined = (text: string, id?: string) => {
-    socket.emit('messaging:predefined:save', { id, text }, (res: any) => {
+      socket.emit('messaging:predefined:save', { id, text }, (res: any) => {
       if (res.success) {
         toast.success(t('changes_saved'));
         setNewPredefinedText("");
         loadPredefined();
       } else {
-        toast.error(res.error);
+        toast.error(getErrorMessage(res.error, t('common:error_occurred')));
       }
     });
   };
@@ -224,7 +225,7 @@ export default function UnifiedComms() {
             workspaceId: activeWorkspaceId
           }, (res: any) => {
              if (res.success) toast.success("Mesaj audio trimis!");
-             else toast.error("Eroare audio: " + res.error);
+             else toast.error(getErrorMessage(res.error, 'Eroare audio'));
           });
         };
         reader.readAsDataURL(audioBlob);

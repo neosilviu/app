@@ -1440,8 +1440,8 @@ export const ENTITY_CONFIG = {
       },
       name: { type: 'string', required: true, maxLength: 255, searchable: true },
       description: { type: 'string' },
-      color: { type: 'string', format: 'color', default: '#3b82f6' },
-      icon: { type: 'string' },
+      color: { type: 'color', default: COMMON_COLOR.blue, ui: { width: 6 } },
+      icon: { type: 'icon', ui: { width: 6 }, default: 'Tag' },
       entityType: { 
         type: 'enum', 
         options: [
@@ -1685,7 +1685,7 @@ export const ENTITY_CONFIG = {
     label: { ro: 'Setare Sistem', en: 'System Setting' },
     labelPlural: { ro: 'Setări Sistem', en: 'System Settings' },
     icon: 'Settings',
-    tableName: 'SYSTEM_SETTING',
+    tableName: 'system_setting',
     displayField: 'key',
     isSystem: true,
     features: {
@@ -1741,7 +1741,7 @@ export const ENTITY_CONFIG = {
       label: { type: 'string', required: true, ui: { width: 6 } },
       labelPlural: { type: 'string', ui: { width: 6 } },
       description: { type: 'text', ui: { width: 12 } },
-      icon: { type: 'string', ui: { width: 6 } },
+      icon: { type: 'icon', ui: { width: 6 } },
       colorTheme: { type: 'string', ui: { width: 6 } },
       tableName: { type: 'string', ui: { width: 6 } },
       displayField: { type: 'string', ui: { width: 6 } },
@@ -1786,7 +1786,7 @@ export const ENTITY_CONFIG = {
         hidden: true 
       },
       name: { type: 'string', required: true, ui: { width: 6 } },
-      color: { type: 'color', ui: { width: 6 } },
+      color: { type: 'color', default: COMMON_COLOR.indigo, ui: { width: 6 } },
       description: { type: 'text', ui: { width: 12 } },
       permission: { type: 'json', ui: { width: 12 } },
     },
@@ -1883,7 +1883,7 @@ export const ENTITY_CONFIG = {
     isSystem: true,
     features: { auditable: false, deletable: true },
     fields: {
-      sessionId: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, hidden: true },
       userId: { type: 'string', required: true, hidden: true },
       token: { type: 'string', required: true, unique: true, hidden: true },
       expiresAt: { type: 'datetime', required: true, hidden: true },
@@ -2045,8 +2045,8 @@ export const ENTITY_CONFIG = {
       name: { type: 'string', required: true },
       slug: { type: 'string', unique: true },
       description: { type: 'text' },
-      color: { type: 'string' },
-      icon: { type: 'string' },
+      color: { type: 'color', default: COMMON_COLOR.blue, ui: { width: 6 } },
+      icon: { type: 'icon', ui: { width: 6 }, default: 'Folder' },
       createdAt: { type: 'datetime', generated: 'now' },
       updatedAt: { type: 'datetime', generated: 'now' },
     },

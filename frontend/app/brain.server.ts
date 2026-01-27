@@ -2569,6 +2569,11 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
         // POST (Create)
         if (method === 'POST' && !id) {
+            // Check if body is provided
+            if (!body || Object.keys(body).length === 0) {
+                return error("Request body is required for POST requests", 400);
+            }
+            
             const data: any = { ...deepStringify(body), createdBy: user.id };
             const isGlobal = isGlobalEntity(collection, registry);
             if (!isGlobal) data.workspaceId = effectiveWorkspaceId;
@@ -2589,6 +2594,29 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 // Unified across all entities for maximum consistency and security.
                 data[pk] = crypto.randomUUID();
             }
+            
+            // Level 8 Registry-Driven Validation
+            const entityDef = registry.ENTITY_CONFIG[collection];
+            console.log(`[VALIDATION] Collection: ${collection}, entityDef:`, entityDef);
+            if (entityDef && entityDef.fields) {
+                console.log(`[VALIDATION] Fields:`, Object.keys(entityDef.fields));
+                for (const [fieldName, fieldDef] of Object.entries(entityDef.fields)) {
+                    const def = fieldDef as any;
+                    console.log(`[VALIDATION] Checking field ${fieldName}, required: ${def.required}, generated: ${def.generated}, value: ${data[fieldName]}`);
+                    // Skip generated fields - they are handled by backend
+                    if (def.generated) continue;
+                    if (def.required && (data[fieldName] === undefined || data[fieldName] === null || data[fieldName] === '')) {
+                        console.log(`[VALIDATION] Field ${fieldName} failed validation`);
+                        return error(`Câmpul obligatoriu '${fieldName}' lipsește sau este gol`, 400);
+                    }
+                }
+                console.log(`[VALIDATION] All required fields present`);
+            } else {
+                console.log(`[VALIDATION] No entityDef.fields found for ${collection}`);
+            }
+            
+            console.log(`[BRAIN-DB-POST] Creating ${collection}:`, { data: Object.keys(data), user: { id: user.id, workspaceId: user.workspaceId }, effectiveWorkspaceId, isGlobal });
+            
             await db.create(collection, data);
             
             // Level 8 Configuration Pulse
@@ -3537,7 +3565,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 };
 
 // --- MAIN HANDLER ---
-async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
+async function _handleBrainRequest(request: Request, env: any, cfCtx?: any, preParsedBody?: any) {
     const requestId = Math.random().toString(36).substring(7);
     try {
         const url = new URL(request.url);
@@ -3633,8 +3661,8 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
             });
         }
 
-        let body: any = {};
-        if (!['GET', 'DELETE'].includes(request.method)) {
+        let body: any = preParsedBody || {};
+        if (!preParsedBody && !['GET', 'DELETE'].includes(request.method)) {
             try { 
                 const contentType = request.headers.get('content-type') || '';
                 if (contentType.includes('multipart/form-data')) {
@@ -3646,6 +3674,9 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
                 }
             } catch (bodyErr: any) {
                 console.warn(`[BRAIN] Failed to parse request body: ${bodyErr.message}`);
+                if (bodyErr.message.includes("Body has already been read")) {
+                    return error("Request body has been consumed. This may indicate a duplicate request. Please try again.", 400);
+                }
                 body = {};
             }
         }
@@ -3716,7 +3747,7 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any) {
     }
 }
 
-export async function handleBrainRequest(request: Request, env: any, cfCtx?: any) {
+export async function handleBrainRequest(request: Request, env: any, cfCtx?: any, preParsedBody?: any) {
     const origin = request.headers.get("Origin") || "";
     // Robust allowed origins check (Enterprise Level 8)
     const isAllowed = origin && (
@@ -3743,7 +3774,7 @@ export async function handleBrainRequest(request: Request, env: any, cfCtx?: any
     }
 
     try {
-        const response = await _handleBrainRequest(request, env, cfCtx);
+        const response = await _handleBrainRequest(request, env, cfCtx, preParsedBody);
         
         // Handle case where response might not be a standard Response object or is null
         if (!response || typeof response.clone !== 'function') {

@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { socket } from '~/lib/core';
 import { useParams } from 'react-router';
 import { cn, renderString } from '~/lib/core';
+import { formatForRender } from '~/lib/utils';
 import { BufferedInput, BufferedTextarea } from '~/components/ui/BufferedInput';
 import { Button } from '~/components/ui/button';
 
@@ -101,11 +102,11 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                             {[
-                                { label: renderString(t('settings:node_version'), lang), value: systemInfo?.nodeVersion ?? '...', mono: true },
-                                { label: renderString(t('settings:platform'), lang), value: systemInfo ? `${systemInfo.platform} (${systemInfo.arch})` : '...' },
-                                { label: renderString(t('settings:cpu_cores'), lang), value: systemInfo?.cpus ?? '...' },
-                                { label: "Memory (RAM)", value: systemInfo ? `${Math.round((systemInfo.memory.total - systemInfo.memory.free) / 1024 / 1024 / 1024 * 10) / 10} / ${Math.round(systemInfo.memory.total / 1024 / 1024 / 1024 * 10) / 10} GB` : '...' },
-                                { label: renderString(t('settings:local_ip'), lang), value: systemInfo?.localIps?.[0] ?? '...', mono: true }
+                                { label: renderString(t('settings:node_version'), lang), value: formatForRender(systemInfo?.nodeVersion ?? '...', lang), mono: true },
+                                { label: renderString(t('settings:platform'), lang), value: formatForRender(systemInfo ? `${systemInfo.platform} (${systemInfo.arch})` : '...', lang) },
+                                { label: renderString(t('settings:cpu_cores'), lang), value: formatForRender(systemInfo?.cpus ?? '...', lang) },
+                                { label: "Memory (RAM)", value: formatForRender(systemInfo ? `${Math.round((systemInfo.memory.total - systemInfo.memory.free) / 1024 / 1024 / 1024 * 10) / 10} / ${Math.round(systemInfo.memory.total / 1024 / 1024 / 1024 * 10) / 10} GB` : '...', lang) },
+                                { label: renderString(t('settings:local_ip'), lang), value: formatForRender(systemInfo?.localIps?.[0] ?? '...', lang), mono: true }
                             ].map((stat, i) => (
                                 <div key={i} className="p-3 rounded-xl bg-white border border-slate-50 shadow-sm">
                                     <div className="text-[8px] font-black uppercase text-slate-400 tracking-widest mb-1">{stat.label}</div>
@@ -208,7 +209,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                             <Label className="text-[9px] font-black uppercase text-slate-500 italic tracking-widest">{t('common:file_retention_days')}</Label>
                                             <BufferedInput 
                                                 type="number"
-                                                value={systemSettings?.file_retention_days ?? ''}
+                                                value={formatForRender(systemSettings?.file_retention_days ?? '', lang)}
                                                 onChange={(val) => updateSystemSetting('file_retention_days', parseInt(val), 'SYSTEM_SETTING')}
                                                 className="h-9 rounded-xl border-slate-200 font-black"
                                             />
@@ -217,7 +218,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                             <Label className="text-[9px] font-black uppercase text-slate-500 italic tracking-widest">{t('common:max_backups')}</Label>
                                             <BufferedInput 
                                                 type="number"
-                                                value={systemSettings?.max_backups ?? ''}
+                                                value={formatForRender(systemSettings?.max_backups ?? '', lang)}
                                                 onChange={(val) => updateSystemSetting('max_backups', parseInt(val), 'SYSTEM_SETTING')}
                                                 className="h-9 rounded-xl border-slate-200 font-black"
                                             />
@@ -282,7 +283,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                 <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Interval Sync (sec)</Label>
                                                 <BufferedInput 
                                                     type="number"
-                                                    value={gmailData.syncInterval ?? 15}
+                                                    value={formatForRender(gmailData.syncInterval ?? 15, lang)}
                                                     onChange={(v) => updateGmail('syncInterval', parseInt(v))}
                                                     className="h-10 rounded-xl font-bold"
                                                 />
@@ -291,7 +292,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                 <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Trash Days</Label>
                                                 <BufferedInput 
                                                     type="number"
-                                                    value={gmailData.emptyTrashDays ?? 30}
+                                                    value={formatForRender(gmailData.emptyTrashDays ?? 30, lang)}
                                                     onChange={(v) => updateGmail('emptyTrashDays', parseInt(v))}
                                                     className="h-10 rounded-xl font-bold"
                                                 />
@@ -305,31 +306,31 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                         </h4>
                                         <div className="space-y-2">
                                             <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Gmail Account Email</Label>
-                                            <BufferedInput 
-                                                value={gmailData.accountEmail || ""}
-                                                onChange={(val) => updateGmail('accountEmail', val)}
-                                                placeholder="user@gmail.com"
-                                                className="h-10 rounded-xl"
-                                            />
+                                                <BufferedInput 
+                                                    value={formatForRender(gmailData.accountEmail || "", lang)}
+                                                    onChange={(val) => updateGmail('accountEmail', val)}
+                                                    placeholder="user@gmail.com"
+                                                    className="h-10 rounded-xl"
+                                                />
                                         </div>
                                         <div className="space-y-2">
                                             <Label className="text-[10px] font-black uppercase text-orange-500 italic tracking-widest">SMTP User</Label>
-                                            <BufferedInput 
-                                                value={gmailData.smtp_user || ""}
-                                                onChange={(val) => updateGmail('smtp_user', val)}
-                                                placeholder="smtp-user@gmail.com"
-                                                className="h-10 rounded-xl"
-                                            />
+                                                <BufferedInput 
+                                                    value={formatForRender(gmailData.smtp_user || "", lang)}
+                                                    onChange={(val) => updateGmail('smtp_user', val)}
+                                                    placeholder="smtp-user@gmail.com"
+                                                    className="h-10 rounded-xl"
+                                                />
                                         </div>
                                         <div className="space-y-2">
                                             <Label className="text-[10px] font-black uppercase text-orange-500 italic tracking-widest">SMTP App-Password</Label>
-                                            <BufferedInput 
-                                                type="password"
-                                                value={gmailData.smtp_pass || ""}
-                                                onChange={(val) => updateGmail('smtp_pass', val)}
-                                                placeholder="••••••••••••••••"
-                                                className="h-10 rounded-xl"
-                                            />
+                                                <BufferedInput 
+                                                    type="password"
+                                                    value={formatForRender(gmailData.smtp_pass || "", lang)}
+                                                    onChange={(val) => updateGmail('smtp_pass', val)}
+                                                    placeholder="••••••••••••••••"
+                                                    className="h-10 rounded-xl"
+                                                />
                                         </div>
                                     </div>
 
@@ -341,7 +342,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                             <div className="space-y-2">
                                                 <Label className="text-[9px] font-black uppercase text-slate-500 italic">Client ID</Label>
                                                 <BufferedInput 
-                                                    value={gmailData.clientId || ""}
+                                                    value={formatForRender(gmailData.clientId || "", lang)}
                                                     onChange={(v) => updateGmail('clientId', v)}
                                                     className="h-9 rounded-lg font-mono text-[10px]"
                                                 />
@@ -350,7 +351,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                 <Label className="text-[9px] font-black uppercase text-slate-500 italic">Client Secret</Label>
                                                 <BufferedInput 
                                                     type="password"
-                                                    value={gmailData.clientSecret || ""}
+                                                    value={formatForRender(gmailData.clientSecret || "", lang)}
                                                     onChange={(v) => updateGmail('clientSecret', v)}
                                                     className="h-9 rounded-lg font-mono text-[10px]"
                                                 />
@@ -358,7 +359,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                             <div className="md:col-span-2 space-y-2">
                                                 <Label className="text-[9px] font-black uppercase text-slate-500 italic">Refresh Token</Label>
                                                 <BufferedInput 
-                                                    value={gmailData.refreshToken || ""}
+                                                    value={formatForRender(gmailData.refreshToken || "", lang)}
                                                     onChange={(v) => updateGmail('refreshToken', v)}
                                                     className="h-9 rounded-lg font-mono text-[10px]"
                                                 />
@@ -454,7 +455,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                             <div className="space-y-2">
                                                 <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Greeting Message</Label>
                                                 <BufferedTextarea 
-                                                    value={whatsappData.greetingMessage || ""}
+                                                    value={formatForRender(whatsappData.greetingMessage || "", lang)}
                                                     onChange={(val) => updateWhatsapp('greetingMessage', val)}
                                                     placeholder="Bună! Te contactăm în legătură cu..."
                                                     className="rounded-xl resize-none h-24 text-xs font-medium"
@@ -463,7 +464,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                             <div className="space-y-2">
                                                 <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">About Status</Label>
                                                 <BufferedInput 
-                                                    value={whatsappData.aboutStatus || ""}
+                                                    value={formatForRender(whatsappData.aboutStatus || "", lang)}
                                                     onChange={(val) => updateWhatsapp('aboutStatus', val)}
                                                     className="h-10 rounded-xl"
                                                 />

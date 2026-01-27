@@ -42,11 +42,12 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
     setLoading(true);
     setError(null);
     try {
-      const data = await api.post(`/api/action/workflow/get-transitions/${entityType}/${entityId}`, {});
+      const data = await api.post(`action/workflow/get-transitions/${entityType}/${entityId}`, {});
       
       if (data) {
-        setCurrentStatus(data.currentStatus);
-        setTransitions(data.availableTransitions || []);
+        const payload = data?.data || data;
+        setCurrentStatus(payload.currentStatus);
+        setTransitions(payload.availableTransitions || []);
       }
     } catch (err: any) {
       setError(err.message || renderString({ ro: 'Eroare la încărcare tranziții', en: 'Failed to load transitions' }, lang));
@@ -66,12 +67,13 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
     setTransitioning(true);
     setError(null);
     try {
-      const data = await api.post(`/api/action/workflow/transition/${entityType}/${entityId}`, {
+      const data = await api.post(`action/workflow/transition/${entityType}/${entityId}`, {
         toStatus: selectedTransition.value
       });
       
       if (data) {
-        setCurrentStatus(data.newStatus);
+        const payload = data?.data || data;
+        setCurrentStatus(payload.newStatus);
         setSelectedTransition(null);
         setConfirmDialog(false);
         await loadTransitions();

@@ -5,6 +5,33 @@ const dbLockContext = new AsyncLocalStorage<boolean>();
 class DbQueue {
     private writeQueue: Promise<any> = Promise.resolve();
     private activeCount = 0;
+    private batchBuffer: Array<{ fn: () => Promise<any>, resolve: (value: any) => void, reject: (error: any) => void }> = [];
+    private batchTimeout: NodeJS.Timeout | null = null;
+
+    private processBatch() {
+        if (this.batchBuffer.length === 0) return;
+        
+        const batch = [...this.batchBuffer];
+        this.batchBuffer = [];
+        
+        // Process batch sequentially but with minimal delay between operations
+        const processSequentially = async () => {
+            for (const item of batch) {
+                try {
+                    const result = await item.fn();
+                    item.resolve(result);
+                } catch (error) {
+                    item.reject(error);
+                }
+                // Small delay to prevent overwhelming
+                if (batch.length > 5) {
+                    await new Promise(resolve => setTimeout(resolve, 2));
+                }
+            }
+        };
+        
+        this.writeQueue = this.writeQueue.then(() => processSequentially());
+    }
 
     // Level 8: Improved queue logic
     shouldQueue(isWrite = true): boolean {
@@ -26,12 +53,30 @@ class DbQueue {
             return fn();
         }
 
+        // Level 8: Batch registry operations to reduce contention
+        const fnString = fn.toString();
+        const isRegistryOp = fnString.includes('registry') || fnString.includes('SYSTEM_SETTING');
+        
+        if (isRegistryOp && this.batchBuffer.length < 10) {
+            // Add to batch buffer
+            return new Promise<T>((resolve, reject) => {
+                this.batchBuffer.push({ fn, resolve, reject });
+                
+                // Schedule batch processing with a small delay
+                if (this.batchTimeout) clearTimeout(this.batchTimeout);
+                this.batchTimeout = setTimeout(() => {
+                    this.batchTimeout = null;
+                    this.processBatch();
+                }, 10); // 10ms batch window
+            });
+        }
+
         this.activeCount++;
         const queueId = Math.random().toString(36).substring(7);
         
         // Level 8: Reduced noise for DB queueing on Windows
-        // 5 was too low for modern React Router parallel loading, increased to 25.
-        if (this.activeCount > 25) {
+        // Increased threshold from 25 to 50 to reduce log spam in high-contention scenarios
+        if (this.activeCount > 50) {
             console.warn(`[DB-QUEUE][${queueId}] High contention detected: ${this.activeCount} tasks in queue. This is normal on Windows Dev to prevent SQLite locks.`);
         }
 
@@ -46,6 +91,10 @@ class DbQueue {
                 return res;
             } finally {
                 this.activeCount--;
+                // Level 8: Add micro-delay to prevent queue bursts from overwhelming SQLite
+                if (this.activeCount > 10) {
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                }
             }
         };
 
@@ -58,4 +107,13 @@ class DbQueue {
 }
 
 export const dbQueue = new DbQueue();
+
+// Cleanup batch timeout on process exit
+if (typeof process !== 'undefined') {
+    process.on('exit', () => {
+        if (dbQueue['batchTimeout']) {
+            clearTimeout(dbQueue['batchTimeout']);
+        }
+    });
+}
 

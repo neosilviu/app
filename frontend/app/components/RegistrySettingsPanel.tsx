@@ -5,6 +5,7 @@ import {
     api, 
     cn 
 } from '~/lib/core';
+import { getErrorMessage } from '~/lib/utils';
 import { toast } from 'sonner';
 import { Search, RefreshCw, Save, FileCode, History, ChevronDown, ChevronRight, Database, Shield, Layout, Zap, Activity, Settings, Box, Palette, Globe, Lock, HardDrive } from 'lucide-react';
 import { GlassCard } from './ui/GlassCard';
@@ -127,10 +128,10 @@ export function RegistrySettingsPanel() {
                 toast.success(`Saved ${fullId}`);
                 await refreshConfig(true);
             } else {
-                toast.error(res.error || "Failed to save");
+                toast.error(getErrorMessage(res.error, "Failed to save"));
             }
         } catch (e: any) {
-            toast.error(e.message);
+            toast.error(getErrorMessage(e, 'Failed to save'));
         } finally {
             setSaving(null);
             setEditingKey(null);

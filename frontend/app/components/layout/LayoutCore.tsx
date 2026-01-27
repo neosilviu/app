@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Outlet, useParams, Link } from 'react-router';
-import { cn, brainApi, socket, getLocalizedPath, socketRequest, type NavItem, renderString } from '~/lib/core';
+import { cn, api, socket, getLocalizedPath, socketRequest, type NavItem, renderString } from '~/lib/core';
+import { assertRenderable } from '~/lib/utils';
 import { useAuth } from '~/hooks/useAuth';
 import { AiFloatingAgent } from '../AiSystemUI';
 import { useTranslation } from 'react-i18next';
@@ -21,14 +22,13 @@ import { InboxDrawer } from '../dashboard/InboxDrawer';
 // USER MENU CONTENT
 // ============================================================================
 
-function UserMenuContent({ onClose, onOpenChangelog }: { onClose: () => void, onOpenChangelog?: () => void }) {
+function UserMenuContent({ onClose, onOpenChangelog, onOpenThemeEditor }: { onClose: () => void, onOpenChangelog?: () => void, onOpenThemeEditor?: () => void }) {
   const { user, hasPermission, hasPageAccess, logout } = useAuth();
   const { lang, ...params } = useParams();
   const location = useLocation();
   const { t } = useTranslation();
   const config = useConfig();
   const navigation = config?.navigation || { main: [], admin: [], user: [] };
-  const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
 
   return (
     <div className="w-full">
@@ -76,7 +76,7 @@ function UserMenuContent({ onClose, onOpenChangelog }: { onClose: () => void, on
             })}
 
             <button 
-                onClick={() => { setIsThemeEditorOpen(true); onClose(); }}
+              onClick={() => { onOpenThemeEditor?.(); onClose(); }}
                 className="w-full flex items-center gap-4 px-4 py-3 text-xs font-bold rounded-2xl text-slate-600 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 hover:text-indigo-600 transition-all text-left"
             >
                 <Palette size={18} /> {renderString(t('sidebar:theme_editor'), lang)}
@@ -107,10 +107,7 @@ function UserMenuContent({ onClose, onOpenChangelog }: { onClose: () => void, on
             </button>
         </div>
 
-        <ThemeEditor 
-            isOpen={isThemeEditorOpen} 
-            onClose={() => setIsThemeEditorOpen(false)} 
-        />
+        {/* ThemeEditor is rendered by parent to avoid unmount when closing this menu */}
     </div>
   );
 }
@@ -197,9 +194,16 @@ function SidebarItem({
         <>
           <span className="font-medium truncate">{renderString(item.label, lang)}</span>
           {item.badge && (
-            <span className="ml-auto px-1.5 py-0.5 text-[9px] font-black rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
-              {item.badge}
-            </span>
+            (() => {
+              // Fail-fast in dev when badge is an unexpected object
+              assertRenderable(item.badge, `nav.badge:${item.id}`);
+              const badgeContent = renderString(item.badge, lang);
+              return (
+                <span className="ml-auto px-1.5 py-0.5 text-[9px] font-black rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 whitespace-nowrap">
+                  {badgeContent}
+                </span>
+              );
+            })()
           )}
         </>
       )}
@@ -263,7 +267,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, isMobile = false, setIsMobil
     const checkBrain = async () => {
         try {
             const start = Date.now();
-            await brainApi.get('health', { timeout: 3000 });
+            await api.brain.get('health', { timeout: 3000 });
             setIsBrainConnected(true);
         } catch (e) {
             setIsBrainConnected(false);
@@ -696,11 +700,11 @@ interface HeaderProps {
   setIsMobileMenuOpen: (open: boolean) => void;
   isChangelogOpen: boolean;
   setIsChangelogOpen: (open: boolean) => void;
+  onOpenThemeEditor: () => void;
 }
 
-function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChangelogOpen, setIsChangelogOpen }: HeaderProps) {
+function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChangelogOpen, setIsChangelogOpen, onOpenThemeEditor }: HeaderProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
   const [storageStats, setStorageStats] = useState<any>(null);
   const { user, hasPermission, logout } = useAuth();
 
@@ -944,8 +948,9 @@ function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChange
                         <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)} />
                         <div className="absolute right-0 mt-4 w-72 bg-white/95 dark:bg-slate-950/95 backdrop-blur-2xl border border-slate-100 dark:border-slate-800 rounded-[2.5rem] shadow-2xl py-4 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
                             <UserMenuContent 
-                                onClose={() => setIsUserMenuOpen(false)} 
-                                onOpenChangelog={() => setIsChangelogOpen(true)}
+                        onClose={() => setIsUserMenuOpen(false)} 
+                        onOpenChangelog={() => setIsChangelogOpen(true)}
+                          onOpenThemeEditor={onOpenThemeEditor}
                             />
                         </div>
                     </>
@@ -1078,6 +1083,7 @@ export default function DashboardLayout({ children, title }: { children?: React.
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { lang } = useParams();
@@ -1222,6 +1228,7 @@ export default function DashboardLayout({ children, title }: { children?: React.
           setIsMobileMenuOpen={setIsMobileMenuOpen} 
           isChangelogOpen={isChangelogOpen}
           setIsChangelogOpen={setIsChangelogOpen}
+          onOpenThemeEditor={() => setIsThemeEditorOpen(true)}
         />
 
         {/* Page Content */}
@@ -1256,8 +1263,9 @@ export default function DashboardLayout({ children, title }: { children?: React.
                 <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-slate-950 rounded-t-[3rem] p-4 shadow-2xl animate-in slide-in-from-bottom-full duration-500">
                     <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto mb-6" />
                     <UserMenuContent 
-                        onClose={() => setIsUserMenuOpen(false)} 
-                        onOpenChangelog={() => setIsChangelogOpen(true)}
+                onClose={() => setIsUserMenuOpen(false)} 
+                onOpenChangelog={() => setIsChangelogOpen(true)}
+                onOpenThemeEditor={() => setIsThemeEditorOpen(true)}
                     />
                     <div className="h-8" /> {/* Spacer for bottom bar */}
                 </div>
@@ -1267,6 +1275,10 @@ export default function DashboardLayout({ children, title }: { children?: React.
         <Changelog 
           isOpen={isChangelogOpen} 
           onClose={() => setIsChangelogOpen(false)} 
+        />
+        <ThemeEditor 
+          isOpen={isThemeEditorOpen} 
+          onClose={() => setIsThemeEditorOpen(false)}
         />
         <AiFloatingAgent />
       </div>

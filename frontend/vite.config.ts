@@ -57,7 +57,9 @@ export default defineConfig(({ command }) => ({
     command === 'serve' ? cloudflareDevProxy({
       configPath: path.resolve("../.dev/wrangler-dev.toml"),
       persist: {
-        path: path.resolve("../.dev/.wrangler")
+        // Match Wrangler CLI persistence path exactly (Enterprise Level 8 Consistency)
+        // Wrangler CLI --persist-to ../.dev/.wrangler/state results in state/v3/d1
+        path: path.resolve("../.dev/.wrangler/state")
       }
     }) : undefined,
     reactRouter(),
@@ -123,9 +125,13 @@ export default defineConfig(({ command }) => ({
    //     timeout: 10000,
   //      proxyTimeout: 10000,
       },
-      // Proxy legacy APIs to backend, but EXCLUDE new RR7 routes
+      // Proxy /api/auth/* to Brain handler (React Router will handle via api/*) 
+      // Do NOT proxy to backend - Better-Auth is integrated into Brain handler
+      // NOTE: vite proxy won't touch it, React Router wildcard will catch it
+      
+      // Proxy legacy APIs to backend, but EXCLUDE new RR7 routes + auth
       // This regex matches /api/ followed by anything EXCEPT the listed RR7 routes
-      "^/api/(?!(db|auth|config|workspace|ai|architect|companies|contact|system|stats|file|upload|help|health|health_brain|tag|entities|monitor|registry))": {
+      "^/api/(?!(db|auth|config|workspace|ai|architect|companies|contact|entity|system|stats|file|upload|help|health|health_brain|tag|monitoring|registry|search|workflow|member|asset|action|check-admin|setup-admin|local-token))": {
         target: "http://127.0.0.1:4001",
         changeOrigin: true,
 //        timeout: 10000,

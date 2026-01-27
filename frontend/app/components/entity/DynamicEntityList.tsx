@@ -8,6 +8,7 @@ import { GlassCard } from '~/components/ui/GlassCard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 import { Checkbox } from "~/components/ui/checkbox";
 import { cn, renderString, getThemeClasses } from '~/lib/core';
+import { formatForRender } from '~/lib/utils';
 import { normalizeEntity } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
 import { IconMap } from '~/lib/icons';
@@ -142,7 +143,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
             case 'datetime': return new Date(val).toLocaleString();
             case 'boolean':
             case 'toggle': return val ? <Badge className="bg-emerald-500 text-white border-none py-0 h-4 text-[8px]">DA</Badge> : <Badge variant="outline" className="text-slate-300 py-0 h-4 text-[8px]">NU</Badge>;
-            default: return String(val);
+            default: return formatForRender(val, lang);
         }
     };
 

@@ -12,7 +12,13 @@ export const getAuth = (env: any, request?: Request) => {
     const driver = getDb(env);
     const d1Binding = driver.db;
     
-    if (_cachedAuth && _cachedAuth.__hasValidDB) {
+    // Check if origin changed (Enterprise Level 8: Dynamic Origin Support)
+    let currentOrigin = '';
+    if (request) {
+        try { currentOrigin = new URL(request.url).origin; } catch (e) {}
+    }
+    
+    if (_cachedAuth && _cachedAuth.__hasValidDB && (!_cachedAuth.__origin || _cachedAuth.__origin === currentOrigin)) {
         return _cachedAuth;
     }
 
@@ -20,13 +26,10 @@ export const getAuth = (env: any, request?: Request) => {
         throw new Error("[AUTH-INIT] Critical: D1 Database binding 'DB' not found in environment. Better-Auth cannot start.");
     }
 
-    let baseURL = env?.BETTER_AUTH_URL;
-    if (!baseURL && request) {
-        try { baseURL = new URL(request.url).origin; } catch (e) {}
-    }
+    let baseURL = env?.BETTER_AUTH_URL || currentOrigin;
     if (!baseURL) baseURL = 'http://localhost:8788';
 
-    console.log("[AUTH-INIT] Initializing Better-Auth with Kysely + D1 (Singleton mode)");
+    console.log(`[AUTH-INIT] Initializing Better-Auth at ${baseURL} (Singleton mode)`);
     const initStart = Date.now();
 
     const originalError = console.error;
@@ -94,6 +97,7 @@ export const getAuth = (env: any, request?: Request) => {
         });
         
         (auth as any).__hasValidDB = true; // Mark as successfully initialized with DB
+        (auth as any).__origin = currentOrigin;
         console.error = originalError; 
         console.log(`[AUTH-INIT] Initialization successful in ${Date.now() - initStart}ms`);
         console.groupEnd?.();

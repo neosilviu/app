@@ -8,32 +8,91 @@ import { DynamicForm } from '~/components/EntitySystem';
 import { api, renderString } from '~/lib/core';
 import { toast } from 'sonner';
 
-export async function action({ request, params }: any) {
-    const formData = await request.formData();
-    const action = formData.get('_action');
-    const entity = params.entity;
-
-    if (action === 'delete') {
-        const id = formData.get('id');
-        const ids = formData.get('ids');
-        
-        if (id) {
-            return await api.brain.delete(`db/${entity}/${id}`);
-        } else if (ids) {
-            const idList = ids.split(',');
-            // Bulk delete from brain
-            let successRaw = 0;
-            for(const itemId of idList) {
-                const res = await api.brain.delete(`db/${entity}/${itemId}`);
-                if (res.success) successRaw++;
-            }
-            return { success: successRaw === idList.length, deleted: successRaw };
+export async function action({ request, params, context }: any) {
+    let formData: FormData | null = null;
+    const contentType = (request.headers.get('content-type') || '').toLowerCase();
+    
+    if (contentType.includes('multipart/form-data') || contentType.includes('application/x-www-form-urlencoded')) {
+        try {
+            formData = await request.formData();
+        } catch (e) {
+            console.warn('[ROUTE-INDEX] Failed to parse form data:', e);
         }
     }
 
-    if (action === 'post' || action === 'create') {
-        const data = JSON.parse(formData.get('data') || '{}');
-        return await api.brain.post(`db/collection/${entity}`, data);
+    // If it's a JSON request to a UI route, it might be an accidental API call or a specific action
+    if (!formData && contentType.includes('application/json')) {
+        const { handleBrainRequest } = await import("../brain.server");
+        const env = (context as any).cloudflare?.env || (process as any).env;
+        const ctx = (context as any).cloudflare?.ctx;
+        return await handleBrainRequest(request, env, ctx);
+    }
+
+    if (!formData) {
+        return { error: 'Invalid content type' };
+    }
+
+    const method = request.method.toUpperCase();
+    const action = (formData.get('_action') as string) || (method === 'DELETE' ? 'delete' : '');
+    const entity = params.entity;
+
+    // Enterprise Level 8: Local Brain Loopback (SSR-Safe)
+    // Instead of making an HTTP call to ourselves via axios (which fails on server), 
+    // we use the internal brain handler directly.
+    const callBrain = async (path: string, method: string, data?: any) => {
+        const { handleBrainRequest } = await import("../brain.server");
+        const env = (context as any).cloudflare?.env || (process as any).env;
+        const cfCtx = (context as any).cloudflare?.ctx;
+        
+        const url = new URL(request.url);
+        const brainUrl = `${url.origin}/api/${path}`;
+        
+        const brainRequest = new Request(brainUrl, {
+            method,
+            headers: {
+                ...Object.fromEntries(request.headers.entries()),
+                'content-type': 'application/json'
+            },
+            body: data ? JSON.stringify(data) : undefined
+        });
+
+        const response = await handleBrainRequest(brainRequest, env, cfCtx);
+        return await response.json();
+    };
+
+    if (action === 'delete') {
+        const id = formData.get('id') as string;
+        const ids = formData.get('ids') as string;
+        
+        if (id) {
+            return await callBrain(`db/${entity}/${id}`, 'DELETE');
+        } else if (ids) {
+            const idList = (ids || '').split(',');
+            let successRaw = 0;
+            for(const itemId of idList) {
+                if (!itemId) continue;
+                const res = await callBrain(`db/${entity}/${itemId}`, 'DELETE') as any;
+                if (res.success) successRaw++;
+            }
+            return { success: successRaw === idList.filter(Boolean).length, deleted: successRaw };
+        }
+    }
+
+    if (action === 'post' || action === 'create' || method === 'POST') {
+        const dataRaw = formData.get('data');
+        let data = {};
+        if (typeof dataRaw === 'string') {
+            try {
+                data = JSON.parse(dataRaw);
+            } catch (e: any) {
+                return { error: `Format JSON invalid în câmpul 'data': ${e.message}` };
+            }
+        }
+        
+        const finalData = Object.keys(data).length > 0 ? data : Object.fromEntries(formData.entries());
+        delete (finalData as any)._action;
+        
+        return await callBrain(`db/collection/${entity}`, 'POST', finalData);
     }
 
     return { error: 'Invalid action' };

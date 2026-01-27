@@ -53,18 +53,12 @@ export function SuperAdminGate({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useEffect(() => {
-    // Fail-safe: If we are already logged in, we NEVER redirect to setup
     if (user) return;
 
-    // If we know for sure there is no admin, redirect to setup (unless already there OR on login)
-    const isSetupPage = location.pathname.includes('/setup');
-    const isLoginPage = location.pathname.includes('/login');
-    
-    if (isAdminExists === false && !isSetupPage && !isLoginPage) {
-      console.log("[Auth] No admin exists, redirecting to setup");
+    if (!authLoading && isAdminExists === false && !location.pathname.includes('/setup') && !location.pathname.includes('/login')) {
       navigate(getLocalizedPath('/setup', lang));
     }
-  }, [isAdminExists, navigate, lang, location.pathname, user]);
+  }, [authLoading, isAdminExists, navigate, lang, location.pathname, user]);
 
   if (authLoading) {
     return (

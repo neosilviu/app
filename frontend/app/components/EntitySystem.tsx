@@ -8,7 +8,7 @@ import { type EntityType } from '~/lib/core';
 import { useConfig } from "~/hooks/useConfig";
 import { useAuth } from '~/hooks/useAuth';
 import { socket } from '~/lib/core';
-import { cn, api, renderString, normalizeEntity } from '~/lib/core';
+import { cn, api, renderString, normalizeEntity, formatForRender } from '~/lib/core';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
 import { Input } from '~/components/ui/input';
@@ -238,10 +238,10 @@ export const DynamicTable = React.memo(function DynamicTable({
     if (field.type === "datetime") {
       try {
         const date = new Date(value);
-        if (isNaN(date.getTime())) return value;
+        if (isNaN(date.getTime())) return formatForRender(value, lang);
         return dateFormatter.format(date);
       } catch (e) {
-        return value;
+        return formatForRender(value, lang);
       }
     }
 
@@ -272,7 +272,7 @@ export const DynamicTable = React.memo(function DynamicTable({
       return (
         <div className="flex items-center gap-1.5 text-emerald-600 font-mono text-[10px] bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
           <Code size={10} />
-          {value}
+          {formatForRender(value, lang)}
         </div>
       );
     }
@@ -293,7 +293,7 @@ export const DynamicTable = React.memo(function DynamicTable({
       return (
         <div className="flex items-center gap-1.5 text-indigo-600 italic bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
           <Zap size={10} />
-          <span className="truncate max-w-[200px]">{value}</span>
+          <span className="truncate max-w-[200px]">{formatForRender(value, lang)}</span>
         </div>
       );
     }
@@ -423,7 +423,7 @@ export const DynamicTable = React.memo(function DynamicTable({
               <TableRow><TableCell colSpan={fields.length + (config.hasTags ? 3 : 2)} className="h-24 text-center">{t('common:no_items_found')}</TableCell></TableRow>
             ) : (
               paginatedData.map((item, index) => {
-                const rowKey = item.id || item.chatId || item.sessionId || `row-${index}`;
+                const rowKey = item.id || item.chatId || `row-${index}`;
                 return (
                   <TableRow 
                     key={`${rowKey}-${index}`} 

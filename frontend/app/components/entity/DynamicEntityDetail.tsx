@@ -17,6 +17,7 @@ import { normalizeEntity } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
 import { useConfig } from '~/hooks/useConfig';
 import { toast } from 'sonner';
+import { getErrorMessage } from '~/lib/utils';
 import { EntityHistoryWidget } from '~/components/entity/EntityHistoryWidget';
 import { WorkflowWidget } from '~/components/entity/WorkflowWidget';
 
@@ -75,10 +76,10 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 }, lang));
                 setIsAiModalOpen(false);
             } else {
-                toast.error(res.error || "AI Extraction failed");
+                toast.error(getErrorMessage(res.error, "AI Extraction failed"));
             }
         } catch (e: any) {
-            toast.error(e.message);
+            toast.error(getErrorMessage(e, "AI Extraction failed"));
         } finally {
             setIsAiExtracting(false);
         }
@@ -284,7 +285,19 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             const method = isNew ? api.brain.post : api.brain.patch;
             const endpoint = isNew ? `db/${entityId}` : `db/${entityId}/${recordId}`;
             
-            const res = await method(endpoint, formData);
+            // Filter out generated fields for new records (they should be handled by DB)
+            const dataToSend = { ...formData };
+            if (isNew) {
+                fieldsList.forEach((f: any) => {
+                    if (f.generated) {
+                        delete dataToSend[f.name];
+                    }
+                });
+            }
+            
+            console.log('[SAVE] Sending data:', dataToSend);
+            
+            const res = await method(endpoint, dataToSend);
             if (res.success) {
                 toast.success(isNew ? "Creat cu succes" : "Actualizat cu succes");
                 if (isNew) navigate(`../${res.data?.id || res.data?.ID || ''}`, { replace: true });
@@ -307,29 +320,37 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             en: "Are you sure you want to delete this record? This action cannot be undone."
         }, lang))) return;
 
+        console.log('[DELETE] Starting delete for', entityId, recordId);
+        setSaving(true);
         try {
             // Step 1: Attempt delete (Enterprise Level 8: uses DB collection endpoint)
             let res = await api.brain.delete(`db/collection/${entityId}/item/${recordId}`);
-            
+            console.log('[DELETE] Delete response:', res);
+
             // Step 2: Handle dependency check (Enterprise Level 8 Safety)
             if (res.success && res.data?.hasDependencies) {
                 if (confirm(res.data.message)) {
                     // Step 3: Force delete if user confirms
                     res = await api.brain.delete(`db/collection/${entityId}/item/${recordId}?force=true`);
+                    console.log('[DELETE] Force delete response:', res);
                 } else {
                     return; // User cancelled
                 }
             }
 
             if (res.success) {
+                console.log('[DELETE] Delete successful, navigating back');
                 toast.success(renderString({ ro: "Înregistrare ștearsă", en: "Record deleted" }, lang));
                 navigate('..', { replace: true });
             } else {
+                console.error('[DELETE] Delete failed:', res.error);
                 toast.error(res.error || "Delete failed");
             }
         } catch (e: any) {
-            console.error("Delete error:", e);
+            console.error('[DELETE] Delete error:', e);
             toast.error("Delete failed: " + e.message);
+        } finally {
+            setSaving(false);
         }
     };
 

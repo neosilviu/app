@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { renderString } from '~/lib/utils';
+import { renderString, assertRenderable } from '~/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
+  DialogFooter
 } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { Input } from "./ui/input";
@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from 'react-markdown';
 import { api, socket } from '~/lib/core';
+import { getErrorMessage } from '~/lib/utils';
 import { useAuth } from '~/hooks/useAuth';
 import { toast } from 'sonner';
 
@@ -187,7 +188,7 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         setGeneratedDraft(res.data);
         toast.info(renderString(t('changelog:ai_success'), lang));
       } else {
-        toast.error(res.error || renderString(t('changelog:generate_error'), lang));
+        toast.error(getErrorMessage(res.error, renderString(t('changelog:generate_error'), lang)));
       }
     });
   };
@@ -201,7 +202,7 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         setGeneratedDraft(null);
         loadLogs();
       } else {
-        toast.error(res.error || renderString(t('changelog:publish_error'), lang));
+        toast.error(getErrorMessage(res.error, renderString(t('changelog:publish_error'), lang)));
       }
     });
   };
@@ -350,7 +351,12 @@ export function SimpleConfirmAction({
   onConfirm,
   isLoading
 }: SimpleConfirmActionProps) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
+
+  const renderDescription = (desc: any) => {
+    assertRenderable(desc, 'description');
+    return renderString(desc, i18n?.language || 'ro');
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -361,7 +367,7 @@ export function SimpleConfirmAction({
             {title}
           </DialogTitle>
           <DialogDescription className="pt-2 text-slate-600">
-            {description}
+            {renderDescription(description)}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 sm:gap-0">
@@ -403,7 +409,12 @@ export function ConfirmDestructiveAction({
   isLoading
 }: ConfirmDestructiveActionProps) {
   const [inputValue, setInputValue] = useState('');
-  const { t } = useTranslation(['common', 'settings']);
+  const { t, i18n } = useTranslation(['common', 'settings']);
+
+  const renderDescription = (desc: any) => {
+    assertRenderable(desc, 'description');
+    return renderString(desc, i18n?.language || 'ro');
+  };
 
   const handleConfirm = () => {
     if (inputValue === confirmationWord) {
@@ -425,7 +436,7 @@ export function ConfirmDestructiveAction({
           </DialogTitle>
           <DialogDescription className="pt-2 text-slate-600" asChild>
             <div>
-              <p>{description}</p>
+              <p>{renderDescription(description)}</p>
               <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-lg text-xs border border-red-100">
                 {t('common:destructive_action_warning', { word: confirmationWord })}
               </div>

@@ -151,13 +151,15 @@ export class EntitySync {
     for (const field of fields) {
       if (!existingColNames.has(field.name.toLowerCase())) {
         logger.info(`Adding column ${field.name} to ${tableName}...`);
-        const colDef = this.getFieldDef(field);
+        // Level 8: SQLite does not support adding a PRIMARY KEY column to an existing table.
+        // Also UNIQUE constraints via ALTER TABLE can be tricky in some SQLite versions.
+        const colDef = this.getFieldDef(field, false); 
         await this.db.run(`ALTER TABLE ${tableName} ADD COLUMN ${colDef}`);
       }
     }
   }
 
-  private getFieldDef(field: any): string {
+  private getFieldDef(field: any, includePrimaryKey: boolean = true): string {
     let type = 'TEXT';
     switch (field.type) {
       case 'number':
@@ -179,7 +181,7 @@ export class EntitySync {
     }
 
     let constraints = '';
-    if (field.primaryKey) constraints += ' PRIMARY KEY';
+    if (includePrimaryKey && field.primaryKey) constraints += ' PRIMARY KEY';
     if (field.unique) constraints += ' UNIQUE';
     if (field.required) constraints += ' NOT NULL';
 

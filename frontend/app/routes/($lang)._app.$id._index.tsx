@@ -21,6 +21,7 @@ import { Input } from "~/components/ui/input";
 import { DataManagementActions } from '~/components/DataOps';
 import { ConfirmDestructiveAction, SimpleConfirmAction } from '~/components/AppModals';
 import { cn, renderString } from '~/lib/core';
+import { useSmartBack } from '~/hooks/useSmartBack';
 import type { Route } from "../../.react-router/types/app/routes/+types/($lang)._app.$id._index";
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -39,6 +40,7 @@ export default function EntityPage() {
   const { hasPermission } = useAuth();
   const entityType = id || '';
   const config = configMap[entityType];
+  const goBack = useSmartBack();
   
   const [showArchived, setShowArchived] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -101,8 +103,8 @@ export default function EntityPage() {
         </div>
         <h1 className="text-2xl font-black text-rose-900 dark:text-rose-100 mb-2">{t('entity:unknown_entity')}</h1>
         <p className="text-rose-600/70 max-w-md text-center" dangerouslySetInnerHTML={{ __html: t('entity:unknown_entity_desc', { id }) }} />
-        <Button variant="outline" className="mt-8 border-rose-200 text-rose-700" onClick={() => navigate(-1)}>
-            {t('common:back_to_dashboard')}
+        <Button variant="outline" className="mt-8 border-rose-200 text-rose-700" onClick={() => goBack()}>
+          {t('common:back_to_dashboard')}
         </Button>
       </div>
     );

@@ -18,7 +18,7 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const { constants, isInitialized } = useConfig();
-  const { isAdminExists } = useAuth() || { isAdminExists: null };
+  const { isAdminExists, user } = useAuth() || { isAdminExists: null, user: null };
   const [settings, setSettings] = useState<Settings>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +29,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setError(null);
 
       // Enterprise Level 8: Skip backend fetch if we are in Setup phase (No Admin)
-      // or if Registry is not yet ready.
-      if (isAdminExists === false) {
+      // or if we don't have a logged-in user yet (socket won't be connected).
+      if (isAdminExists === false || !user) {
           const registrySettings = constants?.SYSTEM_SETTING || {};
           setSettings(registrySettings);
           setLoading(false);

@@ -7,6 +7,7 @@ import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
 import { Badge } from '~/components/ui/badge';
 import { renderString } from '~/lib/core';
+import { formatForRender } from '~/lib/utils';
 
 interface AuditLog {
   id: string;
@@ -56,7 +57,7 @@ export function AuditHistory() {
   const loadHistory = async () => {
     setLoading(true);
     try {
-      const data = await api.post('/api/action/history', {
+      const data = await api.post('action/history', {
         limit,
         offset,
         entityType: entityTypeFilter || undefined,
@@ -64,8 +65,9 @@ export function AuditHistory() {
       });
       
       if (data) {
-        setLogs(data.logs || []);
-        setTotal(data.total || 0);
+        const payload = data?.data || data;
+        setLogs(payload.logs || []);
+        setTotal(payload.total || 0);
       }
     } catch (error) {
       console.error('Failed to load audit history:', error);
@@ -76,10 +78,11 @@ export function AuditHistory() {
 
   const loadStats = async () => {
     try {
-      const data = await api.post('/api/action/stats', {});
+      const data = await api.post('action/stats', {});
       
       if (data) {
-        setStats(data);
+        const payload = data?.data || data;
+        setStats(payload);
       }
     } catch (error) {
       console.error('Failed to load stats:', error);
@@ -92,7 +95,7 @@ export function AuditHistory() {
     }
 
     try {
-      const data = await api.post(`/api/action/undo/${logId}`, {});
+      const data = await api.post(`action/undo/${logId}`, {});
       
       if (data && !data.error) {
         alert(renderString({ ro: 'Modificare restaurată cu succes!', en: 'Change successfully reverted!' }, lang));
@@ -109,11 +112,15 @@ export function AuditHistory() {
   const filteredLogs = logs.filter(log => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
+      const action = formatForRender(log.action, lang).toLowerCase();
+      const entityTypeStr = formatForRender(log.entityType, lang).toLowerCase();
+      const userStr = formatForRender(log.user, lang).toLowerCase();
+      const display = formatForRender(log.display_value, lang).toLowerCase();
       return (
-        log.action.toLowerCase().includes(term) ||
-        log.entityType.toLowerCase().includes(term) ||
-        log.user.toLowerCase().includes(term) ||
-        log.display_value?.toLowerCase().includes(term)
+        action.includes(term) ||
+        entityTypeStr.includes(term) ||
+        userStr.includes(term) ||
+        display.includes(term)
       );
     }
     return true;
@@ -151,7 +158,8 @@ export function AuditHistory() {
   };
 
   const canUndo = (log: AuditLog) => {
-    return log.snapshot_before && !log.action.includes('system-undo') && !log.action.includes('delete');
+    const actionStr = formatForRender(log.action, lang).toLowerCase();
+    return log.snapshot_before && !actionStr.includes('system-undo') && !actionStr.includes('delete');
   };
 
   return (
@@ -287,22 +295,27 @@ export function AuditHistory() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 space-y-2">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <Badge className={`${getActionColor(log.action)} border`}>
-                      {log.action}
-                    </Badge>
+                      {(() => {
+                        const actionStr = formatForRender(log.action, lang);
+                        return (
+                          <Badge className={`${getActionColor(actionStr)} border`}>
+                            {actionStr}
+                          </Badge>
+                        );
+                      })()}
                     
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Database className="w-3.5 h-3.5" />
-                      <span className="font-mono">{log.entityType}</span>
+                      <span className="font-mono">{formatForRender(log.entityType, lang)}</span>
                     </div>
                     
                     {log.display_value && (
-                      <span className="text-sm font-medium">{log.display_value}</span>
+                      <span className="text-sm font-medium">{formatForRender(log.display_value, lang)}</span>
                     )}
                     
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <User className="w-3.5 h-3.5" />
-                      <span>{log.user}</span>
+                      <span>{formatForRender(log.user, lang)}</span>
                     </div>
                     
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -312,7 +325,7 @@ export function AuditHistory() {
                   </div>
                   
                   {log.details && (
-                    <p className="text-sm text-muted-foreground">{log.details}</p>
+                    <p className="text-sm text-muted-foreground">{formatForRender(log.details, lang)}</p>
                   )}
                   
                   {expandedLog === log.id && log.snapshot_before && (

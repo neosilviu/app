@@ -9,7 +9,7 @@ import {
 } from "../lib/core";
 import { db, resolveCollection } from '../lib/core';
 import { toast } from "sonner";
-import { renderString } from "../lib/utils";
+import { renderString, getErrorMessage } from "../lib/utils";
 import { useAuth } from "~/hooks/useAuth";
 import { useConfig } from "~/hooks/useConfig";
 import { useTheme } from "~/hooks/useTheme";
@@ -57,7 +57,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
 
   // Selection helpers
   const getPk = useCallback((item: any) => {
-    return item.id || item.chatId || item.sessionId || item.id;
+    return item.id || item.chatId || item.id;
   }, []);
 
   const toggleSelection = useCallback((id: string) => {
@@ -145,7 +145,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       if (options.sortBy) queryParams.append('sortBy', options.sortBy);
       if (options.sortOrder) queryParams.append('sortOrder', options.sortOrder);
 
-      const url = `db/collection/${entityName}/${workspaceId}?${queryParams.toString()}`;
+      const url = `db/collection/${entityName}/${workspaceId}?${queryParams.toString()}&t=${Date.now()}`;
       
       let responseData;
       try {
@@ -233,7 +233,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         }
       } else {
         setError(responseData.error);
-        toast.error(`Failed to fetch ${entityName}: ${responseData.error}`);
+        toast.error(getErrorMessage(responseData.error, `Failed to fetch ${entityName}`));
       }
     } catch (err: any) {
       setLoading(false);

@@ -111,8 +111,9 @@ export function AiArchitectSandbox() {
                 } else {
                     toast.error("Deployment failed: " + res.error);
                 }
-            } catch (err) {
-                toast.error("Network error during deployment");
+            } catch (err: any) {
+                const msg = err?.response?.data?.error || err?.message || "Network error during deployment";
+                toast.error(msg);
             } finally {
                 setIsSaving(false);
             }

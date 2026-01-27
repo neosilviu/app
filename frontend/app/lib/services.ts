@@ -230,13 +230,57 @@ const isProd = typeof window !== 'undefined' && window.location.hostname === 'se
 // In production and dev, use the internal /api/ route (The Brain / Cloudflare Worker)
 // We only use the Local Agent for specific local/hardware task via api.local
 export const getBrainApiUrl = () => {
-    return '/api/'; 
+    return '/api'; 
 };
 
 const BRAIN_API_URL = getBrainApiUrl();
 
 export const brainApi = axios.create({ baseURL: BRAIN_API_URL, timeout: 45000 }); // Increased timeout for migrations
-export const localAgentApi = axios.create({ baseURL: `${SOCKET_URL}/api/`, timeout: 15000 });
+
+/**
+ * Resolve a direct Local Agent API base URL (NOT via Vite proxy).
+ * This ensures requests intended for the Local Agent are sent directly
+ * to the agent process (typically port 4001) and not handled by Vite's
+ * dev server which may intentionally exclude certain /api/* routes.
+ */
+export const getLocalAgentApiBaseUrl = () => {
+    const env = (import.meta as any).env || {};
+    if (env.VITE_LOCAL_API_URL) return env.VITE_LOCAL_API_URL.replace(/\/$/, '');
+
+    const PORT = _registry?.SYSTEM_SETTING?.local_agent_port || _registry?.local_agent_port || 4001;
+
+    // If running in browser on a local network, return a direct agent host:port
+    // We want API calls to hit the Local Agent process (typically port 4001)
+    // rather than the dev server origin which may proxy or reject certain routes.
+    if (isBrowser) {
+        const { hostname, protocol } = window.location;
+        const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.endsWith('.local');
+        if (isLocal) {
+            return `${protocol}//${hostname}:${PORT}`;
+        }
+    }
+
+    const registryUrl = _registry?.SYSTEM_SETTING?.local_agent_url || _registry?.local_agent_url;
+    if (registryUrl) return registryUrl.replace(/\/$/, '');
+
+    return `http://127.0.0.1:${PORT}`;
+};
+
+export const localAgentApi = axios.create({ baseURL: `${getLocalAgentApiBaseUrl()}/api`, timeout: 15000 });
+
+// Normalize URL path to avoid duplicate /api prefixes when callers pass '/api/...' or 'api/...'
+export const normalizeApiPath = (u: string) => {
+    if (!u) return '/';
+    // Ensure a single leading slash and remove any leading 'api' segment
+    let s = String(u || '');
+    s = s.replace(/^\/+/, '/');
+    s = s.replace(/^\/api\/?/, '/');
+    // Collapse multiple slashes
+    s = s.replace(/\/+/g, '/');
+    // Ensure it starts with '/'
+    if (!s.startsWith('/')) s = '/' + s;
+    return s;
+};
 
 [brainApi, localAgentApi].forEach(instance => {
     instance.interceptors.request.use(config => {
@@ -248,25 +292,113 @@ export const localAgentApi = axios.create({ baseURL: `${SOCKET_URL}/api/`, timeo
     });
 });
 
+// Helper: If an action/workflow request 404s against the Brain route during dev,
+// retry against the Local Agent API directly. This avoids Vite dev-server proxy
+// exclusions causing client-side 404s for local-only endpoints.
+const shouldTryLocalOn404 = (url: string) => {
+    if (!url) return false;
+    const clean = url.replace(/^\//, '').replace(/^api\//, '');
+    return /^action\//.test(clean) || /workflow/.test(clean);
+};
+
+const wrapRequest = (fnBrain: any, fnLocal: any) => async (url: string, dataOrCfg?: any, cfg?: any) => {
+    try {
+        // brain functions use (url, data?, cfg?) signature
+        const res = await fnBrain(normalizeApiPath(url), dataOrCfg, cfg);
+        return res;
+    } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 404 && shouldTryLocalOn404(url)) {
+            // Try Local Agent API first (standard)
+            try {
+                const normalized = normalizeApiPath(url);
+                const res2 = await fnLocal(normalized, dataOrCfg, cfg);
+                return res2;
+            } catch (e2: any) {
+                // If the Local Agent responded 404, try several alternate direct URLs
+                // Some local agents expose endpoints with or without the `/api` prefix
+                // and sometimes under `/workflow/...` instead of `/action/workflow/...`.
+                const normalized = normalizeApiPath(url);
+                const localBase = getLocalAgentApiBaseUrl();
+                const alt1 = `${localBase}/api${normalized}`; // http://host:4001/api/action/...
+                const alt2 = `${localBase}${normalized}`; // http://host:4001/action/...
+                const normalizedNoAction = normalized.replace(/^\/action\//, '/');
+                const alt3 = `${localBase}/api${normalizedNoAction}`; // http://host:4001/api/workflow/...
+                const alt4 = `${localBase}${normalizedNoAction}`; // http://host:4001/workflow/...
+
+                const candidates = [alt1, alt2, alt3, alt4];
+                let lastErr: any = e2;
+                // Build headers (include token if present)
+                const headers = (cfg && cfg.headers) ? { ...(cfg.headers || {}) } : {};
+                if (isBrowser) {
+                    const token = localStorage.getItem('token');
+                    if (token) headers.Authorization = `Bearer ${token}`;
+                }
+
+                for (const attemptUrl of candidates) {
+                    try {
+                        // eslint-disable-next-line no-console
+                        console.debug(`[SERVICES] Trying direct local agent URL: ${attemptUrl}`);
+                        const resp = await axios.post(attemptUrl, dataOrCfg || {}, { headers, timeout: cfg?.timeout || 15000 });
+                        return resp.data;
+                    } catch (attemptErr: any) {
+                        lastErr = attemptErr;
+                        // eslint-disable-next-line no-console
+                        console.debug(`[SERVICES] Direct local attempt failed: ${attemptUrl} -> ${attemptErr?.response?.status || attemptErr.message}`);
+                        // continue to next candidate
+                    }
+                }
+                // All direct attempts failed, throw the last error
+                throw lastErr;
+            }
+        }
+        throw err;
+    }
+};
+
 export const api = {
-    get: (url: string, cfg?: any) => brainApi.get(url, cfg).then(r => r.data),
-    post: (url: string, data?: any, cfg?: any) => brainApi.post(url, data, cfg).then(r => r.data),
-    put: (url: string, data?: any, cfg?: any) => brainApi.put(url, data, cfg).then(r => r.data),
-    patch: (url: string, data?: any, cfg?: any) => brainApi.patch(url, data, cfg).then(r => r.data),
-    delete: (url: string, cfg?: any) => brainApi.delete(url, cfg).then(r => r.data),
+    get: wrapRequest((u: string, cfg?: any) => brainApi.get(u, cfg).then(r => r.data), (u: string, cfg?: any) => localAgentApi.get(u, cfg).then(r => r.data)),
+    post: wrapRequest((u: string, d?: any, cfg?: any) => brainApi.post(u, d, cfg).then(r => r.data), (u: string, d?: any, cfg?: any) => localAgentApi.post(u, d, cfg).then(r => r.data)),
+    put: wrapRequest((u: string, d?: any, cfg?: any) => brainApi.put(u, d, cfg).then(r => r.data), (u: string, d?: any, cfg?: any) => localAgentApi.put(u, d, cfg).then(r => r.data)),
+    patch: wrapRequest((u: string, d?: any, cfg?: any) => brainApi.patch(u, d, cfg).then(r => r.data), (u: string, d?: any, cfg?: any) => localAgentApi.patch(u, d, cfg).then(r => r.data)),
+    delete: wrapRequest((u: string, cfg?: any) => brainApi.delete(u, cfg).then(r => r.data), (u: string, cfg?: any) => localAgentApi.delete(u, cfg).then(r => r.data)),
     brain: {
-        get: (url: string, cfg?: any) => brainApi.get(url, cfg).then(r => r.data),
-        post: (url: string, data?: any, cfg?: any) => brainApi.post(url, data, cfg).then(r => r.data),
-        put: (url: string, data?: any, cfg?: any) => brainApi.put(url, data, cfg).then(r => r.data),
-        patch: (url: string, data?: any, cfg?: any) => brainApi.patch(url, data, cfg).then(r => r.data),
-        delete: (url: string, cfg?: any) => brainApi.delete(url, cfg).then(r => r.data),
+        get: (url: string, cfg?: any) => brainApi.get(normalizeApiPath(url), cfg).then(r => r.data),
+        post: async (url: string, data?: any, cfg?: any) => {
+            try {
+                const resp = await brainApi.post(normalizeApiPath(url), data, cfg);
+                return resp.data;
+            } catch (err: any) {
+                const status = err?.response?.status;
+                const respData = err?.response?.data;
+                const normalized = normalizeApiPath(url);
+
+                // If Brain returned 400 with empty body for registry save, fallback to socket
+                const isRegistrySave = /registry\/save$/.test(normalized.replace(/^\//, '')) || /registry\/save$/.test(url);
+                const isEmptyBody = !respData || (typeof respData === 'object' && Object.keys(respData).length === 0);
+
+                if (status === 400 && isRegistrySave && isEmptyBody) {
+                    try {
+                        console.warn('[SERVICES] Brain returned 400 empty body for registry/save — falling back to socketRequest');
+                        const sockRes = await socketRequest('registry:save', data);
+                        return sockRes;
+                    } catch (sockErr: any) {
+                        console.warn('[SERVICES] Socket fallback for registry/save failed:', sockErr?.message || sockErr);
+                    }
+                }
+                throw err;
+            }
+        },
+        put: (url: string, data?: any, cfg?: any) => brainApi.put(normalizeApiPath(url), data, cfg).then(r => r.data),
+        patch: (url: string, data?: any, cfg?: any) => brainApi.patch(normalizeApiPath(url), data, cfg).then(r => r.data),
+        delete: (url: string, cfg?: any) => brainApi.delete(normalizeApiPath(url), cfg).then(r => r.data),
     },
     local: {
-        get: (url: string, cfg?: any) => localAgentApi.get(url, cfg).then(r => r.data),
-        post: (url: string, data?: any, cfg?: any) => localAgentApi.post(url, data, cfg).then(r => r.data),
-        put: (url: string, data?: any, cfg?: any) => localAgentApi.put(url, data, cfg).then(r => r.data),
-        patch: (url: string, data?: any, cfg?: any) => localAgentApi.patch(url, data, cfg).then(r => r.data),
-        delete: (url: string, cfg?: any) => localAgentApi.delete(url, cfg).then(r => r.data),
+        get: (url: string, cfg?: any) => localAgentApi.get(normalizeApiPath(url), cfg).then(r => r.data),
+        post: (url: string, data?: any, cfg?: any) => localAgentApi.post(normalizeApiPath(url), data, cfg).then(r => r.data),
+        put: (url: string, data?: any, cfg?: any) => localAgentApi.put(normalizeApiPath(url), data, cfg).then(r => r.data),
+        patch: (url: string, data?: any, cfg?: any) => localAgentApi.patch(normalizeApiPath(url), data, cfg).then(r => r.data),
+        delete: (url: string, cfg?: any) => localAgentApi.delete(normalizeApiPath(url), cfg).then(r => r.data),
     }
 };
 

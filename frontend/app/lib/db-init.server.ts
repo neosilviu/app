@@ -28,19 +28,27 @@ const global = globalThis as any;
 if (global.IS_DB_INITIALIZED === undefined) global.IS_DB_INITIALIZED = false;
 if (global.DB_INIT_PROMISE === undefined) global.DB_INIT_PROMISE = null;
 if (global.DB_INIT_STARTED === undefined) global.DB_INIT_STARTED = Date.now();
+if (global.BASELINE_SYNC_STARTED === undefined) global.BASELINE_SYNC_STARTED = false;
 
 /**
  * Wait for DB to be ready before allowing any queries
  */
-export async function waitForDbReady(db: any, maxWaitMs = 15000) {
+export async function waitForDbReady(db: any, maxWaitMs = 15000, signal?: AbortSignal) {
     const startTime = Date.now();
     
     if (global.IS_DB_INITIALIZED) return;
 
     console.log(`[DB-READY] Waiting for database to be ready (Max: ${maxWaitMs}ms)...`);
 
-    // Level 8: Reduced wait time and added more granular logging
+    // Level 8: Improved signal awareness to prevent AbortError during init
     while (!global.IS_DB_INITIALIZED && (Date.now() - startTime) < maxWaitMs) {
+        if (signal?.aborted) {
+            console.log(`[DB-READY] Wait aborted by client signal.`);
+            const abortErr = new Error("Request aborted");
+            abortErr.name = "AbortError";
+            throw abortErr;
+        }
+
         if (global.DB_INIT_PROMISE) {
             try {
                 await global.DB_INIT_PROMISE;
@@ -96,50 +104,75 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
                  console.warn("[DB-INIT] Transient error checking _metadata:", e.message);
             }
 
-            // Enterprise Level 8: Namespace Normalization Migration
-            try {
-                await db.exec("UPDATE SYSTEM_SETTING SET namespace = LOWER(namespace), id = LOWER(id)");
-            } catch (e: any) {
-                console.warn("[DB-INIT] Namespace normalization skipped (table might not exist):", e.message);
-            }
-
             // Step 2: DNA-Driven Schema Sychronization
             const baseline = await loadBaseline();
-            const coreEntities = baseline.ENTITY_CONFIG || {};
+            const coreEntities = (baseline.ENTITY_CONFIG || {}) as Record<string, any>;
 
-            console.log(`[DB-INIT] Starting DNA-Driven Sync for ${Object.keys(coreEntities).length} entities...`);
-
-            // Ensure physical tables for ALL entities in Registry
-            for (const [name, def] of Object.entries(coreEntities)) {
-                await syncEntityTable(db, { ...(def as any), name }, baseline);
-            }
-
-            // Step 3: Specific Migrations / Fixes (Keep only what's absolutely necessary)
-            if (migrationLevel < 116) {
-                // Workspace Isolation check (System workspace is mandatory)
-                try {
-                    const workspace = await db.list('workspace');
-                    if (workspace.length === 0 || !workspace.find((w: any) => w.id === 'system')) {
-                         await db.create('workspace', { id: 'system', name: 'System Administration' });
-                    }
-                } catch (e: any) {
-                    console.warn("[DB-INIT] System workspace check skipped:", e.message);
+            // CORE TABLES: Must be ready before we mark DB as initialized
+            // Better Auth depends on 'user' and 'session'
+            // Setup-Admin depends on 'contact' for business profile sync
+            const coreSyncList = ['user', 'session', 'contact', 'entity_definition', 'workspace', 'system_setting'];
+            
+            console.log(`[DB-INIT] Starting Core DNA Sync (${coreSyncList.join(', ')})...`);
+            for (const entityName of coreSyncList) {
+                const config = coreEntities[entityName];
+                if (config) {
+                    await syncEntityTable(db, { ...config, name: entityName }, baseline);
                 }
             }
 
-            // Level 8: Set initialized BEFORE baseline sync
-            global.IS_DB_INITIALIZED = true;
-            console.log(`[DB-INIT] Core schema applied in ${Date.now() - start}ms; starting baseline sync in ${typeof ctx?.waitUntil === 'function' ? 'background' : 'foreground'}`);
-
-            // Load registry for baseline sync
-            const registry = await getRegistry();
-
-            // Run baseline sync (use waitUntil if on Cloudflare Workers)
-            if (ctx && typeof ctx.waitUntil === 'function') {
-                ctx.waitUntil(ensureBaselineSync(db, registry));
-            } else {
-                await ensureBaselineSync(db, registry);
+            // Enterprise Level 8: Namespace Normalization & Deduplication Migration
+            // Now that we are sure the 'system_setting' table exists and has correct columns.
+            try {
+                // Step A: Deduplicate records that would collide when lowercased (keeping the first one)
+                // This prevents UNIQUE(id) or UNIQUE(namespace, key) failures during normalization
+                await db.exec(`
+                    DELETE FROM system_setting 
+                    WHERE rowid NOT IN (
+                        SELECT MIN(rowid) 
+                        FROM system_setting 
+                        GROUP BY LOWER(namespace), LOWER(key)
+                    )
+                `);
+                
+                // Step B: Normalize remaining records to lowercase
+                await db.exec("UPDATE system_setting SET namespace = LOWER(namespace), id = LOWER(id)");
+            } catch (e: any) {
+                console.warn("[DB-INIT] Namespace normalization skipped or partial:", e.message);
             }
+
+            // Step 3: Specific Migrations / Fixes (Keep only what's absolutely necessary)
+            // Ensure System Workspace exists (MANDATORY for Level 8 isolation)
+            try {
+                const systemWorkspace = await db.query("SELECT id FROM workspace WHERE id = 'system' LIMIT 1");
+                if (!systemWorkspace || systemWorkspace.length === 0) {
+                    console.log("[DB-INIT] Creating mandatory 'system' workspace...");
+                    await db.query(`INSERT INTO workspace (id, name, createdAt, updatedAt) VALUES (?, ?, ?, ?)`, [
+                        'system', 'System Administration', new Date().toISOString(), new Date().toISOString()
+                    ]);
+                }
+            } catch (e: any) {
+                console.warn("[DB-INIT] System workspace check/creation failed:", e.message);
+            }
+
+            // Level 8: Set initialized AFTER core sync and critical data seed
+            global.IS_DB_INITIALIZED = true;
+
+            // Run full baseline sync (ALWAYS in background to prevent AbortError from long-running ops)
+            // Only start it once to avoid duplicate work
+            if (!global.BASELINE_SYNC_STARTED) {
+                global.BASELINE_SYNC_STARTED = true;
+                const baselineSyncPromise = ensureBaselineSync(db, baseline).catch(e => {
+                    console.error("[DB-INIT] Background baseline sync failed:", e.message);
+                });
+                
+                // Only use waitUntil if available (Cloudflare Workers)
+                if (ctx && typeof ctx.waitUntil === 'function') {
+                    ctx.waitUntil(baselineSyncPromise);
+                }
+                // Otherwise just let it run in the background without blocking
+            }
+            
             console.log(`[DB-INIT] Initialization procedure finished in ${Date.now() - start}ms.`);
 
         } catch (e: any) {
@@ -300,6 +333,7 @@ export async function syncSystemSettingsBaseline(db: any, registry: any) {
 
     console.log('[DB-INIT] Syncing system settings baseline (Batched)...');
     const statements: any[] = [];
+    const processedIds = new Set<string>();
 
     for (const [registryKey, namespace] of Object.entries(namespaces)) {
         const data = registry[registryKey];
@@ -309,12 +343,19 @@ export async function syncSystemSettingsBaseline(db: any, registry: any) {
             const dataType = typeof value === 'object' && value !== null ? 'json' : typeof value;
             const finalValue = dataType === 'json' ? JSON.stringify(value) : (value === null ? '' : String(value));
 
-            // Enterprise Level 8: Use INSERT OR IGNORE to allow user overrides to persist across reboots
-            // Use lowercase namespace to maintain UI consistency and avoid duplicate records
+            // Enterprise Level 8: Normalize to lowercase for consistent ID and lookup
             const targetNamespace = namespace.toLowerCase();
+            const targetKey = key.toLowerCase();
+            const settingId = `${targetNamespace}:${targetKey}`;
+
+            // Prevent duplicate IDs within the same batch which causes D1 stability issues
+            if (processedIds.has(settingId)) continue;
+            processedIds.add(settingId);
+
+            // Enterprise Level 8: Use INSERT OR IGNORE to allow user overrides to persist 
             statements.push(
-                db.prepare(`INSERT OR IGNORE INTO SYSTEM_SETTING (id, namespace, key, value, dataType) VALUES (?, ?, ?, ?, ?)`)
-                    .bind(`${targetNamespace}:${key}`, targetNamespace, key, finalValue, dataType)
+                db.prepare(`INSERT OR IGNORE INTO system_setting (id, namespace, key, value, dataType) VALUES (?, ?, ?, ?, ?)`)
+                    .bind(settingId, targetNamespace, key, finalValue, dataType)
             );
         }
     }
@@ -415,13 +456,11 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
     const pk = getPrimaryKey(tableName);
     const fields = entityDef.fields;
     
-    console.log(`[DB-SCHEMA] Syncing table: "${tableName}"`);
+    // Level 8: Reduced noise - only log if debugging or change needed
+    // console.log(`[DB-SCHEMA] Syncing table: "${tableName}"`);
 
     try {
-        const pragmaStart = Date.now();
-        console.log(`[DB-SCHEMA] PRAGMA table_info start for "${tableName}"`);
         const rows = await db.query(`PRAGMA table_info("${tableName}")`);
-        console.log(`[DB-SCHEMA] PRAGMA table_info for "${tableName}" completed in ${Date.now() - pragmaStart}ms`);
         if (!rows || rows.length === 0) {
             const colDefs = [`"${pk}" TEXT PRIMARY KEY`];
             fields.forEach((f: any) => {

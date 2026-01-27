@@ -30,6 +30,21 @@ export default async function handleRequest(
   routerContext: EntryContext,
   loadContext: AppLoadContext
 ) {
+  const url = new URL(request.url);
+  console.log(`[ENTRY-SERVER] handleRequest called for: ${request.method} ${url.pathname}`);
+  
+  // CRITICAL: Route /api/* directly to Brain handler to avoid SSR HTML
+  if (url.pathname.startsWith('/api/')) {
+    console.log(`[ENTRY-SERVER] Routing API request to Brain handler`);
+    const { handleBrainRequest } = await import("./brain.server");
+    const env = (loadContext as any).cloudflare?.env || (process as any).env;
+    const ctx = (loadContext as any).cloudflare?.ctx;
+    const response = await handleBrainRequest(request, env, ctx);
+    console.log(`[ENTRY-SERVER] API response: ${response.status}`);
+    return response;
+  }
+
+  
   // Ensure registry is ready before any rendering
   await ensureRegistry();
   

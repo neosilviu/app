@@ -82,7 +82,6 @@ export function getPrimaryKey(collection: string): string {
     const pkRules = _registry?.PRIMARY_KEY_RULES || {};
     if (pkRules[resolved]) return pkRules[resolved];
     if (resolved === '_metadata') return 'key';
-    if (resolved.includes('session')) return 'sessionId';
     if (resolved === 'whatsapp_chats' || resolved === 'chat_settings') return 'chatId';
     return 'id';
 }
