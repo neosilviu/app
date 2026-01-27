@@ -22,7 +22,7 @@ export async function loader({ request, context, params }: LoaderFunctionArgs) {
     // Special handling for check-admin in dev
     if (wildcard === "auth/check-admin") {
       console.log(`[API-LOADER] Handling check-admin directly`);
-      return Response.json({ success: true, data: { exists: true } }, { status: 200 });
+      return Response.json({ exists: true }, { status: 200 });
     }
 
     // Pre-parse body to prevent consumption issues

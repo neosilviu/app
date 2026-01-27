@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Use 'auth/check-admin' directly (not /api/auth/) to avoid interception by Better-Auth middleware
         const res = await api.brain.get(`auth/check-admin?t=${Date.now()}`);
         console.log(`[AUTH] check-admin response:`, res.data);
-        const exists = !!res.data?.data?.exists;
+        const exists = !!res.data?.data?.exists || !!res.data?.exists;
         console.log(`[AUTH] Admin exists: ${exists}`);
         setIsAdminExists(exists);
       }
