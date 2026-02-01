@@ -129,8 +129,8 @@ export function FileDetailsPanel({ filePath, fileName, onClose }: FileDetailsPro
           {metadata?.contact && (
             <div className="text-xs text-slate-500 mt-2 p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">
               <p className="font-semibold">{metadata.contact.name}</p>
-              {metadata.contact.email && <p>{metadata.contact.email}</p>}
-              {metadata.contact.phone && <p>{metadata.contact.phone}</p>}
+              {metadata.contact.email && <p>{String(metadata.contact.email)}</p>}
+              {metadata.contact.phone && <p>{String(metadata.contact.phone)}</p>}
             </div>
           )}
         </div>

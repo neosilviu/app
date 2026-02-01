@@ -127,6 +127,7 @@ export function clearColumnCache(table?: string) {
 export class D1Driver {
   public db: any;
   public rawBinding: any;
+  public registry: any;
   private _isInitialized = false;
   
   // În timpul primelor secunde de la pornire, punem în coadă toate scrierile pentru a preveni blocajele
@@ -150,7 +151,11 @@ export class D1Driver {
   }
 
   private getPk(collection: string): string {
-    return getPrimaryKey(collection);
+    return getPrimaryKey(collection, this.registry);
+  }
+
+  private resolve(collection: string): string {
+    return resolveCollection(collection, this.registry);
   }
 
   private sanitizeParams(params: any[]): any[] {
@@ -329,7 +334,7 @@ export class D1Driver {
   }
 
   async count(collection: string, filters: any = {}): Promise<number> {
-    const resolved = resolveCollection(collection);
+    const resolved = this.resolve(collection);
     let sql = `SELECT COUNT(*) as count FROM "${resolved}" WHERE 1=1`;
     const params: any[] = [];
     Object.entries(filters).forEach(([key, value]) => {
@@ -348,7 +353,7 @@ export class D1Driver {
   }
 
   async get(collection: string, id: string): Promise<any> {
-    const resolved = resolveCollection(collection);
+    const resolved = this.resolve(collection);
     const pk = this.getPk(resolved);
     try {
         const results = await this.query(`SELECT * FROM "${resolved}" WHERE "${pk}" = ? LIMIT 1`, [id]);
@@ -360,7 +365,7 @@ export class D1Driver {
   }
 
   async getTableColumns(table: string): Promise<string[]> {
-    const resolved = resolveCollection(table);
+    const resolved = this.resolve(table);
     if (columnCache.has(resolved)) return columnCache.get(resolved)!;
     
     // Level 8 Optimization: Coalesce parallel schema requests
@@ -369,6 +374,7 @@ export class D1Driver {
     const fetchPromise = (async () => {
         try {
             const result = await this.query(`PRAGMA table_info("${resolved}")`);
+            // Store original casing for SQL builders
             const columns = result.map((r: any) => r.name) || [];
             if (columns.length > 0) {
                 columnCache.set(resolved, columns);
@@ -386,8 +392,9 @@ export class D1Driver {
   }
 
   async list(collection: string, filters: any = {}, options: any = {}): Promise<any[]> {
-    const resolved = resolveCollection(collection);
+    const resolved = this.resolve(collection);
     const validColumns = await this.getTableColumns(resolved);
+    const validColsLower = validColumns.map(c => c.toLowerCase());
     
     let sql = `SELECT * FROM "${resolved}" WHERE 1=1`;
     const params: any[] = [];
@@ -396,11 +403,16 @@ export class D1Driver {
         filters.where.forEach((cond: any) => {
             if (!cond) return;
             const op = cond.operator || '=';
-            if (validColumns.length > 0 && !validColumns.includes(cond.column)) return;
+            const colIdx = validColsLower.indexOf(cond.column.toLowerCase());
+            if (validColumns.length > 0 && colIdx === -1) return;
+            
+            // Use the correctly cased column name from validColumns
+            const colName = validColumns.length > 0 ? validColumns[colIdx] : cond.column;
+            
             if (cond.value === null) {
-                sql += ` AND "${cond.column}" ${op === '!=' || op === '<>' ? 'IS NOT' : 'IS'} NULL`;
+                sql += ` AND "${colName}" ${op === '!=' || op === '<>' ? 'IS NOT' : 'IS'} NULL`;
             } else {
-                sql += ` AND "${cond.column}" ${op} ?`;
+                sql += ` AND "${colName}" ${op} ?`;
                 params.push(cond.value);
             }
         });
@@ -410,19 +422,25 @@ export class D1Driver {
     } else {
         Object.entries(filters).forEach(([key, value]) => {
             if (value === undefined) return;
-            if (validColumns.length > 0 && !validColumns.includes(key)) return;
+            const colIdx = validColsLower.indexOf(key.toLowerCase());
+            if (validColumns.length > 0 && colIdx === -1) return;
+            
+            const colName = validColumns.length > 0 ? validColumns[colIdx] : key;
+
             if (value === null) {
-                sql += ` AND "${key}" IS NULL`;
+                sql += ` AND "${colName}" IS NULL`;
             } else {
-                sql += ` AND "${key}" = ?`;
+                sql += ` AND "${colName}" = ?`;
                 params.push(value);
             }
         });
     }
 
     if (options.sortBy) {
-      if (validColumns.length === 0 || validColumns.includes(options.sortBy)) {
-        sql += ` ORDER BY "${options.sortBy}" ${options.sortOrder || 'DESC'}`;
+      const sortIdx = validColsLower.indexOf(options.sortBy.toLowerCase());
+      if (validColumns.length === 0 || sortIdx !== -1) {
+        const sortCol = validColumns.length > 0 ? validColumns[sortIdx] : options.sortBy;
+        sql += ` ORDER BY "${sortCol}" ${options.sortOrder || 'DESC'}`;
       }
     }
 
@@ -443,16 +461,20 @@ export class D1Driver {
   }
 
   async create(collection: string, data: any): Promise<any> {
-    const resolved = resolveCollection(collection);
+    const resolved = this.resolve(collection);
     const validColumns = await this.getTableColumns(resolved);
+    const validColsLower = validColumns.map(c => c.toLowerCase());
     
-    // Auto-filter columns
-    const filteredData = { ...data };
-    if (validColumns.length > 0) {
-        Object.keys(filteredData).forEach(k => {
-            if (!validColumns.includes(k)) delete filteredData[k];
-        });
-    }
+    // Auto-filter columns and fix casing
+    const filteredData: any = {};
+    Object.entries(data).forEach(([key, val]) => {
+        if (val === undefined) return;
+        const colIdx = validColsLower.indexOf(key.toLowerCase());
+        if (validColumns.length > 0 && colIdx === -1) return;
+        
+        const colName = validColumns.length > 0 ? validColumns[colIdx] : key;
+        filteredData[colName] = val;
+    });
 
     const keys = Object.keys(filteredData);
     if (keys.length === 0) return data;
@@ -473,17 +495,24 @@ export class D1Driver {
   }
 
   async update(collection: string, id: string, data: any): Promise<any> {
-    const resolved = resolveCollection(collection);
+    const resolved = this.resolve(collection);
     const validColumns = await this.getTableColumns(resolved);
+    const validColsLower = validColumns.map(c => c.toLowerCase());
     const pk = this.getPk(resolved);
+    const pkLower = pk.toLowerCase();
     
-    // Auto-filter columns
-    const filteredData = { ...data };
-    if (validColumns.length > 0) {
-        Object.keys(filteredData).forEach(k => {
-            if (!validColumns.includes(k) || k === pk) delete filteredData[k];
-        });
-    }
+    // Auto-filter columns and fix casing
+    const filteredData: any = {};
+    Object.entries(data).forEach(([key, val]) => {
+        if (val === undefined) return;
+        const colIdx = validColsLower.indexOf(key.toLowerCase());
+        if (validColumns.length > 0 && colIdx === -1) return;
+        
+        const colName = validColumns.length > 0 ? validColumns[colIdx] : key;
+        if (colName.toLowerCase() === pkLower) return;
+        
+        filteredData[colName] = val;
+    });
 
     const keys = Object.keys(filteredData);
     if (keys.length === 0) return data;
@@ -504,7 +533,7 @@ export class D1Driver {
   async set(collection: string, id: string, data: any): Promise<any> {
     try {
         const existing = await this.get(collection, id);
-        const resolved = resolveCollection(collection);
+        const resolved = this.resolve(collection);
         const pk = this.getPk(resolved);
         
         if (existing) {
@@ -525,7 +554,7 @@ export class D1Driver {
   }
 
   async delete(collection: string, id: string): Promise<boolean> {
-    const resolved = resolveCollection(collection);
+    const resolved = this.resolve(collection);
     const pk = this.getPk(resolved);
     await this.query(`DELETE FROM "${resolved}" WHERE "${pk}" = ?`, [id]);
     return true;
@@ -535,16 +564,17 @@ export class D1Driver {
 let dbInstance: D1Driver | null = null;
 let lastBoundDb: any = null;
 
-export function getDb(env: any): D1Driver {
+export function getDb(env: any, registry?: any): D1Driver {
   const safeEnv = env || {};
   const d1 = safeEnv.DB || safeEnv.db;
 
   if (!d1) {
     if (dbInstance && dbInstance.rawBinding && typeof dbInstance.rawBinding.prepare === 'function') {
+        if (registry) dbInstance.registry = registry;
         return dbInstance;
     }
     console.warn(`[D1] MISSING BINDING 'DB' in env keys: ${Object.keys(safeEnv).join(', ')}. Using mock driver.`);
-    return new D1Driver({
+    const mock = new D1Driver({
       prepare: () => ({
         bind: () => ({ 
           first: async () => null, 
@@ -558,6 +588,8 @@ export function getDb(env: any): D1Driver {
       batch: async () => [],
       exec: async () => ({ count: 0, duration: 0 })
     } as any);
+    if (registry) mock.registry = registry;
+    return mock;
   }
   
   // Single Instance
@@ -565,6 +597,10 @@ export function getDb(env: any): D1Driver {
     // We pass the RAW binding to D1Driver
     dbInstance = new D1Driver(d1);
     lastBoundDb = d1;
+  }
+
+  if (registry) {
+    dbInstance.registry = registry;
   }
   
   return dbInstance;

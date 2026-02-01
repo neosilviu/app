@@ -45,15 +45,24 @@ const Button = React.forwardRef<
 >(({ className, variant = "default", size = "default", asChild = false, ...props }, ref) => {
   const Comp = asChild ? Slot : "button"
 
+  const compProps: any = {
+    'data-slot': 'button',
+    ref,
+    'data-variant': variant,
+    'data-size': size,
+    className: cn(buttonVariants({ variant, size, className })),
+    ...props
+  };
+
+  // Prevent accidental form submission when using Button with onClick
+  // Default to `type="button"` unless the caller explicitly provided a `type`
+  // or the button is rendered as a child component (`asChild`).
+  if (!asChild && compProps.type === undefined) {
+    compProps.type = 'button';
+  }
+
   return (
-    <Comp
-      data-slot="button"
-      ref={ref}
-      data-variant={variant}
-      data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
-    />
+    <Comp {...compProps} />
   )
 })
 Button.displayName = "Button"

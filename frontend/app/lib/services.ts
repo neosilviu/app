@@ -10,24 +10,32 @@ import { XMLParser } from 'fast-xml-parser';
 const logger = console;
 
 let _registry: any = null;
+let DISABLE_SOCKET_BY_REGISTRY = false;
+
 export function initRegistry(registry: any) {
     _registry = registry;
     
-    // Level 8: Dynamic Socket Re-alignment
-    // If the registry provides a specific local_agent_url, update the socket instances
-    const newUrl = getLocalAgentUrl();
-    if (isBrowser && newUrl && socket && (socket as any).io) {
-        if ((socket as any).io.uri !== newUrl) {
-            console.log(`[SOCKET] Re-aligning to Registry URL: ${newUrl}`);
-            (socket as any).io.uri = newUrl;
-            if (whatsappSocket && (whatsappSocket as any).io) {
-                (whatsappSocket as any).io.uri = `${newUrl}/whatsapp`;
-            }
-            
-            // Reconnect if it was previously trying to connect to the wrong URL
-            if (!socket.connected) {
-                socket.connect();
-                whatsappSocket.connect();
+    // Enterprise Level 8: Update DISABLE_SOCKET_BY_REGISTRY flag based on Registry setting
+    const newDisableState = registry?.SYSTEM_SETTING?.use_local_agent === false;
+    if (newDisableState !== DISABLE_SOCKET_BY_REGISTRY) {
+        DISABLE_SOCKET_BY_REGISTRY = newDisableState;
+        if (DISABLE_SOCKET_BY_REGISTRY && socket.connected) {
+            console.log('[SOCKET] Local Agent disabled in Registry, disconnecting...');
+            socket.disconnect();
+            whatsappSocket.disconnect();
+        }
+    }
+    
+    // Level 8: Dynamic Socket Re-alignment (only if Local Agent is enabled)
+    if (!DISABLE_SOCKET_BY_REGISTRY) {
+        const newUrl = getLocalAgentUrl();
+        if (isBrowser && newUrl && socket && (socket as any).io) {
+            if ((socket as any).io.uri !== newUrl) {
+                console.log(`[SOCKET] Re-aligning to Registry URL: ${newUrl}`);
+                (socket as any).io.uri = newUrl;
+                if (whatsappSocket && (whatsappSocket as any).io) {
+                    (whatsappSocket as any).io.uri = `${newUrl}/whatsapp`;
+                }
             }
         }
     }
@@ -91,13 +99,13 @@ export const getLocalAgentUrl = () => {
     return env.DEV ? `http://127.0.0.1:${PORT}` : '';
 };
 
-const SOCKET_URL = getLocalAgentUrl();
+let SOCKET_URL = isBrowser ? getLocalAgentUrl() : '';
 
 const getSocketAuth = () => {
     // Pass namespace based on context, or default to root
     if (isBrowser) {
-        const token = localStorage.getItem("token") || ((import.meta as any).env?.DEV ? 'dev-token-admin' : null);
-        const email = localStorage.getItem("userEmail") || ((import.meta as any).env?.DEV ? 'admin@admin' : null);
+        const token = localStorage.getItem("token");
+        const email = localStorage.getItem("userEmail");
         return token ? { token, email } : { email };
     }
     return {};
@@ -105,8 +113,8 @@ const getSocketAuth = () => {
 
 const mockSocket: any = { on: () => { }, off: () => { }, emit: () => { }, connect: () => { }, disconnect: () => { }, connected: false, once: () => { } };
 
-// Force mockSocket if working frontend-only to avoid connection errors
-const DISABLE_SOCKET = false; 
+// Enterprise Level 8: Check if Local Agent is explicitly disabled
+let DISABLE_SOCKET = false; 
 
 // Implementation: We might need separate sockets for namespaces /whatsapp, /gmail
 // For backward compatibility, we connect to root '/' but we also need '/whatsapp'
@@ -121,7 +129,7 @@ const DISABLE_SOCKET = false;
 //
 // Let's create a 'whatsappSocket' export here.
 
-export const socket: Socket = (isBrowser && !DISABLE_SOCKET && SOCKET_URL)
+export const socket: Socket = (isBrowser && !DISABLE_SOCKET && !DISABLE_SOCKET_BY_REGISTRY && SOCKET_URL)
     ? io(SOCKET_URL, { 
         path: "/api/socket.io", 
         autoConnect: false, 
@@ -134,7 +142,7 @@ export const socket: Socket = (isBrowser && !DISABLE_SOCKET && SOCKET_URL)
     : mockSocket as Socket;
 
 // WhatsApp Namespace Socket
-export const whatsappSocket: Socket = (isBrowser && !DISABLE_SOCKET && SOCKET_URL)
+export const whatsappSocket: Socket = (isBrowser && !DISABLE_SOCKET && !DISABLE_SOCKET_BY_REGISTRY && SOCKET_URL)
     ? io(`${SOCKET_URL}/whatsapp`, { 
         path: "/api/socket.io", 
         autoConnect: false, 
@@ -202,17 +210,33 @@ export function socketRequest(event: string, data: any = {}): Promise<any> {
                     if (res && res.success !== false) {
                         resolve(res);
                     } else {
-                        socket.emit(event, data, (socketRes: any) => resolve(socketRes));
+                        // Level 8: Only fallback to socket if Agent is enabled in Registry
+                        if (_registry?.SYSTEM_SETTING?.use_local_agent) {
+                            socket.emit(event, data, (socketRes: any) => resolve(socketRes));
+                        } else {
+                            resolve(res);
+                        }
                     }
                 }).catch((err: any) => {
-                    console.warn(`[SERVICES] Brain API fallback for ${event} failed (${err.message}). Trying socket...`);
-                    socket.emit(event, data, (socketRes: any) => resolve(socketRes));
+                    // Level 8: Only fallback to socket if Agent is enabled in Registry
+                    if (_registry?.SYSTEM_SETTING?.use_local_agent) {
+                        console.warn(`[SERVICES] Brain API fallback for ${event} failed (${err.message}). Trying socket...`);
+                        socket.emit(event, data, (socketRes: any) => resolve(socketRes));
+                    } else {
+                        console.error(`[SERVICES] Request for ${event} failed: ${err.message}`);
+                        resolve({ success: false, error: err.message });
+                    }
                 });
             });
         }
     }
 
     return new Promise((resolve, reject) => {
+        // Level 8: Block direct socket requests if the agent is disabled
+        if (_registry && _registry.SYSTEM_SETTING && _registry.SYSTEM_SETTING.use_local_agent === false) {
+            return reject(new Error('LOCAL_AGENT_DISABLED'));
+        }
+
         // We removed the warning here to support L8 lazy connection (managed by AuthProvider)
         const timeout = setTimeout(() => reject(new Error(`Socket timeout: ${event}`)), 10000);
         socket.emit(event, data, (res: any) => {
@@ -282,14 +306,19 @@ export const normalizeApiPath = (u: string) => {
     return s;
 };
 
+// --- INTERCEPTORS ---
+
 [brainApi, localAgentApi].forEach(instance => {
-    instance.interceptors.request.use(config => {
-        if (isBrowser) {
-            const token = localStorage.getItem('token');
-            if (token) config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    });
+    instance.interceptors.request.use(
+        config => {
+            if (isBrowser) {
+                const token = localStorage.getItem('token');
+                if (token) config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        error => Promise.reject(error)
+    );
 });
 
 // Helper: If an action/workflow request 404s against the Brain route during dev,

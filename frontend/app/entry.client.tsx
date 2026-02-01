@@ -55,13 +55,16 @@ async function prepare() {
 
 prepare().then(() => {
   startTransition(() => {
+    const isDev = process.env.NODE_ENV === 'development';
+    const root = (
+      <I18nextProvider i18n={i18next}>
+        <HydratedRouter />
+      </I18nextProvider>
+    );
+
     hydrateRoot(
       document,
-      <StrictMode>
-        <I18nextProvider i18n={i18next}>
-          <HydratedRouter />
-        </I18nextProvider>
-      </StrictMode>
+      isDev ? root : <StrictMode>{root}</StrictMode>
     );
   });
 });

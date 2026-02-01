@@ -9,11 +9,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~
 import { Checkbox } from "~/components/ui/checkbox";
 import { cn, renderString, getThemeClasses } from '~/lib/core';
 import { formatForRender } from '~/lib/utils';
-import { normalizeEntity } from '~/lib/entity-engine';
+import { normalizeEntity, normalizeFormData, formatDisplayValue } from '~/lib/entity-engine';
+import type { FieldDefinition } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { IconMap } from '~/lib/icons';
 import { useConfig } from '~/hooks/useConfig';
 import { useEntity } from '~/hooks/useEntity';
+import { useAuth } from '~/hooks/useAuth';
+import { api } from '~/lib/core';
 import { DataManagementActions } from '../DataOps';
 
 interface DynamicEntityListProps {
@@ -27,6 +31,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const systemConfig = useConfig();
+    const { loading: authLoading } = useAuth();
     const submit = useSubmit();
     const [showArchived, setShowArchived] = useState(false);
     const config = initialConfig || (systemConfig?.entity as any)?.[entityId] || {};
@@ -68,9 +73,6 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
 
     const data = config.mockup ? (config.data || []) : realData;
 
-    const [search, setSearch] = useState('');
-    const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
-
     // Normalize fields & Apply Security Visibility (Enterprise Level 8)
     const fieldsList = React.useMemo(() => {
         const normalized = normalizeEntity(config);
@@ -90,34 +92,212 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
         if (Array.isArray(selectedCols) && selectedCols.length > 0) {
             return selectedCols
                 .map(colName => filtered.find(f => (f.name === colName || f.key === colName)))
-                .filter(Boolean);
+                .filter((f): f is FieldDefinition => f !== undefined);
         }
 
         return filtered;
     }, [config]);
 
+    // Normalize data to prevent React rendering errors (Enterprise Level 8)
+    const normalizedData = React.useMemo(() => {
+        if (!data.length || !fieldsList.length) return data;
+        return data.map((item: any) => normalizeFormData(item, fieldsList));
+    }, [data, fieldsList]);
+
+    const [search, setSearch] = useState('');
+    const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+    const [relatedData, setRelatedData] = useState<Record<string, any[]>>({});
+
+    // Fetch related labels for relations (Enterprise Level 8)
+    React.useEffect(() => {
+        if (!realData.length || authLoading) return; // Wait for data and auth
+
+        const fetchRelated = async () => {
+            const relations = fieldsList.filter(f => 
+                (f.type === 'relation' || f.type === 'relation-many' || f.type === 'entity_relation' || f.type === 'tag' || f.type === 'multi-select' || f.multiple)
+            );
+            
+            const newRelatedData: Record<string, any[]> = {};
+            let hasNew = false;
+
+            for (const rel of relations) {
+                // target detection logic
+                let target = (rel.relationEntity || rel.relation?.target || (rel.type === 'tag' ? 'tag' : ''))?.toLowerCase();
+                
+                // Fallback: if field is named 'tag' or ends in _tag, assume tag entity
+                if (!target && (rel.name === 'tag' || rel.name.endsWith('_tag'))) {
+                    target = 'tag';
+                }
+
+                if (target && relatedData[target] === undefined) {
+                    try {
+                        // Enterprise Level 8: Always use a high limit for related data fetching (lookups)
+                        const res = await api.brain.get(`db/${target}?limit=1000`);
+                        let fetchedData = Array.isArray(res) ? res : (res?.data || []);
+                        
+                        if (res && (res.success || Array.isArray(res))) {
+                            // Enterprise Level 8: Normalize related data to handle casing consistency (ID vs id)
+                            const targetEntityDef = systemConfig?.entity[target];
+                            if (targetEntityDef) {
+                                fetchedData = fetchedData.map((item: any) => normalizeFormData(item, targetEntityDef.fields));
+                            } else {
+                                // Fallback: manual normalization for ID/Name if no config found
+                                fetchedData = fetchedData.map((item: any) => ({
+                                    ...item,
+                                    id: item.id || item.ID || item.uuid,
+                                    name: item.name || item.Name || item.label || item.Label
+                                }));
+                            }
+
+                            newRelatedData[target] = fetchedData;
+                            hasNew = true;
+                        }
+                    } catch (e) {
+                        console.warn(`[LIST] Failed to fetch related data for ${target}:`, e);
+                    }
+                }
+            }
+            
+            if (hasNew) {
+                setRelatedData(prev => ({ ...prev, ...newRelatedData }));
+            }
+        };
+        if (fieldsList.length > 0) fetchRelated();
+    }, [fieldsList, relatedData, realData.length, authLoading]); // Added authLoading/realData.length to prevent race
+
+    const renderCell = (val: any, field: FieldDefinition) => {
+        const target = (field.relationEntity || field.relation?.target || (field.name === 'tag' ? 'tag' : ''))?.toLowerCase();
+        
+        // Enterprise Level 8: Improved Display Field Selection
+        const targetDef = target ? (systemConfig?.entity as any)?.[target] : null;
+        const displayField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
+
+        // --- RELATION MANY (Tags, Categories, etc.) ---
+        // Enterprise Level 8: Include 'tag' and 'multi-select'
+        if (field.type === 'relation-many' || field.type === 'tag' || field.type === 'multi-select' || field.multiple === true) {
+            if (!val || val === '[]' || (Array.isArray(val) && val.length === 0)) return '-';
+            
+            // Keep track of rich objects if they exist
+            const richItems: any[] = Array.isArray(val) ? val.filter(v => typeof v === 'object' && v !== null) : [];
+            
+            let ids: string[] = [];
+            if (Array.isArray(val)) {
+                ids = val.map(id => (typeof id === 'object' && id) ? id.id || id.ID || id.uuid || id : String(id));
+            } else if (typeof val === 'string') {
+                let cleanVal = val.trim();
+                if (cleanVal.startsWith('[') && cleanVal.endsWith(']')) {
+                    try {
+                        const parsed = JSON.parse(cleanVal);
+                        if (Array.isArray(parsed)) {
+                            ids = parsed.map(item => {
+                                if (typeof item === 'object' && item !== null) {
+                                    const id = item.id || item.ID || item.uuid || item.key;
+                                    if (id) {
+                                        richItems.push(item);
+                                        return String(id);
+                                    }
+                                }
+                                return String(item);
+                            });
+                        } else {
+                            ids = [cleanVal];
+                        }
+                    } catch {
+                        ids = cleanVal.substring(1, cleanVal.length - 1).split(/[,;|]/).map(s => s.trim().replace(/[\\"]/g, '')).filter(Boolean);
+                    }
+                } else {
+                    ids = cleanVal.split(/[,;|]/).map(s => s.trim().replace(/[\\"[\]]/g, '')).filter(Boolean);
+                }
+            }
+
+            const uniqueIds = Array.from(new Set(ids)).filter(id => id && id !== 'undefined' && id !== 'null');
+            if (uniqueIds.length === 0) return '-';
+            
+            const itemsList = (target && relatedData[target]) ? relatedData[target] : [];
+            
+            return (
+                <div className="flex flex-wrap gap-1">
+                    {uniqueIds.map((id, i) => {
+                        const sid = String(id).toLowerCase();
+                        const localItem = richItems.find((v: any) => String(v.id || v.ID || v).toLowerCase() === sid);
+                        const item = itemsList.find(item => String(item.id || item.ID || '').toLowerCase() === sid) || localItem;
+
+                        let label = item ? (item[displayField] || item.name || item.label || id) : id;
+                        
+                        // Check options for multi-select
+                        if (!item && field.options) {
+                            const opt = field.options.find((o: any) => (typeof o === 'object' ? String(o.value) : String(o)) === String(id));
+                            if (opt) label = typeof opt === 'object' ? (opt.label || opt.value) : opt;
+                        }
+
+                        const color = item?.color || item?.colorTheme;
+                        const isResolved = !!item || (field.options && field.options.some((o: any) => (typeof o === 'object' ? String(o.value) : String(o)) === String(id)));
+                        
+                        return (
+                            <Badge 
+                                key={i} 
+                                variant={isResolved ? "outline" : "secondary"}
+                                style={isResolved ? { 
+                                    backgroundColor: color ? `${color}15` : undefined,
+                                    borderColor: color ? `${color}40` : undefined,
+                                    color: color || '#6366f1'
+                                } : {}}
+                                className={cn(
+                                    "px-2 py-0 h-5 text-[9px] font-bold uppercase tracking-tighter rounded-md",
+                                    !isResolved && "opacity-70 italic"
+                                )}
+                            >
+                                {renderString(label, lang).substring(0, 40)}
+                            </Badge>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        // --- SINGLE RELATION (Workspace, Owner, etc.) ---
+        if ((field.type === 'relation' || field.type === 'entity_relation') && val) {
+            const sid = String(val).toLowerCase();
+            
+            if (target && relatedData[target]) {
+                const item = relatedData[target].find(item => String(item.id || item.ID).toLowerCase() === sid);
+                if (item) {
+                    const label = item[displayField] || item.name || item.label || item.id;
+                    return <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none rounded-md font-bold text-[10px]">{String(label)}</Badge>;
+                }
+            }
+            
+            if (typeof val === 'object' && val !== null) {
+                const label = val[displayField] || val.name || val.label || val.id;
+                return <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none rounded-md font-bold text-[10px]">{String(label)}</Badge>;
+            }
+        }
+        
+        return formatDisplayValue(val, field);
+    };
+
     const EntityIcon = IconMap[config.icon] || Layers;
     const features = config.features || {};
 
     const filteredData = useMemo(() => {
-        if (!search) return data;
+        if (!search) return normalizedData;
         const searchStr = search.toLowerCase();
         
         // Use defined searchFields or fall back to all searchable fields
         const searchFields = config.searchFields || fieldsList.filter((f: any) => f.searchable).map((f: any) => f.key || f.name);
         
         if (searchFields.length > 0) {
-            return data.filter((item: any) => 
+            return normalizedData.filter((item: any) => 
                 searchFields.some((field: string) => String(item[field] || '').toLowerCase().includes(searchStr))
             );
         }
         
-        return data.filter((item: any) => 
+        return normalizedData.filter((item: any) => 
             Object.values(item).some(val => 
                 String(val).toLowerCase().includes(searchStr)
             )
         );
-    }, [data, search, config.searchFields, fieldsList]);
+    }, [normalizedData, search, config.searchFields, fieldsList]);
 
     const getPrimaryField = () => {
         return fieldsList.find((f: any) => f.primary || f.primaryKey) || fieldsList[0] || { name: 'id' };
@@ -131,20 +311,6 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
     const handleToggleSelectOne = (id: any, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
         toggleSelection(id);
-    };
-
-    const formatValue = (val: any, field: any) => {
-        if (val === undefined || val === null || val === '') return '-';
-        
-        switch (field.type) {
-            case 'currency': return new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'EUR' }).format(val);
-            case 'percent': return `${val}%`;
-            case 'date': return new Date(val).toLocaleDateString();
-            case 'datetime': return new Date(val).toLocaleString();
-            case 'boolean':
-            case 'toggle': return val ? <Badge className="bg-emerald-500 text-white border-none py-0 h-4 text-[8px]">DA</Badge> : <Badge variant="outline" className="text-slate-300 py-0 h-4 text-[8px]">NU</Badge>;
-            default: return formatForRender(val, lang);
-        }
     };
 
     return (
@@ -172,7 +338,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                         {/* Statistics Badge */}
                         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
                              <Badge className="bg-slate-100 dark:bg-slate-900 text-slate-500 border-none px-4 py-1.5 rounded-xl font-black italic uppercase tracking-[0.1em] text-[10px]">
-                                {data.length} {renderString(t('common:records') || 'Înregistrări', lang)}
+                                {normalizedData.length} {renderString(t('common:records') || 'Înregistrări', lang)}
                             </Badge>
                         </div>
                     </div>
@@ -224,6 +390,14 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                 onToggleShowArchived={setShowArchived}
                 onBulkArchive={() => handleBulkArchive(Array.from(selectedIds))}
                 onBulkDelete={() => handleBulkDelete(Array.from(selectedIds))}
+                onBulkUpdate={(field, value) => {
+                    const ue = useEntity as any;
+                    if (ue.bulkUpdate) {
+                        ue.bulkUpdate(Array.from(selectedIds), field, value);
+                    } else {
+                        toast.error("Bulk update not supported yet in hook");
+                    }
+                }}
                 onImport={importData}
                 onImportAI={importWithAI}
                 onExport={exportData}
@@ -302,7 +476,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                                         </TableCell>
                                         {fieldsList.map((f: any) => (
                                             <TableCell key={f.key || f.name} className="px-6 py-4 cursor-pointer" onClick={() => navigate(String(item.id))}>
-                                                {formatValue(item[f.name || f.key], f)}
+                                                {renderCell(item[f.name || f.key], f)}
                                             </TableCell>
                                         ))}
                                         <TableCell className="px-6 py-4 text-right">
@@ -382,7 +556,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                                         <div key={f.key || f.name || `f-${fIdx}`} className="flex justify-between items-center text-[10px]">
                                             <span className="text-slate-400 font-bold uppercase tracking-widest">{renderString(f.label || f.name, lang)}:</span>
                                             <span className="text-slate-600 dark:text-slate-400 font-black truncate max-w-[120px]">
-                                                {formatValue(item[f.name], f)}
+                                                {formatDisplayValue(item[f.name], f)}
                                             </span>
                                         </div>
                                     ))}

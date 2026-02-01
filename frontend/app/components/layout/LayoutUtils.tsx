@@ -199,39 +199,5 @@ export function BugReportModal({ onOpen }: { onOpen?: () => void }) {
   );
 }
 
-// ============================================================================
-// STATUS INDICATORS COMPONENT
-// ============================================================================
 
-interface StatusIndicatorsProps {
-  isConnected: boolean;
-}
-
-export function StatusIndicators({ isConnected }: StatusIndicatorsProps) {
-  return (
-    <div className="hidden sm:flex items-center gap-3 mr-2">
-      <div className="flex items-center gap-1.5">
-        <div className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-        </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Front</span>
-      </div>
-      
-      <div className="flex items-center gap-1.5">
-        <div className="relative flex h-2 w-2">
-          {isConnected ? (
-            <>
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </>
-          ) : (
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-          )}
-        </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Back</span>
-      </div>
-    </div>
-  );
-}
 

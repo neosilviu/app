@@ -43,7 +43,7 @@
     "manage_users": "User Management",
     "manage_roles": "Role Definition (RBAC)",
     "manage_settings": "System Settings",
-    "view_audit_logs": "Audit Logs",
+    "view_audit_log": "Audit Logs",
     "view_archive": "Archive Access",
     "view_print_queue": "Print Queue",
     "core": "Core Permissions",

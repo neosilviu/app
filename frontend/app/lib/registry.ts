@@ -148,14 +148,19 @@ export const REGISTRY_BASELINE: any = new Proxy({}, {
         }
         return _registry[prop];
     },
-    ownKeys() {
+    ownKeys(target) {
         return _registry ? Reflect.ownKeys(_registry) : [];
     },
     getOwnPropertyDescriptor(target, prop) {
+        if (!_registry) return undefined;
         return {
             enumerable: true,
             configurable: true,
+            value: _registry[prop]
         };
+    },
+    has(target, prop) {
+        return _registry ? prop in _registry : false;
     }
 });
 

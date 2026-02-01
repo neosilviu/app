@@ -23,7 +23,7 @@ import { TagSelector } from "./ui/tag-selector";
 import { IconPicker } from './ui/IconPicker';
 import { ColorPicker } from './ui/ColorPicker';
 import { DatePicker } from './ui/DatePicker';
-import { Edit, Trash,  ArrowUpDown, ArrowUp, ArrowDown, Check, X, Archive, RotateCcw, FileIcon, ExternalLink, Tag as TagIcon, Zap, Code, Sparkles, Star, ArrowRight, HelpCircle } from "lucide-react";
+import { Edit, Trash,  ArrowUpDown, ArrowUp, ArrowDown, Check, X, Archive, RotateCcw, FileIcon, ExternalLink, Tag as TagIcon, Zap, Code, Sparkles, Star, ArrowRight, HelpCircle, Plus } from "lucide-react";
 import { IconMap } from "~/lib/icons";
 
 // --- RelationSelect Component ---
@@ -77,6 +77,158 @@ export function RelationSelect({ entityType, value, onChange, placeholder }: Rel
                 )}
             </SelectContent>
         </Select>
+    );
+}
+
+// --- MultiRelationSelector Component (for relation-many fields like tags) ---
+
+interface MultiRelationSelectorProps {
+    field: any;
+    value: string[];
+    onChange: (value: string[]) => void;
+    label?: string;
+}
+
+export function MultiRelationSelector({ field, value = [], onChange, label }: MultiRelationSelectorProps) {
+    const { t } = useTranslation(['common', 'entity']);
+    const { lang } = useParams();
+    const [options, setOptions] = useState<{ id: string; name: string; color?: string }[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isFocused, setIsFocused] = useState(false);
+    const { user } = useAuth();
+
+    const targetEntity = field.relation?.target || field.relationTarget || (field.type === 'tag' ? 'tag' : null);
+
+    useEffect(() => {
+        // Level 8: Use registry options if available (for multi-select/enum types)
+        if (field.options && Array.isArray(field.options)) {
+            const mapped = field.options.map((opt: any) => ({
+                id: typeof opt === 'object' ? String(opt.value) : String(opt),
+                name: typeof opt === 'object' ? (opt.label || opt.value) : String(opt),
+                color: typeof opt === 'object' ? opt.color : undefined
+            }));
+            setOptions(mapped);
+            setLoading(false);
+            return;
+        }
+
+        if (!targetEntity) {
+            setLoading(false);
+            return;
+        }
+
+        const filters = user?.workspaceId ? { workspaceId: user.workspaceId } : {};
+        
+        socket.emit('db:list', { collection: targetEntity, filters }, (response: any) => {
+            if (response.success && response.data) {
+                const mapped = response.data.map((item: any) => ({
+                    id: String(item.id || item._id),
+                    name: item.name || item.label || item.title || item.id,
+                    color: item.color
+                }));
+                setOptions(mapped);
+            }
+            setLoading(false);
+        });
+    }, [targetEntity, user?.workspaceId, field.options]);
+
+    const cleanValue = Array.isArray(value) ? value.map(v => String(v)) : [];
+    const selectedItems = options.filter(opt => cleanValue.includes(opt.id));
+    const availableItems = options.filter(opt => !cleanValue.includes(opt.id) && (searchTerm === '' || opt.name.toLowerCase().includes(searchTerm.toLowerCase())));
+
+    const handleAdd = (id: string) => {
+        if (!cleanValue.includes(id)) {
+            onChange([...cleanValue, id]);
+        }
+        setSearchTerm('');
+    };
+
+    const handleRemove = (id: string) => {
+        onChange(value.filter(v => v !== id));
+    };
+
+    return (
+        <div className="space-y-3">
+            {/* Selected Items Display */}
+            <div className="flex flex-wrap gap-2 min-h-[44px] p-3 border-2 border-slate-200 rounded-2xl bg-slate-50/50 hover:border-indigo-200 transition-colors">
+                {selectedItems.length > 0 ? (
+                    selectedItems.map((item) => (
+                        <Badge 
+                            key={item.id}
+                            className="gap-2 px-3 py-2 font-bold text-white shadow-sm hover:shadow-md transition-all"
+                            style={{
+                                backgroundColor: item.color || '#3b82f6'
+                            }}
+                        >
+                            <span>{renderString(item.name, lang)}</span>
+                            <button
+                                type="button"
+                                onClick={() => handleRemove(item.id)}
+                                className="ml-1 hover:opacity-70 transition-opacity"
+                                title="Remove"
+                            >
+                                <X size={14} />
+                            </button>
+                        </Badge>
+                    ))
+                ) : (
+                    <span className="text-xs text-slate-400 italic py-2 px-1">
+                        {t('common:select_placeholder', { label: renderString(label || field.label, lang) })}
+                    </span>
+                )}
+            </div>
+
+            {/* Search & Add Interface */}
+            {!loading && options.length > 0 && (
+                <div className="relative space-y-2">
+                    <Input
+                        placeholder={`Search and add ${targetEntity}...`}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onFocus={() => setIsFocused(true)}
+                        onBlur={() => setTimeout(() => setIsFocused(false), 200)}
+                        className="h-10 rounded-xl border-slate-200 bg-white shadow-sm focus:ring-indigo-500"
+                    />
+                    
+                    {isFocused && availableItems.length > 0 && (
+                        <div className="absolute z-50 top-full left-0 right-0 mt-1 border border-slate-200 rounded-xl bg-white shadow-xl max-h-60 overflow-y-auto p-1 animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+                            {availableItems.map((item) => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => handleAdd(item.id)}
+                                    className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors group text-left"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div 
+                                            className="w-2.5 h-2.5 rounded-full shrink-0" 
+                                            style={{ backgroundColor: item.color || '#cbd5e1' }}
+                                        />
+                                        <span className="text-sm font-bold text-slate-700 dark:text-slate-300 group-hover:text-indigo-600 transition-colors">
+                                            {renderString(item.name, lang)}
+                                        </span>
+                                    </div>
+                                    <Plus size={14} className="text-slate-300 group-hover:text-indigo-500" />
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {loading && (
+                <div className="h-10 bg-slate-100 rounded-xl animate-pulse" />
+            )}
+
+            {!loading && options.length === 0 && (
+                <div className="p-3 text-center bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-xs font-bold text-amber-700">
+                        No {targetEntity} found. Create one first!
+                    </p>
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -341,15 +493,37 @@ export const DynamicTable = React.memo(function DynamicTable({
       );
     }
 
-    if (field.type === "tag") {
-      const tag = Array.isArray(value) ? value : String(value).split(',').filter(Boolean);
+    if (field.type === "tag" || field.type === "relation-many" || field.type === "multi-select" || Array.isArray(value)) {
+      const items = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(',').filter(Boolean) : []);
+      if (items.length === 0) return "-";
+      
       return (
         <div className="flex flex-wrap gap-1">
-          {tag.map((tag: string, i: number) => (
-            <Badge key={i} variant="secondary" className="text-[8px] py-0 px-1 bg-slate-100 text-slate-600 border-none">{tag}</Badge>
-          ))}
+          {items.map((item: any, i: number) => {
+            const label = typeof item === 'object' && item !== null ? (item.label || item.name || item.id || item.ID || JSON.stringify(item)) : String(item);
+            const color = typeof item === 'object' && item !== null ? item.color || item.colorTheme : null;
+            return (
+              <Badge 
+                key={i} 
+                variant="secondary" 
+                className="text-[8px] py-0 px-1 border-none font-bold uppercase tracking-tighter"
+                style={color ? { backgroundColor: `${color}15`, color: color, border: `1px solid ${color}30` } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+              >
+                {label}
+              </Badge>
+            );
+          })}
         </div>
       );
+    }
+
+    if (field.type === "relation" && value && typeof value === 'object') {
+       const label = value.label || value.name || value.id || value.ID || JSON.stringify(value);
+       return (
+         <Badge variant="secondary" className="font-bold bg-blue-50 text-blue-700 border-blue-100 text-[10px] px-2 py-0.5 rounded-lg">
+           {label}
+         </Badge>
+       );
     }
 
     if (field.type === "color") {
@@ -504,32 +678,66 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
       let fieldSchema: any;
       if (field.type === 'file') fieldSchema = field.multiple ? z.array(z.any()) : z.any();
       else if (field.type === 'boolean') fieldSchema = z.boolean();
-      else if (field.type === 'number' || field.type === 'currency') fieldSchema = z.preprocess((val) => (val === '' || val === null || val === undefined ? undefined : Number(val)), z.number());
+      else if (field.type === 'number' || field.type === 'currency') fieldSchema = z.number();
       else if (field.type === 'email') fieldSchema = z.string().email(t('validation:invalid_email'));
       else if (field.type === 'phone') fieldSchema = z.string().regex(/^\+?[0-9\s\-()]*$/, t('validation:invalid_phone'));
       else if (field.type === 'datetime' || field.type === 'date' || field.type === 'time') fieldSchema = z.string();
       else fieldSchema = z.string();
       
-      // New Metadata Validation
+      // New Metadata Validation - Industrial Strength
       if (field.validation) {
         const fieldLabel = t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, 'entities:fields.name'], renderString(field.label || name));
+        
         if (field.validation.pattern) {
-          fieldSchema = fieldSchema.regex(new RegExp(field.validation.pattern), t('validation:invalid_format', { label: fieldLabel }));
+          fieldSchema = fieldSchema.refine(val => {
+            if (!val) return true; // Let required handle empty
+            return new RegExp(field.validation.pattern).test(String(val));
+          }, t('validation:invalid_format', { label: fieldLabel }));
         }
+
         if (field.validation.min !== undefined && field.validation.min !== null) {
-          if (field.type === 'number') fieldSchema = fieldSchema.min(field.validation.min, t('validation:min_value', { label: fieldLabel, value: field.validation.min }));
-          else fieldSchema = fieldSchema.min(field.validation.min, t('validation:min_length', { label: fieldLabel, length: field.validation.min }));
+          const minVal = Number(field.validation.min);
+          fieldSchema = fieldSchema.refine(val => {
+            if (val === undefined || val === null || val === '') return true;
+            if (field.type === 'number' || field.type === 'currency') return Number(val) >= minVal;
+            if (Array.isArray(val)) return val.length >= minVal;
+            return String(val).length >= minVal;
+          }, field.type === 'number' || field.type === 'currency' 
+             ? t('validation:min_value', { label: fieldLabel, value: minVal })
+             : t('validation:min_length', { label: fieldLabel, length: minVal })
+          );
         }
+
         if (field.validation.max !== undefined && field.validation.max !== null) {
-          if (field.type === 'number') fieldSchema = fieldSchema.max(field.validation.max, t('validation:max_value', { label: fieldLabel, value: field.validation.max }));
-          else fieldSchema = fieldSchema.max(field.validation.max, t('validation:max_length', { label: fieldLabel, length: field.validation.max }));
+          const maxVal = Number(field.validation.max);
+          fieldSchema = fieldSchema.refine(val => {
+            if (val === undefined || val === null || val === '') return true;
+            if (field.type === 'number' || field.type === 'currency') return Number(val) <= maxVal;
+            if (Array.isArray(val)) return val.length <= maxVal;
+            return String(val).length <= maxVal;
+          }, field.type === 'number' || field.type === 'currency'
+             ? t('validation:max_value', { label: fieldLabel, value: maxVal })
+             : t('validation:max_length', { label: fieldLabel, length: maxVal })
+          );
         }
       }
 
       if (field.required) {
         const fieldLabel = t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, 'entities:fields.name'], renderString(field.label || name));
-        if (field.type !== 'boolean') fieldSchema = fieldSchema.min(1, t('validation:required', { label: fieldLabel }));
-      } else {
+        fieldSchema = fieldSchema.refine(val => {
+          if (val === undefined || val === null || val === '') return false;
+          if (Array.isArray(val) && val.length === 0) return false;
+          if (field.type === 'boolean') return true; // checkboxes are always initialized
+          return true;
+        }, t('validation:required', { label: fieldLabel }));
+      }
+
+      // Enterprise Level 8: Preprocess numbers at the very end to ensure raw validation worked
+      if (field.type === 'number' || field.type === 'currency') {
+        fieldSchema = z.preprocess((val) => (val === '' || val === null || val === undefined ? undefined : Number(val)), fieldSchema);
+      }
+
+      if (!field.required) {
         if (field.type === 'boolean') fieldSchema = fieldSchema.optional().nullable().default(false);
         else fieldSchema = fieldSchema.optional().nullable().or(z.literal(''));
       }
@@ -766,7 +974,22 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
                               </button>
                             ))}
                           </div>
-                        ) : field.type === 'tag' || (field.type === 'enum' && field.multiple) ? (
+                        ) : (field.type === 'relation-many' || field.type === 'tag' || field.type === 'multi-select') ? (
+                            <MultiRelationSelector
+                              field={field}
+                              value={(() => {
+                                const val = formField.value;
+                                if (Array.isArray(val)) {
+                                  // Level 8: Extract IDs from objects if necessary
+                                  return val.map(item => (typeof item === 'object' && item !== null) ? (item.id || item.ID) : String(item));
+                                }
+                                if (typeof val === 'string' && val.length > 0) return val.split(',').filter(Boolean);
+                                return [];
+                              })()}
+                              onChange={formField.onChange}
+                              label={field.label || name}
+                            />
+                        ) : (field.type === 'enum' && field.multiple) ? (
                             <div className="space-y-2">
                               <div className="flex flex-wrap gap-2 min-h-[40px] p-2 border rounded-xl bg-slate-50/50">
                                 {((Array.isArray(formField.value) ? formField.value : []) as string[]).map((val, i) => (

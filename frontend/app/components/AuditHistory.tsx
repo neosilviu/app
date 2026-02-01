@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { Activity, RotateCcw, Filter, Calendar, User, Zap, Database, ChevronDown, ChevronUp, Search, BarChart3 } from 'lucide-react';
 import { useConfig } from '~/hooks/useConfig';
@@ -49,21 +49,33 @@ export function AuditHistory() {
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
 
+  // Guards to prevent duplicate requests
+  const loadingRef = useRef(false);
+  const statsLoadingRef = useRef(false);
+  const undoRef = useRef(false);
+  const [undoing, setUndoing] = useState(false);
+
   useEffect(() => {
     loadHistory();
     loadStats();
   }, [offset, entityTypeFilter, actionFilter]);
 
   const loadHistory = async () => {
+    if (loadingRef.current) return; // Prevent duplicate concurrent loads
+    loadingRef.current = true;
     setLoading(true);
     try {
-      const data = await api.post('action/history', {
-        limit,
-        offset,
-        entityType: entityTypeFilter || undefined,
-        action: actionFilter || undefined
-      });
-      
+      // Use GET with query params to avoid sending a request body which can be
+      // consumed by middleware or SSR routing in development.
+      const qs: string[] = [];
+      qs.push(`limit=${limit}`);
+      qs.push(`offset=${offset}`);
+      if (entityTypeFilter) qs.push(`entityType=${encodeURIComponent(entityTypeFilter)}`);
+      if (actionFilter) qs.push(`action=${encodeURIComponent(actionFilter)}`);
+
+      const url = `action/history${qs.length ? `?${qs.join('&')}` : ''}`;
+      const data = await api.get(url);
+
       if (data) {
         const payload = data?.data || data;
         setLogs(payload.logs || []);
@@ -72,13 +84,17 @@ export function AuditHistory() {
     } catch (error) {
       console.error('Failed to load audit history:', error);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   };
 
   const loadStats = async () => {
+    if (statsLoadingRef.current) return; // Prevent duplicate concurrent stats calls
+    statsLoadingRef.current = true;
     try {
-      const data = await api.post('action/stats', {});
+      // Use GET to avoid relying on request body parsing
+      const data = await api.get('action/stats');
       
       if (data) {
         const payload = data?.data || data;
@@ -86,14 +102,19 @@ export function AuditHistory() {
       }
     } catch (error) {
       console.error('Failed to load stats:', error);
+    } finally {
+      statsLoadingRef.current = false;
     }
   };
 
   const handleUndo = async (logId: string) => {
+    if (undoRef.current) return; // Prevent duplicate undo attempts
     if (!confirm(renderString({ ro: 'Ești sigur că vrei să restorezi această modificare?', en: 'Are you sure you want to undo this change?' }, lang))) {
       return;
     }
 
+    undoRef.current = true;
+    setUndoing(true);
     try {
       const data = await api.post(`action/undo/${logId}`, {});
       
@@ -106,6 +127,9 @@ export function AuditHistory() {
     } catch (error) {
       console.error('Undo failed:', error);
       alert(renderString({ ro: 'Eroare la restaurare', en: 'Undo failed' }, lang));
+    } finally {
+      undoRef.current = false;
+      setUndoing(false);
     }
   };
 
@@ -179,7 +203,12 @@ export function AuditHistory() {
         <Button
           variant={showStats ? 'default' : 'outline'}
           size="sm"
-          onClick={() => setShowStats(!showStats)}
+          onClick={async () => {
+            const next = !showStats;
+            setShowStats(next);
+            if (next) await loadStats();
+          }}
+          disabled={statsLoadingRef.current}
         >
           <BarChart3 className="w-4 h-4 mr-2" />
           {renderString({ ro: 'Statistici', en: 'Statistics' }, lang)}

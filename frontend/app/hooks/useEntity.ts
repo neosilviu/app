@@ -13,6 +13,7 @@ import { renderString, getErrorMessage } from "../lib/utils";
 import { useAuth } from "~/hooks/useAuth";
 import { useConfig } from "~/hooks/useConfig";
 import { useTheme } from "~/hooks/useTheme";
+import { normalizeFormData } from "~/lib/entity-engine";
 
 export interface EntityOptions {
   filters?: Record<string, any>;
@@ -38,11 +39,11 @@ const LOCAL_FALLBACK_ENTITIES = [
 
 export function useEntity<T = any>(entityName: string, options: EntityOptions = {}) {
   const [data, setData] = useState<T[]>([]);
+  const { user, hasPermission, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(!options.skipFetch);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const skipNextSocketUpdate = useRef<string | null>(null);
-  const { user, hasPermission } = useAuth();
   const { entity } = useConfig();
   const { autoRefreshEnabled, canAutoRefresh } = useTheme();
   const params = useParams();
@@ -100,8 +101,12 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         filtered = filtered.filter((item: any) => !item.archived || item.archived === 0);
       }
 
-      if (filtered.length > 0) {
-        setData(filtered);
+      // Normalize cached data to prevent React rendering errors
+      const entityDef = entity[entityName];
+      const normalizedFiltered = entityDef ? filtered.map((item: any) => normalizeFormData(item, entityDef.fields)) : filtered;
+
+      if (normalizedFiltered.length > 0) {
+        setData(normalizedFiltered);
         setLoading(false);
       }
     };
@@ -109,14 +114,14 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   }, [entityName, user?.workspaceId, options.includeArchived]);
 
   const fetchAll = useCallback(async () => {
-    if (!entityName || options.skipFetch || !isKnownEntity) {
-      if (options.skipFetch || !isKnownEntity) setLoading(false);
+    if (!entityName || options.skipFetch || !isKnownEntity || authLoading) {
+      if ((options.skipFetch || !isKnownEntity) && !authLoading) setLoading(false);
       return;
     }
     
-    // Only show loading if we don't have data yet
-    if (data.length === 0) {
-      setLoading(true);
+    // Safety: If not loading auth but no user, and it's not a public check, we wait or fail
+    if (!authLoading && !user && !['entity_definition', 'SYSTEM_SETTING'].includes(entityName)) {
+        return; 
     }
 
     const filters = { ...options.filters };
@@ -153,7 +158,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         if (!response || typeof response === 'string') throw new Error("Invalid response");
         
         responseData = response;
-        console.log(`[useEntity] Brain API returned ${responseData.data?.length || 0} records for ${entityName}`);
+        // console.log(`[useEntity] Brain API returned ${responseData.data?.length || 0} records for ${entityName}`);
         
         // HYBRID FIX: If Brain returns empty but we are connected to a socket,
         // it's possible the data exists only on the Local Agent (e.g. contact, file)
@@ -210,11 +215,16 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       setLoading(false);
       if (responseData.success) {
         const newData = Array.isArray(responseData.data) ? responseData.data : [];
+        
+        // Normalize data to prevent React rendering errors with relation objects
+        const entityDef = entity[entityName];
+        const normalizedData = entityDef ? newData.map((item: any) => normalizeFormData(item, entityDef.fields)) : newData;
+        
         setData(prev => {
-          if (prev.length === newData.length && JSON.stringify(prev[0]) === JSON.stringify(newData[0])) {
+          if (prev.length === normalizedData.length && JSON.stringify(prev[0]) === JSON.stringify(normalizedData[0])) {
              return prev;
           }
-          return newData;
+          return normalizedData;
         });
         
         // Update IndexedDB cache
@@ -240,7 +250,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       setError(err.message);
       console.error(`Failed to fetch ${entityName}`, err);
     }
-  }, [entityName, JSON.stringify(options), user?.workspaceId]);
+  }, [entityName, JSON.stringify(options), user?.workspaceId, authLoading]);
 
   const debouncedFetchAll = useMemo(
     () => debounce(fetchAll, 300),
@@ -312,20 +322,44 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       let result;
       try {
         const response = await api.brain.post(`db/collection/${entityName}/${workspaceId}`, payload);
-        console.log(`[useEntity] Brain API create response for ${entityName}:`, response);
+        // console.log(`[useEntity] Brain API create response for ${entityName}:`, response);
         result = response;
-      } catch (err) {
-        console.warn(`[useEntity] Brain API create failed for ${entityName}, trying Socket fallback...`);
-        result = await socketRequest('db:create', { collection: entityName, workspaceId, data: payload });
+      } catch (err: any) {
+        // Enterprise Level 8: Improved Error Handling
+        // If it's a validation error (400) or Forbidden (403), do NOT fallback to socket.
+        // These are legitimate backend rejections.
+        const status = err?.response?.status;
+        const brainError = err?.response?.data?.error || err?.message;
+
+        if (status === 400 || status === 403 || status === 401) {
+            console.error(`[useEntity] Brain API rejected request (${status}): ${brainError}`);
+            throw new Error(brainError);
+        }
+
+        console.warn(`[useEntity] Brain API communication error for ${entityName}, trying Socket fallback...`, err.message);
+        try {
+            result = await socketRequest('db:create', { collection: entityName, workspaceId, data: payload });
+        } catch (sockErr: any) {
+            if (sockErr.message === 'LOCAL_AGENT_DISABLED') {
+                // If socket is disabled, we throw the ORIGINAL brain error to avoid confusion
+                throw new Error(brainError);
+            }
+            throw sockErr;
+        }
       }
 
       if (result.success) {
         const newItem = result.data;
-        console.log(`[useEntity] Adding new item to state:`, newItem);
-        skipNextSocketUpdate.current = newItem.id;
-        setData(prev => [newItem, ...prev]);
+        // console.log(`[useEntity] Adding new item to state:`, newItem);
+        
+        // Normalize the new item to prevent React rendering errors
+        const entityDef = entity[entityName];
+        const normalizedItem = entityDef ? normalizeFormData(newItem, entityDef.fields) : newItem;
+        
+        skipNextSocketUpdate.current = normalizedItem.id;
+        setData(prev => [normalizedItem, ...prev]);
         toast.success(`${entityName} created successfully`);
-        return newItem.id;
+        return normalizedItem.id;
       } else {
         throw new Error(result.error);
       }
@@ -342,16 +376,40 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       try {
         const response = await api.brain.put(`db/collection/${entityName}/${id}`, payload);
         result = response;
-      } catch (err) {
-        console.warn(`[useEntity] Brain API update failed for ${entityName}, trying Socket fallback...`);
-        result = await socketRequest('db:update', { collection: entityName, id, data: payload });
+      } catch (err: any) {
+        // Enterprise Level 8: Improved Error Handling (Update)
+        const status = err?.response?.status;
+        const brainError = err?.response?.data?.error || err?.message;
+
+        if (status === 400 || status === 403 || status === 401) {
+            console.error(`[useEntity] Brain API rejected update (${status}): ${brainError}`);
+            throw new Error(brainError);
+        }
+
+        console.warn(`[useEntity] Brain API update failed for ${entityName}, trying Socket fallback...`, err.message);
+        try {
+            result = await socketRequest('db:update', { collection: entityName, id, data: payload });
+        } catch (sockErr: any) {
+            if (sockErr.message === 'LOCAL_AGENT_DISABLED') {
+                throw new Error(brainError);
+            }
+            throw sockErr;
+        }
       }
 
       if (result.success) {
         skipNextSocketUpdate.current = id;
-        setData(prev => prev.map((item: any) => 
-          item.id === id ? { ...item, ...payload, updatedAt: new Date().toISOString() } : item
-        ));
+        
+        // Update the item and normalize to prevent React rendering errors
+        setData(prev => prev.map((item: any) => {
+          if (item.id === id) {
+            const updatedItem = { ...item, ...payload, updatedAt: new Date().toISOString() };
+            const entityDef = entity[entityName];
+            return entityDef ? normalizeFormData(updatedItem, entityDef.fields) : updatedItem;
+          }
+          return item;
+        }));
+        
         toast.success(`${entityName} updated successfully`);
         return id;
       } else {
@@ -368,11 +426,26 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       let result;
       try {
         const url = `db/collection/${entityName}/${id}${force ? '?force=true' : ''}`;
-        const response = await api.brain.delete(url);
-        result = response;
-      } catch (err) {
-        console.warn(`[useEntity] Brain API delete failed for ${entityName}, trying Socket fallback...`);
-        result = await socketRequest('db:delete', { collection: entityName, id });
+        result = await api.brain.delete(url);
+      } catch (err: any) {
+        // Enterprise Level 8: Improved Error Handling (Delete)
+        const status = err?.response?.status;
+        const brainError = err?.response?.data?.error || err?.message;
+
+        if (status === 400 || status === 403 || status === 401) {
+            console.error(`[useEntity] Brain API rejected delete (${status}): ${brainError}`);
+            throw new Error(brainError);
+        }
+
+        console.warn(`[useEntity] Brain API delete failed for ${entityName}, trying Socket fallback...`, err.message);
+        try {
+            result = await socketRequest('db:delete', { collection: entityName, id });
+        } catch (sockErr: any) {
+            if (sockErr.message === 'LOCAL_AGENT_DISABLED') {
+                throw new Error(brainError);
+            }
+            throw sockErr;
+        }
       }
 
       // Check for dependencies (Enterprise Level 8 Safety)
@@ -479,6 +552,35 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       return false;
     } catch (error: any) {
       toast.error(`Failed to delete items: ${error.message}`);
+      throw error;
+    }
+  };
+
+  const bulkUpdate = async (ids: string[], field: string, value: any) => {
+    try {
+      const operations = ids.map(id => ({
+        type: 'set',
+        collection: entityName,
+        id,
+        data: { [field]: value }
+      }));
+      const response = await api.brain.post('db/batch', { operations, workspaceId: user?.workspaceId });
+      const result = response.data || response; // Resilience for wrapped vs unwrapped client
+      if (result.success) {
+        skipNextSocketUpdate.current = 'batch';
+        setData(prev => prev.map((item: any) => {
+          if (ids.includes(item.id)) {
+            return { ...item, [field]: value || null, updatedAt: new Date().toISOString() };
+          }
+          return item;
+        }));
+        toast.success(`${ids.length} items updated`);
+        clearSelection();
+        return true;
+      }
+      return false;
+    } catch (error: any) {
+      toast.error(`Failed to update items: ${error.message}`);
       throw error;
     }
   };
@@ -918,6 +1020,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     restore,
     bulkArchive,
     bulkDelete,
+    bulkUpdate,
     importData,
     importWithAI,
     exportData,

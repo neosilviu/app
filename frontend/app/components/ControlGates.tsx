@@ -53,9 +53,15 @@ export function SuperAdminGate({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useEffect(() => {
-    if (user) return;
+    // Enterprise Level 8: Logic for initial setup redirection
+    // We only redirect if:
+    // 1. Not loading
+    // 2. Not logged in
+    // 3. System specifically reports NO admin exists
+    // 4. Not already on setup/login pages
+    if (user || authLoading || isAdminExists === null) return;
 
-    if (!authLoading && isAdminExists === false && !location.pathname.includes('/setup') && !location.pathname.includes('/login')) {
+    if (isAdminExists === false && !location.pathname.includes('/setup') && !location.pathname.includes('/login')) {
       navigate(getLocalizedPath('/setup', lang));
     }
   }, [authLoading, isAdminExists, navigate, lang, location.pathname, user]);

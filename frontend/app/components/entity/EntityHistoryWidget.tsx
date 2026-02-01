@@ -5,7 +5,7 @@ import { api } from '~/lib/core';
 import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
 import { Badge } from '~/components/ui/badge';
-import { renderString } from '~/lib/core';
+import { renderString, getDisplayValue } from '~/lib/core';
 
 interface AuditLog {
   id: string;
@@ -169,12 +169,12 @@ export function EntityHistoryWidget({
                 <div className="flex-1 space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge className={`${getActionColor(log.action)} border text-xs`}>
-                      {log.action}
+                      {typeof log.action === 'object' ? JSON.stringify(log.action) : String(log.action)}
                     </Badge>
                     
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <User className="w-3 h-3" />
-                      <span>{log.user}</span>
+                      <span>{typeof log.user === 'object' ? getDisplayValue(log.user, {}) : String(log.user || 'System')}</span>
                     </div>
                     
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -184,7 +184,9 @@ export function EntityHistoryWidget({
                   </div>
                   
                   {log.details && (
-                    <p className="text-xs text-muted-foreground">{log.details}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {typeof log.details === 'object' ? JSON.stringify(log.details) : String(log.details)}
+                    </p>
                   )}
                   
                   {expandedLog === log.id && log.snapshot_before && (

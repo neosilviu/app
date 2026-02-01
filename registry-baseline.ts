@@ -98,13 +98,14 @@ export const SYSTEM_ROLE = {
     permission: [
       'workspace:manage',
       'workspace:members:manage',
-      'workspace:setting:edit',
+      'workspace:setting:update',
       'workspace:data:export',
       'contact:create',
       'contact:read',
       'contact:update',
       'contact:delete',
       'file:manage',
+      'audit_log:read',
     ],
     allowedPage: ['dashboard', 'monitoring', 'setting', 'profile', 'entity', 'worker'],
   },
@@ -114,11 +115,13 @@ export const SYSTEM_ROLE = {
     description: { ro: 'Gestionare membri și configurări de bază', en: 'Manage members and basic settings' },
     permission: [
       'workspace:members:manage',
-      'workspace:setting:view',
+      'workspace:setting:read',
       'contact:create',
       'contact:read',
       'contact:update',
+      'contact:delete',
       'file:manage',
+      'audit_log:read',
     ],
     allowedPage: ['dashboard', 'monitoring', 'setting', 'profile', 'entity', 'worker'],
   },
@@ -130,8 +133,19 @@ export const SYSTEM_ROLE = {
       'contact:read',
       'contact:create',
       'contact:update',
+      'contact:delete',
+      'task:read',
+      'task:create',
+      'task:update',
+      'task:delete',
+      'interaction:read',
+      'interaction:create',
+      'interaction:update',
+      'deal:read',
+      'file:read',
       'file:upload',
-      'workspace:view',
+      'tag:read',
+      'tag:create',
     ],
     allowedPage: ['dashboard', 'profile', 'entity', 'worker'],
   },
@@ -188,7 +202,7 @@ export const SHORTCUT = [
   { action: 'open-search-ai', key: 'j', ctrlKey: true, label: { ro: 'Căutare AI / Chat', en: 'AI Search / Chat' } },
   { action: 'open-search-file', key: '.', ctrlKey: true, label: { ro: 'Căutare Fișiere', en: 'File Search' } },
   { action: 'toggle-theme', key: 't', shiftKey: true, altKey: true, label: { ro: 'Schimbă Tema (Light/Dark)', en: 'Toggle Theme (Light/Dark)' } },
-  { action: 'nav:contact', key: 'c', ctrlKey: true, label: { ro: 'Navigare Contacte', en: 'Navigate contact' } },
+  { action: 'nav:contact', key: 'e', ctrlKey: true, label: { ro: 'Navigare Contacte', en: 'Navigate contact' } },
   { action: 'list:contact', key: 'l', ctrlKey: true, label: { ro: 'Listă Contacte (Full)', en: 'contact List (Full)' } },
   { action: 'new:contact', key: 'n', ctrlKey: true, label: { ro: 'Adăugare Contact Nou', en: 'Add New Contact' } },
   { action: 'nav:dashboard', key: 'd', ctrlKey: true, label: { ro: 'Navigare Tablou Bord', en: 'Navigate Dashboard' } },
@@ -230,6 +244,7 @@ export const CONSTANT = {
     'system_setting',
     'entity_definition',
     'audit_log',
+    'system_error',
     'config_version',
     '_ai_prompt',
     'user',
@@ -242,12 +257,14 @@ export const CONSTANT = {
     'entity_definition', 
     'config_version', 
     'audit_log', 
+    'system_error',
     '_ai_prompt',
     'user',
     'role'
   ],
   auditExclusion: [
     'audit_log',
+    'system_error',
     'session',
     'config_version'
   ],
@@ -264,7 +281,8 @@ export const CONSTANT = {
     'deletedAt', 
     'archived', 
     'createdBy', 
-    'updatedBy'
+    'updatedBy',
+    'deletedBy'
   ],
   namespaceMapping: {
     'ai': 'AI_CONFIG',
@@ -406,7 +424,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'project', 
         label: { ro: 'Proiect', en: 'Project' }, 
         labelPlural: { ro: 'Proiecte', en: 'Projects' },
+        displayField: 'name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           name: { type: 'text', label: { ro: 'Nume Proiect', en: 'Project Name' }, required: true, searchable: true },
           status: { 
             type: 'enum', 
@@ -428,7 +448,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'task',
         label: { ro: 'Task', en: 'Task' },
         labelPlural: { ro: 'Task-uri', en: 'Tasks' },
+        displayField: 'title',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           title: { type: 'text', label: { ro: 'Titlu Task', en: 'Task Title' }, required: true },
           project_id: { type: 'relation', label: { ro: 'Proiect', en: 'Project' }, relation: { target: 'project', field: 'name' }, required: true },
           assignee_id: { type: 'relation', label: { ro: 'Responsabil', en: 'Assignee' }, relation: { target: 'contact', field: 'name' } },
@@ -448,7 +470,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'patient',
         label: { ro: 'Pacient', en: 'Patient' },
         labelPlural: { ro: 'Pacienți', en: 'Patients' },
+        displayField: 'full_name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           full_name: { type: 'text', label: { ro: 'Nume Complet', en: 'Full Name' }, required: true },
           phone: { type: 'phone', label: { ro: 'Telefon', en: 'Phone' } },
           email: { type: 'email', label: { ro: 'Email', en: 'Email' } },
@@ -459,7 +483,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'appointment',
         label: { ro: 'Programare', en: 'Appointment' },
         labelPlural: { ro: 'Programări', en: 'Appointments' },
+        displayField: 'date_time',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           patient_id: { type: 'relation', label: { ro: 'Pacient', en: 'Patient' }, relation: { target: 'patient', field: 'full_name' }, required: true },
           doctor_id: { type: 'relation', label: { ro: 'Medic', en: 'Doctor' }, relation: { target: 'contact', field: 'name' } },
           date_time: { type: 'datetime', label: { ro: 'Data & Ora', en: 'Date & Time' }, required: true },
@@ -478,7 +504,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'property',
         label: { ro: 'Proprietate', en: 'Property' },
         labelPlural: { ro: 'Proprietăți', en: 'Properties' },
+        displayField: 'title',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           title: { type: 'text', label: { ro: 'Titlu', en: 'Title' }, required: true },
           address: { type: 'text', label: { ro: 'Adresă', en: 'Address' } },
           type: { type: 'enum', label: { ro: 'Tip', en: 'Type' }, options: ['apartment', 'house', 'land', 'commercial'] },
@@ -490,7 +518,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'viewing',
         label: { ro: 'Vizionare', en: 'Viewing' },
         labelPlural: { ro: 'Vizionări', en: 'Viewings' },
+        displayField: 'date',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           property_id: { type: 'relation', label: { ro: 'Proprietate', en: 'Property' }, relation: { target: 'property', field: 'title' } },
           client_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' } },
           date: { type: 'datetime', label: { ro: 'Dată Vizionare', en: 'Viewing Date' } }
@@ -508,7 +538,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'product',
         label: { ro: 'Produs', en: 'Product' },
         labelPlural: { ro: 'Produse', en: 'Products' },
+        displayField: 'name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           sku: { type: 'text', label: { ro: 'Cod SKU', en: 'SKU' }, unique: true },
           name: { type: 'text', label: { ro: 'Nume Produs', en: 'Product Name' }, required: true },
           category: { type: 'text', label: { ro: 'Categorie', en: 'Category' } },
@@ -519,7 +551,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'stock_movement',
         label: { ro: 'Mișcare Stoc', en: 'Stock Movement' },
         labelPlural: { ro: 'Mișcări Stoc', en: 'Stock Movements' },
+        displayField: 'id',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           product_id: { type: 'relation', label: { ro: 'Produs', en: 'Product' }, relation: { target: 'product', field: 'name' } },
           quantity: { type: 'number', label: { ro: 'Cantitate', en: 'Quantity' } },
           type: { type: 'enum', label: { ro: 'Tip', en: 'Type' }, options: ['in', 'out', 'adjustment'] }
@@ -537,7 +571,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'employee',
         label: { ro: 'Angajat', en: 'Employee' },
         labelPlural: { ro: 'Angajați', en: 'Employees' },
+        displayField: 'employee_id',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           contact_id: { type: 'relation', label: { ro: 'Profil Contact', en: 'Contact Profile' }, relation: { target: 'contact', field: 'name' } },
           employee_id: { type: 'text', label: { ro: 'Marca', en: 'Employee ID' }, unique: true },
           department: { type: 'text', label: { ro: 'Departament', en: 'Department' } },
@@ -548,7 +584,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'leave_request',
         label: { ro: 'Cerere Concediu', en: 'Leave Request' },
         labelPlural: { ro: 'Cereri Concediu', en: 'Leave Requests' },
+        displayField: 'type',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           employee_id: { type: 'relation', label: { ro: 'Angajat', en: 'Employee' }, relation: { target: 'employee', field: 'employee_id' } },
           start_date: { type: 'date', label: { ro: 'Inceput', en: 'Start' } },
           end_date: { type: 'date', label: { ro: 'Sfarsit', en: 'End' } },
@@ -567,7 +605,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'ticket',
         label: { ro: 'Tichet', en: 'Ticket' },
         labelPlural: { ro: 'Tichete', en: 'Tickets' },
+        displayField: 'subject',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           subject: { type: 'text', label: { ro: 'Subiect', en: 'Subject' }, required: true },
           client_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' } },
           priority: { type: 'enum', label: { ro: 'Prioritate', en: 'Priority' }, options: ['low', 'medium', 'high', 'critical'] },
@@ -586,7 +626,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'vehicle',
         label: { ro: 'Vehicul', en: 'Vehicle' },
         labelPlural: { ro: 'Vehicule', en: 'Vehicles' },
+        displayField: 'plate_number',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           plate_number: { type: 'text', label: { ro: 'Nr. Înmatriculare', en: 'Plate Number' }, required: true, unique: true },
           model: { type: 'text', label: { ro: 'Marcă/Model', en: 'Make/Model' } },
           year: { type: 'number', label: { ro: 'An Fabricație', en: 'Year' } },
@@ -605,7 +647,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'article',
         label: { ro: 'Articol', en: 'Article' },
         labelPlural: { ro: 'Articole', en: 'Articles' },
+        displayField: 'title',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           title: { type: 'text', label: { ro: 'Titlu', en: 'Title' }, required: true },
           content: { type: 'richtext', label: { ro: 'Conținut', en: 'Content' } },
           category: { type: 'text', label: { ro: 'Categorie', en: 'Category' } }
@@ -623,7 +667,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'deal',
         label: { ro: 'Oportunitate', en: 'Deal' },
         labelPlural: { ro: 'Oportunități', en: 'Deals' },
+        displayField: 'title',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           title: { type: 'text', label: { ro: 'Nume Oportunitate', en: 'Deal Name' }, required: true },
           contact_id: { type: 'relation', label: { ro: 'Contact', en: 'Contact' }, relation: { target: 'contact', field: 'name' } },
           value: { type: 'currency', label: { ro: 'Valoare Estimată', en: 'Estimated Value' } },
@@ -642,7 +688,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'legal_case',
         label: { ro: 'Dosar Juridic', en: 'Legal Case' },
         labelPlural: { ro: 'Dosare Juridice', en: 'Legal Cases' },
+        displayField: 'case_number',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           case_number: { type: 'text', label: { ro: 'Nr. Dosar', en: 'Case Number' }, required: true },
           court: { type: 'text', label: { ro: 'Instanță', en: 'Court' } },
           client_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' } }
@@ -660,7 +708,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'menu_item',
         label: { ro: 'Element Meniu', en: 'Menu Item' },
         labelPlural: { ro: 'Elemente Meniu', en: 'Menu Items' },
+        displayField: 'name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           name: { type: 'text', label: { ro: 'Nume Preparat', en: 'Dish Name' }, required: true },
           price: { type: 'currency', label: { ro: 'Preț', en: 'Price' } },
           category: { type: 'enum', label: { ro: 'Categorie', en: 'Category' }, options: ['pizza', 'pasta', 'drinks', 'dessert'] }
@@ -678,7 +728,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'salon_service',
         label: { ro: 'Serviciu Salon', en: 'Salon Service' },
         labelPlural: { ro: 'Servicii Salon', en: 'Salon Services' },
+        displayField: 'name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           name: { type: 'text', label: { ro: 'Nume Serviciu', en: 'Service Name' }, required: true },
           duration: { type: 'number', label: { ro: 'Durată (min)', en: 'Duration (min)' } },
           price: { type: 'currency', label: { ro: 'Preț', en: 'Price' } }
@@ -688,7 +740,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'salon_appointment',
         label: { ro: 'Programare Salon', en: 'Salon Appointment' },
         labelPlural: { ro: 'Programări Salon', en: 'Salon Appointments' },
+        displayField: 'date_time',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           client_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' } },
           service_id: { type: 'relation', label: { ro: 'Serviciu', en: 'Service' }, relation: { target: 'salon_service', field: 'name' } },
           stylist_id: { type: 'relation', label: { ro: 'Stilist', en: 'Stylist' }, relation: { target: 'contact', field: 'name' } },
@@ -707,7 +761,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'gym_membership',
         label: { ro: 'Abonament Fit', en: 'Fitness Membership' },
         labelPlural: { ro: 'Abonamente Fit', en: 'Fitness Memberships' },
+        displayField: 'id',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           client_id: { type: 'relation', label: { ro: 'Membru', en: 'Member' }, relation: { target: 'contact', field: 'name' } },
           type: { type: 'enum', label: { ro: 'Tip', en: 'Type' }, options: ['monthly', 'quarterly', 'yearly', 'day_pass'] },
           expiry_date: { type: 'date', label: { ro: 'Data Expirării', en: 'Expiry Date' } },
@@ -726,7 +782,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'site_report',
         label: { ro: 'Raport Zilnic', en: 'Daily Report' },
         labelPlural: { ro: 'Rapoarte Zilnice', en: 'Daily Reports' },
+        displayField: 'site_name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           site_name: { type: 'text', label: { ro: 'Nume Șantier', en: 'Site Name' }, required: true },
           date: { type: 'date', label: { ro: 'Data', en: 'Date' } },
           weather: { type: 'text', label: { ro: 'Meteo', en: 'Weather' } },
@@ -745,7 +803,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'course',
         label: { ro: 'Curs', en: 'Course' },
         labelPlural: { ro: 'Cursuri', en: 'Courses' },
+        displayField: 'title',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           title: { type: 'text', label: { ro: 'Titlu Curs', en: 'Course Title' }, required: true },
           instructor_id: { type: 'relation', label: { ro: 'Instructor', en: 'Instructor' }, relation: { target: 'contact', field: 'name' } },
           price: { type: 'currency', label: { ro: 'Preț', en: 'Price' } }
@@ -755,7 +815,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'enrollment',
         label: { ro: 'Înscriere', en: 'Enrollment' },
         labelPlural: { ro: 'Înscrieri', en: 'Enrollments' },
+        displayField: 'enrolled_at',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           student_id: { type: 'relation', label: { ro: 'Student', en: 'Student' }, relation: { target: 'contact', field: 'name' } },
           course_id: { type: 'relation', label: { ro: 'Curs', en: 'Course' }, relation: { target: 'course', field: 'title' } },
           enrolled_at: { type: 'date', label: { ro: 'Data Înscrierii', en: 'Enrollment Date' } }
@@ -773,7 +835,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'event',
         label: { ro: 'Eveniment', en: 'Event' },
         labelPlural: { ro: 'Evenimente', en: 'Events' },
+        displayField: 'name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           name: { type: 'text', label: { ro: 'Nume Eveniment', en: 'Event Name' }, required: true },
           location: { type: 'text', label: { ro: 'Locație', en: 'Location' } },
           start_date: { type: 'datetime', label: { ro: 'Start', en: 'Start' } },
@@ -792,7 +856,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'work_order',
         label: { ro: 'Comandă Lucru', en: 'Work Order' },
         labelPlural: { ro: 'Comenzi Lucru', en: 'Work Orders' },
+        displayField: 'product_name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           product_name: { type: 'text', label: { ro: 'Produs Final', en: 'Final Product' }, required: true },
           quantity: { type: 'number', label: { ro: 'Cantitate Planificată', en: 'Planned Quantity' } },
           start_date: { type: 'date', label: { ro: 'Data Start', en: 'Start Date' } },
@@ -811,7 +877,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'subscription',
         label: { ro: 'Abonament SaaS', en: 'SaaS Subscription' },
         labelPlural: { ro: 'Abonamente SaaS', en: 'SaaS Subscriptions' },
+        displayField: 'plan_name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           client_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' } },
           plan_name: { type: 'enum', label: { ro: 'Plan', en: 'Plan' }, options: ['free', 'basic', 'pro', 'enterprise'] },
           billing_interval: { type: 'enum', label: { ro: 'Interval', en: 'Interval' }, options: ['monthly', 'yearly'] },
@@ -830,7 +898,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'service_order',
         label: { ro: 'Comandă Service', en: 'Service Order' },
         labelPlural: { ro: 'Comenzi Service', en: 'Service Orders' },
+        displayField: 'vehicle_plate',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           vehicle_plate: { type: 'text', label: { ro: 'Nr. Înmatriculare', en: 'Plate Number' }, required: true },
           client_name: { type: 'text', label: { ro: 'Nume Client', en: 'Client Name' } },
           total_cost: { type: 'currency', label: { ro: 'Cost Total', en: 'Total Cost' } },
@@ -849,7 +919,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'budget_item',
         label: { ro: 'Tranzacție Financiara', en: 'Financial Transaction' },
         labelPlural: { ro: 'Registru Casă/Buget', en: 'Cash Book / Budget' },
+        displayField: 'description',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           date: { type: 'date', label: { ro: 'Dată', en: 'Date' }, required: true },
           type: { type: 'enum', label: { ro: 'Tip', en: 'Type' }, options: ['Venit', 'Cheltuiala', 'Investitie'] },
           description: { type: 'text', label: { ro: 'Descriere', en: 'Description' } },
@@ -883,7 +955,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'service_product',
         label: { ro: 'Produs Service', en: 'Service Product' },
         labelPlural: { ro: 'Produse Service', en: 'Service Products' },
+        displayField: 'name',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           name: { type: 'text', label: { ro: 'Nume Produs', en: 'Product Name' }, required: true },
           product_type: { type: 'enum', label: { ro: 'Tip Produs', en: 'Product Type' }, options: ['Marfa', 'Carte'] },
           serial_number: { 
@@ -926,7 +1000,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'repair_ticket',
         label: { ro: 'Tichet Reparație', en: 'Repair Ticket' },
         labelPlural: { ro: 'Tichete Reparații', en: 'Repair Tickets' },
+        displayField: 'object',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           contact_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' }, required: true },
           object: { type: 'text', label: { ro: 'Obiect Reparație', en: 'Repair Object' }, required: true },
           product_id: { type: 'relation', label: { ro: 'Produs Asociat', en: 'Associated Product' }, relation: { target: 'service_product', field: 'name' } },
@@ -950,7 +1026,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'product_order',
         label: { ro: 'Comandă Produs', en: 'Product Order' },
         labelPlural: { ro: 'Comenzi Produse', en: 'Product Orders' },
+        displayField: 'id',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           contact_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' }, required: true },
           product_id: { type: 'relation', label: { ro: 'Produs', en: 'Product' }, relation: { target: 'service_product', field: 'name' } },
           total: { type: 'currency', label: { ro: 'Total', en: 'Total' } },
@@ -972,7 +1050,9 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'warranty_record',
         label: { ro: 'Garanție', en: 'Warranty' },
         labelPlural: { ro: 'Garanții', en: 'Warranties' },
+        displayField: 'id',
         fields: {
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
           contact_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' }, required: true },
           product_id: { type: 'relation', label: { ro: 'Produs', en: 'Product' }, relation: { target: 'service_product', field: 'name' }, required: true },
           purchase_date: { type: 'date', label: { ro: 'Data Achiziției', en: 'Purchase Date' } },
@@ -992,11 +1072,13 @@ export const MARKETPLACE_TEMPLATE = [
         id: 'refill_item',
         label: { ro: 'Reîncărcare', en: 'Refill' },
         labelPlural: { ro: 'Reîncărcări', en: 'Refills' },
+        displayField: 'id',
         fields: {
-          contact_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' }, required: true },
-          quantity: { type: 'number', label: { ro: 'Cantitate', en: 'Quantity' }, defaultValue: 1 },
-          paid_status: { type: 'enum', label: { ro: 'Status Plată', en: 'Payment Status' }, options: ['Yes', 'No', 'Pending'] },
-          refill_type: { type: 'enum', label: { ro: 'Tip', en: 'Type' }, options: ['Toner', 'Jet'] },
+          id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
+          contact_id: { type: 'relation', label: { ro: 'Client', en: 'Client' }, relation: { target: 'contact', field: 'name' }, required: true, showInList: true },
+          quantity: { type: 'number', label: { ro: 'Cantitate', en: 'Quantity' }, defaultValue: 1, showInList: true },
+          paid_status: { type: 'enum', label: { ro: 'Status Plată', en: 'Payment Status' }, options: ['Yes', 'No', 'Pending'], showInList: true },
+          refill_type: { type: 'enum', label: { ro: 'Tip', en: 'Type' }, options: ['Toner', 'Jet'], showInList: true },
           photo_url: { type: 'image', label: { ro: 'Dovadă Foto', en: 'Photo Proof' } },
           notes: { type: 'textarea', label: { ro: 'Note', en: 'Notes' } }
         }
@@ -1208,6 +1290,7 @@ export interface EntityDefinition {
   sortField?: string;
   searchFields?: string[];
   isSystem?: boolean;
+  dependencies?: string[]; // IDs or names of entities this entity depends on
   fields: Record<string, FieldDefinition>;
   menuConfig?: EntityMenuConfig;
   permission?: EntityPermission;
@@ -1232,6 +1315,7 @@ export const ENTITY_CONFIG = {
     sortField: 'createdAt',
     searchFields: ['name', 'email', 'phone', 'company', 'role'],
     isSystem: true,
+    dependencies: ['workspace', 'tag'],
     dashboardConfig: {
       enabled: true,
       showInDashboard: true,
@@ -1432,7 +1516,7 @@ export const ENTITY_CONFIG = {
       category: 'CORE'
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { 
         type: 'relation', 
         relation: { target: 'workspace', field: 'name' }, 
@@ -1477,7 +1561,7 @@ export const ENTITY_CONFIG = {
     searchFields: ['filename', 'description'],
     isSystem: true,
     fields: {
-      id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { 
         type: 'relation', 
         relation: { target: 'workspace', field: 'name' }, 
@@ -1526,14 +1610,17 @@ export const ENTITY_CONFIG = {
     tableName: 'interaction',
     displayField: 'subject',
     sortField: 'createdAt',
+    dependencies: ['workspace', 'contact'],
     fields: {
-      id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       contactId: { type: 'relation', relation: { target: 'contact', field: 'name' } },
       channel: { type: 'enum', options: ['whatsapp', 'email', 'sms', 'system'] },
       type: { type: 'enum', options: ['inbound', 'outbound'] },
       subject: { type: 'string', searchable: true },
       body: { type: 'text', searchable: true },
+      isPinned: { type: 'boolean', defaultValue: false },
+      isFavorite: { type: 'boolean', defaultValue: false },
       status: { type: 'enum', options: ['unread', 'read', 'archived', 'trash'], defaultValue: 'unread' },
       metadata: { type: 'json' },
       createdAt: { type: 'datetime', generated: 'now' },
@@ -1552,8 +1639,9 @@ export const ENTITY_CONFIG = {
     description: { ro: 'Sarcini și activități de rezolvat', en: 'Tasks and activities to resolve' },
     tableName: 'task',
     displayField: 'title',
+    dependencies: ['workspace', 'contact'],
     fields: {
-      id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       contactId: { type: 'relation', relation: { target: 'contact', field: 'name' } },
       title: { type: 'string', required: true, searchable: true },
@@ -1562,6 +1650,7 @@ export const ENTITY_CONFIG = {
       priority: { type: 'enum', options: [COMMON_PRIORITY.low, COMMON_PRIORITY.medium, COMMON_PRIORITY.high], defaultValue: 'medium' },
       dueDate: { type: 'datetime' },
       assignedTo: { type: 'relation', relation: { target: 'contact', field: 'name' } },
+      parentTaskId: { type: 'relation', relation: { target: 'task', field: 'title' }, hidden: true },
       createdAt: { type: 'datetime', generated: 'now' },
     },
     menuConfig: {
@@ -1578,8 +1667,9 @@ export const ENTITY_CONFIG = {
     description: { ro: 'Potențiale vânzări sau proiecte comerciale', en: 'Potential sales or commercial projects' },
     tableName: 'deal',
     displayField: 'title',
+    dependencies: ['workspace', 'contact'],
     fields: {
-      id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       contactId: { type: 'relation', relation: { target: 'contact', field: 'name' } },
       title: { type: 'string', required: true, searchable: true },
@@ -1603,7 +1693,7 @@ export const ENTITY_CONFIG = {
     tableName: 'notification',
     displayField: 'title',
     fields: {
-      id: { type: 'uuid', primaryKey: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       userId: { type: 'string' },
       title: { type: 'string', required: true },
@@ -1629,7 +1719,7 @@ export const ENTITY_CONFIG = {
       deletable: false,
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { 
         type: 'relation', 
         relation: { target: 'workspace', field: 'name' }, 
@@ -1657,6 +1747,49 @@ export const ENTITY_CONFIG = {
       priority: 90
     }
   },
+
+  system_error: {
+    label: { ro: 'Erori Sistem', en: 'System Errors' },
+    labelPlural: { ro: 'Erori Sistem', en: 'System Errors' },
+    icon: 'Bug',
+    tableName: 'system_error',
+    displayField: 'message',
+    isSystem: true,
+    features: {
+      creatable: false,
+      editable: false,
+      deletable: true,
+      bulkActions: true,
+    },
+    fields: {
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
+      workspaceId: { 
+        type: 'relation', 
+        relation: { target: 'workspace', field: 'name' }, 
+        hidden: true 
+      },
+      userId: { 
+        type: 'relation', 
+        relation: { target: 'contact', field: 'name' },
+        hidden: true 
+      },
+      user: { type: 'string', ui: { width: 4, icon: 'User' } },
+      message: { type: 'text', ui: { width: 12, icon: 'AlertTriangle' }, searchable: true },
+      stack: { type: 'text', ui: { width: 12 }, hidden: true },
+      path: { type: 'string', ui: { width: 6, icon: 'Link' }, searchable: true },
+      method: { type: 'string', ui: { width: 2 } },
+      status: { type: 'number', ui: { width: 2 } },
+      context: { type: 'json', hidden: true },
+      client_info: { type: 'json', hidden: true },
+      createdAt: { type: 'datetime', ui: { width: 12 }, generated: 'now' },
+    },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'Bug',
+      priority: 100
+    }
+  },
   entity_note: {
     label: { ro: 'Notă', en: 'Note' },
     labelPlural: { ro: 'Note și Comentarii', en: 'Notes & Comments' },
@@ -1672,7 +1805,7 @@ export const ENTITY_CONFIG = {
       deletable: true,
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       entityType: { type: 'string', required: true, searchable: true },
       entityId: { type: 'string', required: true, searchable: true },
@@ -1696,7 +1829,7 @@ export const ENTITY_CONFIG = {
       timestamps: true
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       namespace: { type: 'string', required: true, ui: { width: 4 } },
       key: { type: 'string', required: true, ui: { width: 4 } },
       value: { type: 'text', ui: { width: 12 } },
@@ -1736,7 +1869,7 @@ export const ENTITY_CONFIG = {
       widgetType: 'stats'
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       name: { type: 'string', required: true, ui: { width: 6 } },
       label: { type: 'string', required: true, ui: { width: 6 } },
       labelPlural: { type: 'string', ui: { width: 6 } },
@@ -1748,6 +1881,7 @@ export const ENTITY_CONFIG = {
       fields: { type: 'json', ui: { width: 12 } },
       validations: { type: 'json', ui: { width: 12 } },
       relationships: { type: 'json', ui: { width: 12 } },
+      dependencies: { type: 'json', ui: { width: 12 } },
       uiConfig: { type: 'json', ui: { width: 12 } },
       menuConfig: { type: 'json', ui: { width: 12 } },
       permission: { type: 'json', ui: { width: 12 } },
@@ -1779,7 +1913,7 @@ export const ENTITY_CONFIG = {
       timestamps: true
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { 
         type: 'relation', 
         relation: { target: 'workspace', field: 'name' }, 
@@ -1812,7 +1946,7 @@ export const ENTITY_CONFIG = {
       timestamps: true
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { 
         type: 'relation', 
         relation: { target: 'workspace', field: 'name' }, 
@@ -1858,7 +1992,7 @@ export const ENTITY_CONFIG = {
       timestamps: true
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       name: { type: 'string', required: true, ui: { width: 6 } },
       email: { type: 'string', required: true, unique: true, ui: { width: 6 } },
       emailVerified: { type: 'boolean', defaultValue: false, hidden: true },
@@ -1880,15 +2014,27 @@ export const ENTITY_CONFIG = {
     labelPlural: { ro: 'Sesiuni', en: 'Sessions' },
     icon: 'Key',
     tableName: 'session',
+    displayField: 'id',
     isSystem: true,
     features: { auditable: false, deletable: true },
+    menuConfig: {
+      showInMainMenu: true,
+      category: 'administration',
+      icon: 'Key',
+      priority: 150
+    },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
-      userId: { type: 'string', required: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
+      userId: { 
+        type: 'relation', 
+        relation: { target: 'user', field: 'email' },
+        required: true,
+        ui: { width: 6 }
+      },
       token: { type: 'string', required: true, unique: true, hidden: true },
-      expiresAt: { type: 'datetime', required: true, hidden: true },
-      ipAddress: { type: 'string', hidden: true },
-      userAgent: { type: 'string', hidden: true },
+      expiresAt: { type: 'datetime', required: true, ui: { width: 6 } },
+      ipAddress: { type: 'string', ui: { width: 6 } },
+      userAgent: { type: 'string', ui: { width: 6 } },
       workspaceId: { type: 'string', hidden: true }
     }
   },
@@ -1900,7 +2046,7 @@ export const ENTITY_CONFIG = {
     isSystem: true,
     features: { auditable: false, deletable: true },
     fields: {
-      id: { type: 'uuid', primaryKey: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       userId: { type: 'string', required: true },
       providerId: { type: 'string', required: true },
       accountId: { type: 'string', required: true },
@@ -1919,7 +2065,7 @@ export const ENTITY_CONFIG = {
     isSystem: true,
     features: { auditable: false, deletable: true },
     fields: {
-      id: { type: 'uuid', primaryKey: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       identifier: { type: 'string', required: true },
       value: { type: 'string', required: true },
       expiresAt: { type: 'datetime', required: true }
@@ -1933,7 +2079,7 @@ export const ENTITY_CONFIG = {
     isSystem: true,
     features: { auditable: false, deletable: true },
     fields: {
-      id: { type: 'uuid', primaryKey: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       namespace: { type: 'string', required: true },
       key: { type: 'string', required: true },
       configJson: { type: 'json' },
@@ -1949,7 +2095,7 @@ export const ENTITY_CONFIG = {
     isSystem: true,
     features: { auditable: true, deletable: true },
     fields: {
-      id: { type: 'uuid', primaryKey: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       name: { type: 'string', required: true, unique: true },
       systemPrompt: { type: 'text' },
       userPromptTemplate: { type: 'text' },
@@ -1976,7 +2122,7 @@ export const ENTITY_CONFIG = {
       timestamps: true
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { 
         type: 'relation', 
         relation: { target: 'workspace', field: 'name' }, 
@@ -2019,7 +2165,7 @@ export const ENTITY_CONFIG = {
       timestamps: true
     },
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { 
         type: 'relation', 
         relation: { target: 'workspace', field: 'name' }, 
@@ -2030,8 +2176,9 @@ export const ENTITY_CONFIG = {
         relation: { target: 'tag', field: 'name' },
         ui: { width: 6 } 
       },
-      entityType: { type: 'string', ui: { width: 6 } },
-      entityId: { type: 'string', ui: { width: 6 } },
+      entityType: { type: 'string', ui: { width: 4 } },
+      entityId: { type: 'string', ui: { width: 4 } },
+      fieldName: { type: 'string', ui: { width: 4 } },
     }
   },
   collection: {
@@ -2040,8 +2187,9 @@ export const ENTITY_CONFIG = {
     icon: 'Folder',
     description: { ro: 'Grupări de entități sau elemente', en: 'Groupings of entities or items' },
     tableName: 'collection',
+    displayField: 'name',
     fields: {
-      id: { type: 'uuid', primaryKey: true, generated: 'uuid' },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       name: { type: 'string', required: true },
       slug: { type: 'string', unique: true },
       description: { type: 'text' },
@@ -2065,7 +2213,7 @@ export const ENTITY_CONFIG = {
     tableName: 'lead',
     displayField: 'title',
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       contactId: { type: 'relation', relation: { target: 'contact', field: 'name' } },
       title: { type: 'string', required: true, searchable: true },
@@ -2087,7 +2235,7 @@ export const ENTITY_CONFIG = {
     tableName: 'bug_report',
     displayField: 'title',
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       userId: { type: 'relation', relation: { target: 'user', field: 'name' } },
       title: { type: 'string', required: true, searchable: true },
@@ -2110,7 +2258,7 @@ export const ENTITY_CONFIG = {
     tableName: 'changelog',
     displayField: 'version',
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       module: { type: 'string' },
       version: { type: 'string', required: true },
@@ -2132,7 +2280,7 @@ export const ENTITY_CONFIG = {
     displayField: 'entityId',
     isSystem: true,
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       fileId: { type: 'relation', relation: { target: 'file', field: 'filename' }, required: true },
       entityType: { type: 'string', required: true },
@@ -2149,7 +2297,7 @@ export const ENTITY_CONFIG = {
     displayField: 'category',
     isSystem: true,
     fields: {
-      id: { type: 'uuid', primaryKey: true, hidden: true },
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       category: { type: 'string' },
       setting: { type: 'json' },
@@ -2930,11 +3078,14 @@ export const I18N = {
       destructive_action_warning: "This action is destructive. Type \"{{word}}\" to confirm.",
       tag: "tag",
       saving: "Saving...",
+      preferences: "Preferences",
+      preferences_desc: "Personal settings for language and notifications.",
       ai_draft: "AI Generated Draft",
       publish: "Publish",
       back_to_list: "Back to list",
       delete_success: "Deleted successfully",
       changes_saved: "Changes saved",
+      error_saving: "Error saving data",
       view: "View",
       add: "Add",
       back: "Back",
@@ -2969,6 +3120,12 @@ export const I18N = {
       password: "Password",
       records: "Records",
       new: "New",
+      permission: {
+        read: "Read",
+        create: "Create",
+        update: "Update",
+        delete: "Delete"
+      },
       search_placeholder: "Search...",
       empty_dataset: "Empty Dataset",
       no_records_matching: "No {{label}} found matching your criteria.",
@@ -2979,6 +3136,7 @@ export const I18N = {
       no_records_in: "No records found in {{label}}",
       select: "Select",
       choose: "Choose",
+      role_label: "Role",
       role: {
         superadmin: "Super Admin",
         workspace_owner: "Owner",
@@ -3173,6 +3331,16 @@ export const I18N = {
       order_name: "Session Name",
       files_count: "{{count}} file",
       no_saved_orders: "No saved sessions found.",
+    },
+    entity: {
+      bulk_archive_confirm: "Are you sure you want to archive {{count}} records?",
+      bulk_delete_confirm: "Are you sure you want to delete {{count}} records? This cannot be undone!",
+      bulk_update: "Mass Update",
+      bulk_update_desc: "You are about to modify {{count}} records simultaneously.",
+      field_to_update: "Field to update",
+      new_value: "New value",
+      select_field: "-- Select field --",
+      value_placeholder: "Enter value...",
     }
   },
   ro: {
@@ -3217,11 +3385,14 @@ export const I18N = {
       destructive_action_warning: "Această acțiune este distructivă. Scrie „{{word}}” pentru a confirma.",
       tag: "Etichete",
       saving: "Se salvează...",
+      preferences: "Preferințe",
+      preferences_desc: "Setările personale pentru limbă și notificări.",
       ai_draft: "Draft Generat de AI",
       publish: "Publică",
       back_to_list: "Înapoi la listă",
       delete_success: "Șters cu succes",
       changes_saved: "Modificările au fost salvate",
+      error_saving: "Eroare la salvarea datelor",
       view: "Vizualizare",
       add: "Adăugare",
       back: "Înapoi",
@@ -3255,6 +3426,12 @@ export const I18N = {
       email: "Email",
       password: "Parolă",
       records: "Înregistrări",
+      permission: {
+        read: "Citire",
+        create: "Creare",
+        update: "Actualizare",
+        delete: "Ștergere"
+      },
       new: "Nou",
       search_placeholder: "Caută...",
       empty_dataset: "Fără date",
@@ -3266,6 +3443,7 @@ export const I18N = {
       no_records_in: "Nicio înregistrare găsită în {{label}}",
       select: "Selectează",
       choose: "Alege",
+      role_label: "Rol",
       role: {
         superadmin: "Super Admin",
         workspace_owner: "Proprietar",
@@ -3460,6 +3638,16 @@ export const I18N = {
       order_name: "Nume Sesiune",
       files_count: "{{count}} fișiere",
       no_saved_orders: "Nu există sesiuni salvate.",
+    },
+    entity: {
+      bulk_archive_confirm: "Sigur dorești să arhivezi {{count}} înregistrări?",
+      bulk_delete_confirm: "Ești sigur că vrei să ștergi {{count}} înregistrări? Această acțiune este ireversibilă!",
+      bulk_update: "Modificare în masă",
+      bulk_update_desc: "Vei modifica {{count}} înregistrări simultan.",
+      field_to_update: "Câmp de modificat",
+      new_value: "Valoare nouă",
+      select_field: "-- Selectează câmp --",
+      value_placeholder: "Introdu valoarea...",
     }
   }
 } as const;

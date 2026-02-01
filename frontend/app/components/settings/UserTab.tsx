@@ -68,21 +68,42 @@ export const UserTab: React.FC<UserTabProps> = ({
 
     const openPermissions = async (user: any) => {
         setEditingPermissions(user);
+        const targetId = user.userId || user.id;
+        const targetRole = user.role || 'member';
+        const roleDef = roles[targetRole] || roles.member || { permission: [] };
+        
         try {
-            const res = await api.brain.get(`workspace/user-permission?userId=${user.userId || user.id}&workspaceId=${workspaceId}`);
+            const res = await api.brain.get(`workspace/user-permission?userId=${targetId}&workspaceId=${workspaceId}`);
+            
+            // Enterprise Level 8: Initialize with Role-Based Defaults
+            const basePermissions: any = {};
+            entityList.forEach(ent => {
+                const entityId = ent.id;
+                basePermissions[entityId] = {
+                    read: roleDef.permission.includes(`${entityId}:read`) || roleDef.permission.includes('*'),
+                    create: roleDef.permission.includes(`${entityId}:create`) || roleDef.permission.includes('write') || roleDef.permission.includes('*'),
+                    update: roleDef.permission.includes(`${entityId}:update`) || roleDef.permission.includes('write') || roleDef.permission.includes('*'),
+                    delete: roleDef.permission.includes(`${entityId}:delete`) || roleDef.permission.includes('*'),
+                };
+            });
+
             if (res.success) {
-                setUserPermissions(res.permission || {});
+                // Merge Role Defaults with User Specific Overrides
+                setUserPermissions({
+                    ...basePermissions,
+                    ...(res.permission || {})
+                });
             } else {
-                setUserPermissions({});
+                setUserPermissions(basePermissions);
             }
         } catch (e) {
-            console.error("Failed to fetch user permission", e);
+            console.error("[USER-TAB] Failed to fetch user permission", e);
             setUserPermissions({});
         }
     };
 
     const handleTogglePermission = (entityId: string, action: string) => {
-        const current = { ...(userPermissions[entityId] || { view: false, add: false, edit: false, delete: false }) };
+        const current = { ...(userPermissions[entityId] || { read: false, create: false, update: false, delete: false }) };
         current[action] = !current[action];
         
         setUserPermissions({
@@ -95,19 +116,23 @@ export const UserTab: React.FC<UserTabProps> = ({
         if (!editingPermissions) return;
         setSaving(true);
         try {
+            console.log("[USER-TAB] Saving permissions for:", editingPermissions.id, userPermissions);
             const res = await api.brain.post(`workspace/update-user-permission`, {
                 workspaceId,
                 userId: editingPermissions.userId || editingPermissions.id,
                 permission: userPermissions
             });
+            
             if (res.success) {
                 toast.success(t('settings:user.permission_updated'));
                 setEditingPermissions(null);
             } else {
                 toast.error(res.error || t('common:error_saving'));
             }
-        } catch (e) {
-            toast.error(t('common:error_saving'));
+        } catch (e: any) {
+            console.error("[USER-TAB] Save error:", e);
+            const errorMsg = e.response?.data?.error || e.message || t('common:error_saving');
+            toast.error(errorMsg);
         } finally {
             setSaving(false);
         }
@@ -239,81 +264,79 @@ export const UserTab: React.FC<UserTabProps> = ({
 
             {/* Permissions Editing Dialog */}
             <Dialog open={!!editingPermissions} onOpenChange={(open) => !open && setEditingPermissions(null)}>
-                <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden max-w-4xl max-h-[90vh] flex flex-col bg-white">
-                    <DialogHeader className="p-8 bg-slate-900 text-white flex-shrink-0">
-                        <div className="flex items-center gap-4 mb-2">
-                            <div className="p-3 rounded-2xl bg-white/10">
-                                <Shield className="h-6 w-6 text-white" />
-                            </div>
-                            <div>
-                                <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
-                                    {t('settings:user.permission_title')}
-                                </DialogTitle>
-                                <DialogDescription className="text-white/60 font-medium text-xs">
-                                    {t('settings:user.permission_desc', { name: editingPermissions?.name || editingPermissions?.email })}
-                                </DialogDescription>
+                <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden w-[95vw] max-w-4xl h-[85vh] flex flex-col bg-white ring-0 focus:ring-0 outline-none">
+                    <DialogHeader className="p-6 md:p-8 bg-slate-900 text-white flex-shrink-0">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 rounded-2xl bg-white/10">
+                                    <Shield className="h-6 w-6 text-white" />
+                                </div>
+                                <div>
+                                    <DialogTitle className="text-xl md:text-2xl font-black uppercase italic tracking-tighter">
+                                        {t('settings:user.permission_title')}
+                                    </DialogTitle>
+                                    <DialogDescription className="text-white/60 font-medium text-[10px] md:text-xs">
+                                        {t('settings:user.permission_desc', { name: editingPermissions?.name || editingPermissions?.email })}
+                                    </DialogDescription>
+                                </div>
                             </div>
                         </div>
                     </DialogHeader>
 
-                    <div className="flex-1 overflow-hidden p-8">
-                        <ScrollArea className="h-full pr-4">
-                            <div className="space-y-8">
-                                <div className="grid grid-cols-1 gap-6">
-                                    {entityList.map((entity) => {
-                                        const perms = userPermissions[entity.id] || { view: false, add: false, edit: false, delete: false };
-                                        return (
-                                            <div key={entity.id} className="p-6 rounded-[2rem] border border-slate-100 bg-slate-50/50 transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-100/50 group">
-                                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="h-12 w-12 rounded-2xl bg-white shadow-sm flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
-                                                            <Settings2 size={24} />
-                                                        </div>
-                                                        <div>
-                                                            <h4 className="font-black uppercase italic tracking-tight text-slate-900">{renderString(entity.label, lang)}</h4>
-                                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest italic">{entity.id}</p>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-2 md:flex md:items-center gap-3">
-                                                        {['view', 'add', 'edit', 'delete'].map((action) => (
-                                                            <div 
-                                                                key={action}
-                                                                className={cn(
-                                                                    "flex items-center gap-2 px-4 py-2 rounded-xl transition-all cursor-pointer border",
-                                                                    perms[action] 
-                                                                        ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100" 
-                                                                        : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
-                                                                )}
-                                                                onClick={() => handleTogglePermission(entity.id, action)}
-                                                            >
-                                                                {perms[action] ? <Check size={12} className="stroke-[3]" /> : <X size={12} />}
-                                                                <span className="text-[10px] font-black uppercase italic tracking-widest">{t(`common:permission.${action}`)}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30 p-4 md:p-10">
+                        <div className="max-w-3xl mx-auto space-y-4 md:space-y-6">
+                            {entityList.map((entity) => {
+                                const perms = userPermissions[entity.id] || { read: false, create: false, update: false, delete: false };
+                                return (
+                                    <div key={entity.id} className="p-4 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border border-slate-100 bg-white transition-all hover:shadow-xl hover:shadow-slate-100/50 group">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
+                                            <div className="flex items-center gap-3 md:gap-4">
+                                                <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl md:rounded-2xl bg-slate-50 shadow-inner flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
+                                                    <Settings2 size={24} />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-black uppercase italic tracking-tight text-slate-900 text-sm md:text-base">{renderString(entity.label, lang)}</h4>
+                                                    <p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest italic">{entity.id}</p>
                                                 </div>
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </ScrollArea>
+
+                                            <div className="grid grid-cols-2 md:flex md:items-center gap-2 md:gap-3">
+                                                {['read', 'create', 'update', 'delete'].map((action) => (
+                                                    <div 
+                                                        key={action}
+                                                        className={cn(
+                                                            "flex items-center justify-center md:justify-start gap-2 px-3 py-2 md:px-4 md:py-2 rounded-xl transition-all cursor-pointer border select-none",
+                                                            perms[action] 
+                                                                ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100" 
+                                                                : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
+                                                        )}
+                                                        onClick={() => handleTogglePermission(entity.id, action)}
+                                                    >
+                                                        {perms[action] ? <Check size={12} className="stroke-[3]" /> : <X size={12} />}
+                                                        <span className="text-[9px] md:text-[10px] font-black uppercase italic tracking-widest">{t(`common:permission.${action}`)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     <Separator className="bg-slate-100" />
                     
-                    <DialogFooter className="p-6 bg-slate-50/50 flex items-center justify-between">
-                        <p className="text-[9px] font-bold text-slate-400 uppercase italic tracking-tight">
+                    <DialogFooter className="p-4 md:p-6 bg-slate-50/50 flex flex-col md:flex-row items-center justify-between gap-4 flex-shrink-0">
+                        <p className="hidden md:block text-[9px] font-bold text-slate-400 uppercase italic tracking-tight max-w-xs xl:max-w-md">
                             {t('settings:user.permission_disclaimer')}
                         </p>
-                        <div className="flex gap-3">
-                            <Button variant="ghost" onClick={() => setEditingPermissions(null)} className="rounded-xl font-black uppercase italic text-[10px]">
+                        <div className="flex gap-3 w-full md:w-auto justify-center md:justify-end">
+                            <Button variant="ghost" onClick={() => setEditingPermissions(null)} className="rounded-xl font-black uppercase italic text-[10px] flex-1 md:flex-none">
                                 {t('common:cancel')}
                             </Button>
                             <Button 
                                 onClick={savePermissions} 
-                                className="rounded-xl px-10 bg-indigo-600 font-black uppercase italic text-[10px] shadow-lg shadow-indigo-100"
+                                className="rounded-xl px-10 bg-indigo-600 hover:bg-black text-white font-black uppercase italic text-[10px] shadow-lg shadow-indigo-200 flex-1 md:flex-none h-12"
                                 disabled={saving}
                             >
                                 {saving ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <ShieldCheck className="h-4 w-4 mr-2" />}

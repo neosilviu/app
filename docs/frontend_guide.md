@@ -71,5 +71,5 @@ const { t } = useTranslation(['common', 'settings']);
 
 - Verifică dacă feature-ul poate fi implementat prin Registry înainte de a scrie cod.
 - Foloseste brain.server.ts pentru orice logica ce necesita acces la D1.
-- Înregistreaza evenimentele in audit_logs (automat prin Proxy-ul din Brain).
+- Înregistreaza evenimentele in audit_log (automat prin Proxy-ul din Brain).
 - Asigura-te ca UI-ul este responsiv si respecta tema din Registry (THEME).

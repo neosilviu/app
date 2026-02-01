@@ -1365,7 +1365,7 @@ async function syncDatabase() {
         });
 
         console.log('   - Applying migrations to local D1...');
-        execSync('npx wrangler d1 migrations apply studio-db --local --persist-to ../.dev/.wrangler/state', {
+        execSync('npx wrangler d1 migrations apply studio-db --local', {
             cwd: frontendPath,
             env: { ...process.env, CI: 'true' },
             stdio: 'inherit'

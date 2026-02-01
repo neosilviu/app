@@ -20,7 +20,7 @@ try {
   const env = { ...process.env };
   env.CLOUDFLARE_ACCOUNT_ID = ACCOUNT_ID;
 
-  const cmd = `wrangler d1 migrations apply ${DB_NAME} --remote`;
+  const cmd = `npx wrangler d1 migrations apply ${DB_NAME} --remote -c wrangler.production.toml`;
   
   console.log(`🔧 Running: ${cmd}\n`);
   

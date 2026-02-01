@@ -2,111 +2,69 @@ import React from 'react';
 import { useParams } from 'react-router';
 import { useConfig } from '~/hooks/useConfig';
 import { DynamicEntityDetail } from '~/components/entity/DynamicEntityDetail';
-import { ErrorBoundary } from '~/components/ControlGates';
-import { api } from '~/lib/core';
+import { Database, AlertTriangle } from 'lucide-react';
+import { Button } from '~/components/ui/button';
+import { useSmartBack } from '~/hooks/useSmartBack';
+import { useTranslation } from 'react-i18next';
 
-export async function action({ request, params, context }: any) {
-    let formData: FormData | null = null;
-    const contentType = (request.headers.get('content-type') || '').toLowerCase();
-    
-    if (contentType.includes('multipart/form-data') || contentType.includes('application/x-www-form-urlencoded')) {
-        try {
-            formData = await request.formData();
-        } catch (e) {
-            console.warn('[ROUTE-ID] Failed to parse form data:', e);
-        }
-    }
-
-    // If it's a JSON request to a UI route, it might be an accidental API call or a specific action
-    if (!formData && contentType.includes('application/json')) {
-        // Handle JSON body if needed, or just proxy to brain
-        const { handleBrainRequest } = await import("../brain.server");
-        const env = (context as any).cloudflare?.env || (process as any).env;
-        const ctx = (context as any).cloudflare?.ctx;
-        return await handleBrainRequest(request, env, ctx);
-    }
-
-    if (!formData) {
-        return { error: 'Invalid content type' };
-    }
-
-    const method = request.method.toUpperCase();
-    const action = (formData.get('_action') as string) || (method === 'DELETE' ? 'delete' : method === 'PATCH' || method === 'PUT' ? 'update' : '');
-    const entity = params.entity;
-    const id = params.id;
-
-    // Enterprise Level 8: Local Brain Loopback (SSR-Safe)
-    const callBrain = async (path: string, method: string, data?: any) => {
-        const { handleBrainRequest } = await import("../brain.server");
-        const env = (context as any).cloudflare?.env || (process as any).env;
-        const cfCtx = (context as any).cloudflare?.ctx;
-        
-        const url = new URL(request.url);
-        const brainUrl = `${url.origin}/api/${path}`;
-        
-        const brainRequest = new Request(brainUrl, {
-            method,
-            headers: {
-                ...Object.fromEntries(request.headers.entries()),
-                'content-type': 'application/json'
-            },
-            body: data ? JSON.stringify(data) : undefined
-        });
-
-        const response = await handleBrainRequest(brainRequest, env, cfCtx);
-        return await response.json();
-    };
-
-    if (action === 'delete') {
-        return await callBrain(`db/${entity}/${id}`, 'DELETE');
-    }
-
-    if (action === 'update' || action === 'put') {
-        const dataRaw = formData.get('data');
-        let data = {};
-        if (typeof dataRaw === 'string') {
-            try {
-                data = JSON.parse(dataRaw);
-            } catch (e: any) {
-                return { error: `Format JSON invalid în câmpul 'data': ${e.message}` };
-            }
-        }
-        
-        const finalData = Object.keys(data).length > 0 ? data : Object.fromEntries(formData.entries());
-        delete (finalData as any)._action;
-        
-        return await callBrain(`db/${entity}/${id}`, 'PUT', finalData);
-    }
-
-    return { error: 'Invalid action' };
+export async function loader({ params }: any) {
+  return {
+    entityId: params.entity,
+    id: params.id,
+    lang: params.lang
+  };
 }
 
-export default function EntityDetailPage() {
-    const { entity, id } = useParams();
-    const { entity: configMap, isInitialized } = useConfig();
+// Dummy action to satisfy React Router 7's check for POST requests.
+// API calls are intercepted in entry.server.tsx before this is ever reached.
+export async function action() {
+  return new Response("OK", { status: 200 });
+}
 
-    if (!isInitialized) {
-        return (
-            <div className="p-8 text-slate-400 font-black italic uppercase">
-                <div className="mb-4">Loading Engine...</div>
-                <div className="text-sm text-slate-500">Registry is initializing — content will appear shortly.</div>
-            </div>
-        );
-    }
-    
-    const config = configMap[entity as string];
-    if (!config) {
-        return (
-            <div className="p-20 text-center">
-                <div className="text-slate-400 font-black italic uppercase text-lg mb-2">Entity {entity} not found</div>
-                <div className="text-sm text-slate-500">The collection you are trying to access does not exist in the Registry.</div>
-            </div>
-        );
-    }
+export default function GenericEntityDetailPage() {
+  const { entity: entityId, id: recordId, lang } = useParams<{ entity: string; id: string; lang: string }>();
+  const { entity: configMap, loading: configLoading } = useConfig();
+  const { t } = useTranslation(['common', 'entity']);
+  const goBack = useSmartBack();
 
+  if (configLoading) {
     return (
-        <ErrorBoundary>
-            <DynamicEntityDetail entityId={entity as string} recordId={id as string} config={config} />
-        </ErrorBoundary>
+      <div className="flex flex-col items-center justify-center h-full space-y-4 animate-pulse">
+        <Database className="w-12 h-12 text-slate-200" />
+        <div className="h-4 bg-slate-100 rounded w-32" />
+      </div>
     );
+  }
+
+  // Enterprise Level 8: Case-Insensitive Lookup
+  const normalizedEntityId = (entityId || '').toLowerCase();
+  const configKey = Object.keys(configMap).find(k => k.toLowerCase() === normalizedEntityId);
+  const config = configKey ? configMap[configKey] : undefined;
+
+  if (!config) {
+    return (
+      <div className="flex flex-col items-center justify-center p-20 bg-rose-50 dark:bg-rose-950/20 rounded-3xl border border-rose-100 dark:border-rose-900/50 m-6">
+        <div className="w-20 h-20 bg-rose-100 dark:bg-rose-900/40 rounded-full flex items-center justify-center text-rose-600 mb-6">
+            <AlertTriangle size={40} />
+        </div>
+        <h1 className="text-2xl font-black text-rose-900 dark:text-rose-100 mb-2">{t('entity:unknown_entity')}</h1>
+        <p className="text-rose-600/70 max-w-md text-center">
+            Entity "{entityId}" is not defined in the system registry.
+        </p>
+        <Button variant="outline" className="mt-8 border-rose-200 text-rose-700" onClick={() => goBack()}>
+          {t('common:back')}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-hidden">
+        <DynamicEntityDetail 
+            entityId={entityId!} 
+            recordId={recordId!} 
+            config={config} 
+        />
+    </div>
+  );
 }

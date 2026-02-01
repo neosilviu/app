@@ -61,10 +61,11 @@ export const EntityParser = {
 
 // --- DB UTILS ---
 
-export function resolveCollection(name: string): string {
+export function resolveCollection(name: string, registry?: any): string {
     if (!name) return name;
     if (name.startsWith('_')) return name;
-    const overrides = _registry?.COLLECTION_OVERRIDES || {};
+    const activeRegistry = registry || _registry;
+    const overrides = activeRegistry?.COLLECTION_OVERRIDES || {};
     if (overrides[name]) return overrides[name];
     
     let resolved = name;
@@ -77,12 +78,30 @@ export function resolveCollection(name: string): string {
     return resolved;
 }
 
-export function getPrimaryKey(collection: string): string {
-    const resolved = resolveCollection(collection);
-    const pkRules = _registry?.PRIMARY_KEY_RULES || {};
+/**
+ * Enterprise Level 8: Primary Key resolution.
+ * We prioritize "id" as the universal identifier, while allowing registry overrides.
+ */
+export function getPrimaryKey(collection: string, registry?: any): string {
+    const resolved = resolveCollection(collection, registry);
+    const activeRegistry = registry || _registry;
+    const pkRules = activeRegistry?.PRIMARY_KEY_RULES || {};
     if (pkRules[resolved]) return pkRules[resolved];
-    if (resolved === '_metadata') return 'key';
-    if (resolved === 'whatsapp_chats' || resolved === 'chat_settings') return 'chatId';
+
+    // Enterprise Level 8: Dynamic lookup in ENTITY_CONFIG
+    const entityConfigs = activeRegistry?.ENTITY_CONFIG || {};
+    const entDef = entityConfigs[resolved] || entityConfigs[collection];
+    if (entDef?.fields) {
+        // Handle both array and object formats for fields
+        const fields = Array.isArray(entDef.fields) ? entDef.fields : Object.entries(entDef.fields).map(([name, f]: any) => ({ ...f, name }));
+        const pkField = fields.find((f: any) => f.primary || f.primaryKey);
+        if (pkField) return pkField.name || pkField.id;
+    }
+
+    // Special metadata cases
+    if (resolved === '_metadata' || resolved === 'system_setting') return 'key';
+    
+    // Uniformity: Standardize on "id" for all business entities
     return 'id';
 }
 

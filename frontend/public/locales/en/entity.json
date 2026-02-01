@@ -91,7 +91,7 @@
   "notifications": { "label": "Notification", "labelPlural": "Notifications" },
   "changelogs": { "label": "Changelog", "labelPlural": "Changelogs" },
   "workspaces": { "label": "Workspace", "labelPlural": "Workspaces" },
-  "audit_logs": { "label": "Audit Log", "labelPlural": "Audit Logs" },
+  "audit_log": { "label": "Audit Log", "labelPlural": "Audit Logs" },
   "table": {
     "load_more": "Load More",
     "showing_count": "Showing {{count}} records",

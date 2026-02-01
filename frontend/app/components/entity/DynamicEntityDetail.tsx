@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation, useParams } from 'react-router';
-import { Save, ArrowLeft, Trash2, Shield, Clock, History, CheckCircle2, X, Plus, ExternalLink, RefreshCw, MessageCircle, Phone, Send, Brain, Sparkles, Mail, HelpCircle, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation, useParams, useOutletContext } from 'react-router';
+import { Save, ArrowLeft, Trash2, Shield, Clock, History, CheckCircle2, X, Plus, PlusCircle, ExternalLink, RefreshCw, MessageCircle, Phone, Send, Brain, Sparkles, Mail, HelpCircle, RotateCcw } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
@@ -8,18 +8,25 @@ import { Badge } from '~/components/ui/badge';
 import { IconPicker } from '~/components/ui/IconPicker';
 import { ColorPicker } from '~/components/ui/ColorPicker';
 import { DatePicker } from '~/components/ui/DatePicker';
+
 import { FileUploader } from '~/components/ui/file-uploader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { Dialog, DialogContent, DialogHeader,  DialogTitle, DialogDescription, DialogFooter } from '~/components/ui/dialog';
 import { GlassCard } from '~/components/ui/GlassCard';
-import { api, cn, socket, renderString, getLocalizedPath } from '~/lib/core';
-import { normalizeEntity } from '~/lib/entity-engine';
+import { api, cn, socket, renderString, getLocalizedPath, resolveIcon } from '~/lib/core';
+import { normalizeEntity, normalizeFormData, formatFormValue } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
 import { useConfig } from '~/hooks/useConfig';
+import { useAuth } from '~/hooks/useAuth';
 import { toast } from 'sonner';
 import { getErrorMessage } from '~/lib/utils';
 import { EntityHistoryWidget } from '~/components/entity/EntityHistoryWidget';
 import { WorkflowWidget } from '~/components/entity/WorkflowWidget';
+import { ContactInteractions } from '~/components/entity/ContactInteractions';
+import { SubtaskManager } from '~/components/entity/SubtaskManager';
+
+// Global cache for workspace member fetches (Enterprise Level 8)
+const globalWorkspaceMemberCache = new Map<string, number>();
 
 interface DynamicEntityDetailProps {
     entityId: string;
@@ -32,7 +39,15 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const { t } = useTranslation(['common', 'entity', 'superadmin']);
     const navigate = useNavigate();
     const location = useLocation();
-    const { constants, entity } = useConfig();
+    const { constants, entity, refreshConfig } = useConfig();
+    const { user, hasPermission, loading: authLoading } = useAuth();
+    const { setDynamicTitle } = useOutletContext<any>() || {};
+    
+    // Enterprise Level 8: Ensure we have the latest entity definition on mount/when entityId changes
+    // This fixes the issue where new fields added to an entity don't appear in the edit form
+    useEffect(() => {
+        refreshConfig(true);
+    }, [entityId, refreshConfig]);
     
     // Normalize fields (Enterprise Level 8) - use the central Lens
     const fieldsList = React.useMemo(() => {
@@ -42,9 +57,15 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
 
     const isNew = recordId === 'new';
     const features = config.features || {};
-    const isCreatable = features.creatable !== false;
-    const isEditable = features.editable !== false;
-    const isDeletable = features.deletable !== false;
+    
+    // RBAC Permissions (Level 8)
+    const canCreate = hasPermission(`${entityId}:create`) || hasPermission(`${entityId}:*`) || hasPermission('workspace:manage');
+    const canUpdate = hasPermission(`${entityId}:update`) || hasPermission(`${entityId}:*`) || hasPermission('workspace:manage');
+    const canDelete = hasPermission(`${entityId}:delete`) || hasPermission(`${entityId}:*`) || hasPermission('workspace:manage');
+
+    const isCreatable = features.creatable !== false && canCreate;
+    const isEditable = features.editable !== false && canUpdate;
+    const isDeletable = features.deletable !== false && canDelete;
 
     // A record is read-only if it's not new and not editable, OR if it's new but not creatable
     const isGlobalReadOnly = (isNew && !isCreatable) || (!isNew && !isEditable);
@@ -56,6 +77,30 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const [extractionSource, setExtractionSource] = useState<'text' | 'file' | 'inbox'>('text');
     const [extractionText, setExtractionText] = useState('');
+
+    // Enterprise Level 8: Sync record name to Page Title
+    useEffect(() => {
+        if (!setDynamicTitle) return;
+
+        const getDisplayName = () => {
+             const df = config.displayField || 'name';
+             const val = formData[df] || formData.name || formData.Name || formData.label || formData.title || formData.displayName;
+             if (!val || String(val) === 'undefined') return null;
+             return val;
+        };
+
+        if (isNew) {
+            setDynamicTitle(renderString(t('common:new_record', { label: renderString(config.label, lang) }), lang));
+        } else {
+            const displayName = getDisplayName();
+            if (displayName) {
+                setDynamicTitle(renderString(displayName, lang));
+            } else if (formData && Object.keys(formData).length > 0) {
+                // If we have data but no name, set null to allow fallback to ID in Breadcrumbs
+                setDynamicTitle(null);
+            }
+        }
+    }, [formData, isNew, config.displayField, config.label, setDynamicTitle, lang, t]);
 
     const handleAiExtraction = async () => {
         setIsAiExtracting(true);
@@ -69,7 +114,9 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
 
             if (res.success && res.data) {
                 // Enterprise Level 8: Recursive merge to preserve existing data but overwrite with AI findings
-                setFormData((prev: any) => ({ ...prev, ...res.data }));
+                // Normalize AI data to prevent object rendering errors
+                const normalizedAiData = normalizeFormData(res.data, fieldsList);
+                setFormData((prev: any) => ({ ...prev, ...normalizedAiData }));
                 toast.success(renderString({
                     ro: "Datele au fost extrase și aplicate cu succes!",
                     en: "Data extracted and applied successfully!"
@@ -118,14 +165,42 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const [childrenRecords, setChildrenRecords] = useState<Record<string, any[]>>({});
     const [childDefinitions, setChildDefinitions] = useState<Record<string, any>>({});
 
-    const fetchRelatedData = async () => {
-        const relations = fieldsList.filter((f: any) => (f.type === 'entity_relation' || f.type === 'relation' || f.type === 'relation-many') && (f.relationEntity || f.relation?.target));
+    // Cache to prevent duplicate API calls
+    const fetchedRelatedDataRef = useRef<string>('');
+
+    const fetchRelatedData = useCallback(async () => {
+        if (authLoading) return;
+        
+        const cacheKey = `${entityId}-${recordId}`;
+        if (fetchedRelatedDataRef.current === cacheKey) return; // Already fetched
+        
+        // Enterprise Level 8: Include 'tag' and 'multi-select' in related data fetching
+        const relations = fieldsList.filter((f: any) => 
+            (f.type === 'entity_relation' || f.type === 'relation' || f.type === 'relation-many' || f.type === 'tag' || f.type === 'multi-select' || f.relation) && 
+            (f.relationEntity || f.relation?.target || (f.type === 'tag' ? 'tag' : null))
+        );
+
         for (const rel of relations) {
-            const target = rel.relationEntity || rel.relation?.target;
+            const target = rel.relationEntity || rel.relation?.target || (rel.type === 'tag' ? 'tag' : null);
+            if (!target) continue;
+
             try {
-                const res = await api.brain.get(`db/${target}`);
+                // Enterprise Level 8: Always pass current workspace as context if not global
+                const workspaceBus = user?.workspaceId || 'system';
+                const res = await api.brain.get(`db/${target}?workspaceId=${workspaceBus}`);
                 if (res.success) {
-                    setRelatedData(prev => ({ ...prev, [target]: res.data || [] }));
+                    // Normalize related data to prevent React rendering errors
+                    const targetEntityDef = entity[target];
+                    const normalizedData = (res.data || []).map((item: any) => {
+                        if (targetEntityDef) return normalizeFormData(item, targetEntityDef.fields);
+                        // Level 8 Fallback: Manual normalization for known identity fields
+                        return {
+                            ...item,
+                            id: item.id || item.ID || item.uuid,
+                            name: item.name || item.Name || item.label || item.Label
+                        };
+                    });
+                    setRelatedData(prev => ({ ...prev, [target]: normalizedData }));
                 }
             } catch (e) {}
         }
@@ -151,17 +226,32 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                     if (normalized.name === 'contact' && entityId === 'workspace') {
                         // Use the optimized 'users' endpoint which handles role filtering and hierarchy sorting
                         endpoint = `workspace/member?workspaceId=${recordId}`;
+                        
+                        // Global cache check to prevent infinite API calls
+                        const cacheKey = `workspace-member-${recordId}`;
+                        const now = Date.now();
+                        const lastFetch = globalWorkspaceMemberCache.get(cacheKey);
+                        if (lastFetch && (now - lastFetch) < 300000) { // 5 minutes cache
+                            continue; // Skip this fetch, already cached recently
+                        }
+                        globalWorkspaceMemberCache.set(cacheKey, now);
                     }
 
-                    const res = await api.brain.get(endpoint);
-                    if (res.success && res.data.length > 0) {
-                        setChildrenRecords(prev => ({ ...prev, [normalized.name]: res.data }));
-                        setChildDefinitions(prev => ({ ...prev, [normalized.name]: normalized }));
-                    }
+                    try {
+                        const res = await api.brain.get(endpoint);
+                        if (res.success && res.data.length > 0) {
+                            // Normalize children data to prevent React rendering errors
+                            const normalizedChildren = res.data.map((item: any) => normalizeFormData(item, normalized.fields));
+                            setChildrenRecords(prev => ({ ...prev, [normalized.name]: normalizedChildren }));
+                            setChildDefinitions(prev => ({ ...prev, [normalized.name]: normalized }));
+                        }
+                    } catch (e) {}
                 }
             }
         }
-    };
+        
+        fetchedRelatedDataRef.current = cacheKey; // Mark as fetched
+    }, [fieldsList, isNew, recordId, entityId]);
 
     const shouldShowField = (field: any) => {
         if (!field.ui?.showIf && !field.showIf) return true;
@@ -249,14 +339,23 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         return Object.keys(newErrors).length === 0;
     };
 
-    const fetchRecord = async () => {
+    const fetchRecord = useCallback(async () => {
+        if (authLoading) return;
+        
+        // Fix for 404 /null fetch
+        if (isNew || !recordId || recordId === 'null' || recordId === 'undefined') {
+            if (isNew) fetchRelatedData();
+            return;
+        }
+
         fetchRelatedData();
-        if (isNew) return;
         setLoading(true);
         try {
             const res = await api.brain.get(`db/${entityId}/item/${recordId}`);
             if (res.success) {
-                setFormData(res.data || {});
+                // Normalize data to extract primitive values from relation objects (fix React rendering error)
+                const normalizedData = normalizeFormData(res.data || {}, fieldsList);
+                setFormData(normalizedData);
                 // Fetch audit logs for this specific record (Enterprise Level 8 feature)
                 const auditRes = await api.brain.get(`db/audit_log?entityType=${entityId}&entityId=${recordId}`);
                 if (auditRes.success) setAuditLogs(auditRes.data || []);
@@ -269,49 +368,91 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         } finally {
             setLoading(false);
         }
-    };
+    }, [fetchRelatedData, isNew, recordId, entityId, navigate, fieldsList, authLoading]);
 
     useEffect(() => {
+        fetchedRelatedDataRef.current = ''; // Reset cache when entity/record changes
         fetchRecord();
-    }, [entityId, recordId]);
+    }, [entityId, recordId, authLoading, fetchRecord]);
 
-    const handleSave = async () => {
+    const savingRef = useRef(false);
+    const handleSave = (e?: React.MouseEvent) => {
+        // 🔒 IMMEDIATE LOCK - prevent ANY duplicate execution
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        if (savingRef.current) {
+            // console.log('[SAVE-LOCK] ⛔ Duplicate call blocked - already saving');
+            return;
+        }
+        
         if (!validateForm()) {
             toast.error("Vă rugăm să corectați erorile din formular");
             return;
         }
+        
+        // Set lock BEFORE any async operation
+        savingRef.current = true;
         setSaving(true);
-        try {
-            const method = isNew ? api.brain.post : api.brain.patch;
-            const endpoint = isNew ? `db/${entityId}` : `db/${entityId}/${recordId}`;
-            
-            // Filter out generated fields for new records (they should be handled by DB)
-            const dataToSend = { ...formData };
-            if (isNew) {
-                fieldsList.forEach((f: any) => {
-                    if (f.generated) {
-                        delete dataToSend[f.name];
+        // console.log('[SAVE-START]', { entityId, recordId, isNew, method: isNew ? 'POST' : 'PATCH' });
+        
+        // Async work starts here, but LOCK is already set
+        (async () => {
+            try {
+                const method = isNew ? api.brain.post : api.brain.patch;
+                const endpoint = isNew ? `db/${entityId}` : `db/${entityId}/${recordId}`;
+                
+                // Filter out generated fields for new records (they should be handled by DB)
+                const dataToSend = { ...formData };
+                if (isNew) {
+                    fieldsList.forEach((f: any) => {
+                        if (f.generated) {
+                            delete dataToSend[f.name];
+                        }
+                    });
+                }
+                
+                // console.log('[SAVE-SEND]', { endpoint, dataKeys: Object.keys(dataToSend) });
+                
+                const res = await method(endpoint, dataToSend);
+                // console.log('[SAVE-RESPONSE]', { success: res.success, resId: res.data?.id });
+                
+                if (res.success) {
+                    toast.success(isNew ? "Creat cu succes" : "Actualizat cu succes");
+                    if (isNew) {
+                        // Enterprise Level 8: Resilient ID Resolution
+                        const newId = res.data?.id || res.data?.ID || res.data?.uuid || res.data?.key || 
+                                     (config.displayField ? res.data[config.displayField] : '');
+                        
+                        // console.log('[SAVE-NAVIGATE]', { newId, entityId, lang });
+                        
+                        if (newId) {
+                            // Use absolute path to prevent relative navigation ambiguity
+                            navigate(`/${lang}/${entityId}/${newId}`, { replace: true });
+                        } else {
+                            console.warn('[SAVE-NAVIGATE] No ID found in response, falling back to list');
+                            navigate(`/${lang}/${entityId}`, { replace: true });
+                        }
+                    } else {
+                        // console.log('[SAVE-REFRESH]', 'Fetching updated record');
+                        fetchRecord();
                     }
-                });
+                } else {
+                    toast.error("Salvare eșuată: " + res.error);
+                    if (res.validationErrors) setErrors(res.validationErrors);
+                }
+            } catch (e: any) {
+                console.error('[SAVE-ERROR]', e.message);
+                toast.error("Eroare la salvare: " + e.message);
+            } finally {
+                // console.log('[SAVE-FINALLY] Unlocking save button');
+                savingRef.current = false;
+                setSaving(false);
             }
-            
-            console.log('[SAVE] Sending data:', dataToSend);
-            
-            const res = await method(endpoint, dataToSend);
-            if (res.success) {
-                toast.success(isNew ? "Creat cu succes" : "Actualizat cu succes");
-                if (isNew) navigate(`../${res.data?.id || res.data?.ID || ''}`, { replace: true });
-                else fetchRecord();
-            } else {
-                toast.error("Salvare eșuată: " + res.error);
-                if (res.validationErrors) setErrors(res.validationErrors);
-            }
-        } catch (e: any) {
-            toast.error("Ereare la salvare: " + e.message);
-        } finally {
-            setSaving(false);
-        }
-    };
+        })();
+    }; 
 
     const handleDelete = async () => {
         // First generic confirmation
@@ -419,23 +560,8 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         const error = errors[name];
         const isRequired = req || required;
 
-        // Date Formatting Helper (fixes "yyyy-MM-ddThh:mm" conformance error)
-        const formatValue = (val: any, fieldType: string) => {
-            if (!val) return '';
-            if (fieldType === 'date' || fieldType === 'datetime' || fieldType === 'datetime-local') {
-                try {
-                    const date = new Date(val);
-                    if (isNaN(date.getTime())) return '';
-                    if (fieldType === 'date') return date.toISOString().split('T')[0];
-                    // Format for datetime-local: YYYY-MM-DDTHH:mm
-                    const pad = (n: number) => n.toString().padStart(2, '0');
-                    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-                } catch (e) { return val; }
-            }
-            return val;
-        };
-
-        const value = formatValue(rawValue, type);
+        // Use centralized form value formatting (Enterprise Level 8)
+        const value = formatFormValue(rawValue, type);
 
         // Protection Logic (Enterprise Level 8)
         const isReadOnly = field.readonly || field.readOnly || isGlobalReadOnly || isAuditField || config.uiConfig?.form?.readOnlyFields?.includes(name) || (name === 'id' && !isNew);
@@ -461,7 +587,10 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         }
 
         const handleChange = (val: any) => {
-            setFormData((prev: any) => ({ ...prev, [name]: val }));
+            // Use centralized form value formatting to prevent object storage
+            const normalizedVal = formatFormValue(val, type);
+
+            setFormData((prev: any) => ({ ...prev, [name]: normalizedVal }));
             if (errors[name]) {
                 setErrors(prev => {
                     const next = { ...prev };
@@ -525,7 +654,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 <div className="relative group">
                     {/* Render Input based on type */}
                     {type === 'registry' && registryKey ? (
-                        <Select value={value} onValueChange={handleChange} disabled={isReadOnly}>
+                        <Select value={String(value ?? '')} onValueChange={handleChange} disabled={isReadOnly}>
                             <SelectTrigger className={cn("h-12 rounded-xl bg-slate-50 border-slate-200", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 opacity-60")}>
                                 <SelectValue placeholder={`${renderString(t('common:select'), lang)} ${renderString(label || name, lang)}`} />
                             </SelectTrigger>
@@ -540,33 +669,60 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 ))}
                             </SelectContent>
                         </Select>
-                    ) : (type === 'entity_relation' || type === 'relation' || type === 'relation-many') && targetEntity ? (
-                        field.type === 'relation-many' ? (
+                    ) : (type === 'entity_relation' || type === 'relation' || type === 'relation-many' || type === 'tag' || type === 'multi-select') && (targetEntity || type === 'tag') ? (
+                        ((field.type === 'relation-many' || field.type === 'tag' || field.type === 'multi-select' || field.multiple === true)) ? (
                             <div className="space-y-3">
                                 <div className="flex flex-wrap gap-1.5 p-3 min-h-[52px] rounded-xl bg-slate-50 border border-slate-200">
-                                    {((Array.isArray(value) ? value : (value ? String(value).split(',').filter(Boolean) : []))).map((id: string) => {
-                                        const item = (Array.isArray(relatedData[targetEntity]) ? relatedData[targetEntity] : []).find(i => String(i.id) === String(id));
+                                    {(() => {
+                                        // Enterprise Level 8: Robust relation-many parsing in Detail view
+                                        if (Array.isArray(value)) return value;
+                                        if (typeof value === 'string' && value) {
+                                            const clean = value.trim();
+                                            if (clean.startsWith('[') && clean.endsWith(']')) {
+                                                try {
+                                                    const parsed = JSON.parse(clean);
+                                                    return Array.isArray(parsed) ? parsed : [parsed];
+                                                } catch {
+                                                    return clean.split(',').filter(Boolean);
+                                                }
+                                            }
+                                            return clean.split(',').filter(Boolean);
+                                        }
+                                        return [];
+                                    })().map((id: any) => {
+                                        // Level 8: if id is object, extract id string
+                                        const itemId = (typeof id === 'object' && id !== null) ? (id.id || id.ID || id.uuid) : String(id);
+                                        const resolvedTarget = type === 'tag' ? 'tag' : targetEntity;
+                                        const item = (Array.isArray(relatedData[resolvedTarget]) ? relatedData[resolvedTarget] : []).find(i => String(i.id || i.ID) === String(itemId)) || (typeof id === 'object' ? id : null);
+                                        
+                                        // Improved Display Field Selection
+                                        const targetDef = resolvedTarget ? (entity as any)?.[resolvedTarget] : null;
+                                        const displayFieldName = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
+                                        const label = item ? (item[displayFieldName] || item.name || item.id || item.ID || itemId) : itemId;
+
                                         return (
                                             <Badge 
-                                                key={id} 
+                                                key={itemId} 
                                                 variant="outline" 
                                                 style={{ 
-                                                    backgroundColor: item?.color ? `${item.color}15` : undefined,
-                                                    borderColor: item?.color ? `${item.color}40` : undefined,
-                                                    color: item?.color || undefined
+                                                    backgroundColor: (item?.color || item?.colorTheme) ? `${item.color || item.colorTheme}15` : undefined,
+                                                    borderColor: (item?.color || item?.colorTheme) ? `${item.color || item.colorTheme}40` : undefined,
+                                                    color: (item?.color || item?.colorTheme) || undefined
                                                 }}
                                                 className="px-3 py-1 rounded-lg flex items-center gap-2 group/badge transition-all hover:brightness-95"
                                             >
-                                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item?.color || '#818cf8' }} />
-                                                <span className="font-bold text-[10px] uppercase tracking-wider">{renderString(item?.[field.relation?.field || 'name'] || id, lang)}</span>
+                                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: (item?.color || item?.colorTheme) || '#818cf8' }} />
+                                                <span className="font-bold text-[10px] uppercase tracking-wider">
+                                                    {renderString(label, lang)}
+                                                </span>
                                                 {!isReadOnly && (
                                                     <X 
                                                         size={12} 
                                                         className="cursor-pointer opacity-50 hover:opacity-100" 
                                                         onClick={() => {
-                                                            const current = Array.isArray(value) ? value : (value ? String(value).split(',') : []);
-                                                            const next = current.filter(v => String(v) !== String(id));
-                                                            handleChange(next.join(','));
+                                                            const current = Array.isArray(value) ? value : (value ? String(value).split(',').filter(Boolean) : []);
+                                                            const next = current.filter(v => ((typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v)) !== String(itemId));
+                                                            handleChange(next);
                                                         }}
                                                     />
                                                 )}
@@ -582,32 +738,37 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 {!isReadOnly && (
                                     <Select 
                                         onValueChange={(val) => {
-                                            const current = Array.isArray(value) ? value : (value ? String(value).split(',') : []);
-                                            if (!current.includes(val)) {
+                                            const current = Array.isArray(value) ? value : (value ? String(value).split(',').filter(Boolean) : []);
+                                            const currentIds = current.map(v => (typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v));
+                                            
+                                            if (!currentIds.includes(String(val))) {
                                                 const next = [...current, val];
-                                                handleChange(next.join(','));
+                                                handleChange(next);
                                             }
                                         }}
                                         disabled={isReadOnly}
                                     >
-                                        <SelectTrigger className="h-10 rounded-xl bg-white border-slate-200 font-bold text-xs ring-offset-indigo-500">
+                                        <SelectTrigger className="h-10 rounded-xl bg-white border-slate-200 font-bold text-xs ring-offset-indigo-500 shadow-sm hover:border-indigo-300 transition-all">
                                             <SelectValue placeholder={`${renderString(t('common:add'), lang)} ${renderString(label || name, lang)}...`} />
                                         </SelectTrigger>
                                         <SelectContent className="rounded-2xl border-none shadow-2xl">
-                                            {(Array.isArray(relatedData[targetEntity]) ? relatedData[targetEntity] : [])
+                                            {(Array.isArray(relatedData[type === 'tag' ? 'tag' : (targetEntity || '')]) ? relatedData[type === 'tag' ? 'tag' : (targetEntity || '')] : [])
                                                 .filter(item => {
                                                     const current = Array.isArray(value) ? value : (value ? String(value).split(',') : []);
-                                                    return !current.includes(String(item.id));
+                                                    const currentIds = current.map(v => (typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v));
+                                                    return !currentIds.includes(String(item.id || item.ID));
                                                 })
                                                 .map((item: any, idx) => {
-                                                    const targetDef = entity[targetEntity];
+                                                    const resolvedT = type === 'tag' ? 'tag' : targetEntity;
+                                                    const targetDef = resolvedT ? (entity as any)?.[resolvedT] : null;
                                                     const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
+                                                    const displayLabel = item[dispField] || item.name || item.id || item.ID;
                                                     
                                                     return (
-                                                        <SelectItem key={`${item.id}-${idx}`} value={String(item.id)} className="rounded-xl font-bold py-3">
+                                                        <SelectItem key={`${item.id || item.ID}-${idx}`} value={String(item.id || item.ID)} className="rounded-xl font-bold py-3">
                                                             <div className="flex items-center gap-2">
-                                                                {item.color && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />}
-                                                                <span>{renderString(item[dispField] || item.name || item.id, lang)}</span>
+                                                                {(item.color || item.colorTheme) && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color || item.colorTheme }} />}
+                                                                <span>{renderString(displayLabel, lang)}</span>
                                                             </div>
                                                         </SelectItem>
                                                     );
@@ -618,26 +779,30 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 )}
                             </div>
                         ) : (
-                            <Select value={String(value)} onValueChange={handleChange} disabled={isReadOnly}>
-                                <SelectTrigger className={cn("h-12 rounded-xl bg-slate-50 border-slate-200 font-bold", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 opacity-60")}>
-                                    <SelectValue placeholder={`${renderString(t('common:choose'), lang)} ${renderString(label || name, lang)}`} />
-                                </SelectTrigger>
-                                <SelectContent className="rounded-2xl border-none shadow-2xl">
-                                    {(relatedData[targetEntity] || []).map((item: any, idx) => {
-                                        const targetDef = entity[targetEntity];
-                                        const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
-                                        
-                                        return (
-                                            <SelectItem key={`${item.id}-${idx}`} value={String(item.id)} className="rounded-xl font-bold py-3">
-                                                <span>{renderString(item[dispField] || item.name || item.id, lang)}</span>
-                                            </SelectItem>
-                                        );
-                                    })}
-                                    {(relatedData[targetEntity] || []).length === 0 && (
-                                        <div className="p-4 text-center text-xs text-slate-400 italic">{renderString(t('common:no_records_in', { label: targetEntity }), lang)}</div>
-                                    )}
-                                </SelectContent>
-                            </Select>
+                                <Select value={String(value ?? '')} onValueChange={handleChange} disabled={isReadOnly}>
+                                    <SelectTrigger className={cn("h-12 rounded-xl bg-slate-50 border-slate-200 font-bold", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 opacity-60")}>
+                                        <SelectValue placeholder={`${renderString(t('common:choose'), lang)} ${renderString(label || name, lang)}`} />
+                                    </SelectTrigger>
+                                    <SelectContent className="rounded-2xl border-none shadow-2xl">
+                                        {(relatedData[targetEntity] || []).map((item: any, idx) => {
+                                            const targetDef = entity[targetEntity];
+                                            const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
+                                            const displayLabel = item[dispField] || item.name || item.id;
+                                            
+                                            return (
+                                                <SelectItem key={`${item.id}-${idx}`} value={String(item.id)} className="rounded-xl font-bold py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        {(item.color || item.colorTheme) && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color || item.colorTheme }} />}
+                                                        <span>{renderString(displayLabel, lang)}</span>
+                                                    </div>
+                                                </SelectItem>
+                                            );
+                                        })}
+                                        {(relatedData[targetEntity] || []).length === 0 && (
+                                            <div className="p-4 text-center text-xs text-slate-400 italic">{renderString(t('common:no_records_in', { label: targetEntity }), lang)}</div>
+                                        )}
+                                    </SelectContent>
+                                </Select>
                         )
                     ) : (type === 'enum' || type === 'selection') ? (
                         (() => {
@@ -750,7 +915,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         />
                     ) : type === 'textarea' || type === 'richtext' ? (
                         <textarea 
-                            value={value}
+                            value={value ?? ''}
                             disabled={isReadOnly}
                             onChange={(e) => handleChange(e.target.value)}
                             className={cn("w-full min-h-[120px] p-4 rounded-xl bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 font-medium text-sm", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 cursor-not-allowed")}
@@ -758,19 +923,19 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         />
                     ) : type === 'icon' ? (
                         <IconPicker 
-                            value={value} 
+                            value={value ?? ''} 
                             onChange={handleChange}
                             className={cn("h-12 rounded-xl bg-slate-50 border-slate-200", isReadOnly && "bg-slate-100 opacity-60")}
                         />
                     ) : type === 'color' ? (
                         <ColorPicker 
-                            value={value} 
+                            value={value ?? ''} 
                             onChange={handleChange}
                             className={cn("h-12 rounded-xl bg-slate-50 border-slate-200", isReadOnly && "bg-slate-100 opacity-60")}
                         />
                     ) : type === 'date' || type === 'datetime' ? (
                         <DatePicker 
-                            value={value} 
+                            value={value ?? ''} 
                             onChange={handleChange}
                             showTime={type === 'datetime'}
                             placeholder={`${renderString(t('common:choose'), lang)} ${renderString(label || name, lang)}`}
@@ -779,7 +944,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                     ) : type === 'ai-text' ? (
                         <div className="space-y-2">
                             <textarea 
-                                value={value}
+                                value={value ?? ''}
                                 disabled={isReadOnly}
                                 onChange={(e) => handleChange(e.target.value)}
                                 className={cn("w-full min-h-[80px] p-4 rounded-xl bg-slate-50 border border-slate-200 border-dashed border-indigo-200 focus:border-indigo-500 font-medium text-sm", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 cursor-not-allowed")}
@@ -793,7 +958,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         </div>
                     ) : type === 'json' ? (
                         <textarea 
-                            value={typeof value === 'object' ? JSON.stringify(value, null, 2) : value}
+                            value={typeof value === 'object' ? JSON.stringify(value, null, 2) : (value ?? '')}
                             disabled={isReadOnly}
                             onChange={(e) => {
                                 try {
@@ -814,7 +979,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                     type={type === 'number' || type === 'currency' ? 'number' : (type === 'password' ? 'password' : 'text')}
                                     name={name}
                                     id={`field-${name}`}
-                                    value={value}
+                                    value={value ?? ''}
                                     disabled={isReadOnly}
                                     autoComplete={ui?.autoComplete || "off"}
                                     onChange={(e) => handleChange(e.target.value)}
@@ -847,7 +1012,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             <div className="flex items-center justify-between">
                 <Button 
                     variant="outline" 
-                    onClick={() => navigate('..')}
+                    onClick={() => navigate(getLocalizedPath(`/${entityId}`, lang))}
                     className="group rounded-2xl h-12 pl-3 pr-6 bg-white border-slate-200 shadow-sm hover:shadow-md transition-all whitespace-nowrap"
                 >
                     <ArrowLeft className="mr-2 h-5 w-5 transition-transform group-hover:-translate-x-1" />
@@ -868,34 +1033,183 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 </div>
             </div>
 
+            {/* Enterprise Level 8 Identity Header - Professional & Balanced */}
+            {/* Enterprise Level 8 Identity Header - Professional & Compact */}
+            <div className="flex flex-col md:flex-row md:items-center gap-4 p-4 md:p-5 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none animate-in fade-in slide-in-from-top-4 duration-700 relative overflow-hidden group">
+                {/* Decorative Background Glow */}
+                <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/5 blur-[100px] rounded-full pointer-events-none" />
+                
+                <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-indigo-600 flex items-center justify-center text-white text-xl md:text-2xl font-black shadow-lg shadow-indigo-100 dark:shadow-none shrink-0 border-2 border-white dark:border-slate-950 ring-1 ring-indigo-100 dark:ring-slate-800 z-10 transition-transform duration-500 group-hover:scale-105">
+                    {(() => {
+                        const displayField = config.displayField || 'name';
+                        const name = formData[displayField] || formData.name || formData.label || formData.title;
+                        
+                        // Try to get icon first
+                        if (config.icon) {
+                            try {
+                                const IconComp = resolveIcon(config.icon);
+                                return <IconComp size={20} className="md:w-6 md:h-6" />;
+                            } catch (e) {}
+                        }
+                        
+                        // Fallback to initial
+                        const char = name && typeof name === 'string' ? name.charAt(0).toUpperCase() : (config.label ? renderString(config.label, lang).charAt(0) : 'E');
+                        return char;
+                    })()}
+                </div>
+                
+                <div className="space-y-1 flex-1 z-10">
+                    <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                             <Badge variant="outline" className="bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50 font-black uppercase tracking-[0.2em] text-[8px] px-2 py-0.5 rounded-full whitespace-nowrap">
+                                {renderString(config.label, lang)}
+                            </Badge>
+                            {!isNew && (
+                                <span className="text-[9px] font-bold text-slate-400 font-mono bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                    {recordId}
+                                </span>
+                            )}
+                        </div>
+                        
+                        <h1 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900 dark:text-white leading-tight py-0.5">
+                            {(() => {
+                                const displayField = config.displayField || 'name';
+                                const name = formData[displayField] || formData.name || formData.Name || formData.label || formData.title;
+                                if (name && String(name) !== 'undefined') return renderString(name, lang);
+                                
+                                if (isNew) {
+                                    return renderString(t('common:new_record', { label: renderString(config.label, lang) }), lang);
+                                }
+                                
+                                return renderString(t('common:untitled_record'), lang);
+                            })()}
+                        </h1>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                        {!isNew && formData.status && (
+                            <Badge className="bg-emerald-500 text-white border-none px-3 py-1 text-[8px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-emerald-100 dark:shadow-none">
+                                {renderString(formData.status, lang)}
+                            </Badge>
+                        )}
+                        
+                        {/* Tags as badged badges (Identity preservation) */}
+                        {(() => {
+                            const tagField = fieldsList.find(f => (f.type === 'relation-many' || f.type === 'tag' || f.type === 'multi-select') && (f.name === 'tag' || f.name === 'tags'));
+                            if (!tagField) return null;
+
+                            const val = formData[tagField.name];
+                            const ids = Array.isArray(val) ? val : (val ? String(val).split(',').filter(Boolean) : []);
+                            if (ids.length === 0) return null;
+
+                            return (
+                                <div className="flex gap-1">
+                                    {ids.slice(0, 5).map((id: any, idx: number) => {
+                                        const itemId = (typeof id === 'object' && id !== null) ? (id.id || id.ID || id.uuid) : String(id);
+                                        const targetEntity = tagField.relationEntity || tagField.relation?.target || (tagField.type === 'tag' ? 'tag' : null);
+                                        
+                                        // If it's a multi-select with options, look in options
+                                        if (tagField.type === 'multi-select' && tagField.options) {
+                                            const opt = tagField.options.find((o: any) => (typeof o === 'object' ? o.value : o) === itemId);
+                                            return (
+                                                <Badge key={idx} variant="secondary" className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-none font-bold text-[8px] uppercase tracking-widest rounded-full px-2 py-0.5" style={opt?.color ? { backgroundColor: `${opt.color}15`, color: opt.color } : {}}>
+                                                    {renderString(opt?.label || itemId, lang)}
+                                                </Badge>
+                                            );
+                                        }
+
+                                        if (!targetEntity) return null;
+
+                                        const item = (relatedData[targetEntity] || []).find((i: any) => String(i.id || i.ID).toLowerCase() === String(itemId).toLowerCase());
+                                        const labelKey = tagField.relation?.field || tagField.relation?.displayField || tagField.relation?.displayKey || 'name';
+                                        
+                                        // Level 8: Ultra-Resilient Label Resolution
+                                        const displayLabel = item 
+                                            ? (item[labelKey] || item.label || item.name || item.title || item.ID || itemId) 
+                                            : (typeof id === 'object' && id !== null ? (id[labelKey] || id.label || id.name || id.id || id.ID || itemId) : itemId);
+
+                                        return (
+                                            <Badge 
+                                                key={idx}
+                                                variant="secondary"
+                                                className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-none font-bold text-[8px] uppercase tracking-widest rounded-full px-2 py-0.5 whitespace-nowrap"
+                                                style={item?.color || (typeof id === 'object' && id?.color) ? { backgroundColor: `${item?.color || (id as any).color}15`, color: item?.color || (id as any).color } : {}}
+                                            >
+                                                {renderString(displayLabel, lang)}
+                                            </Badge>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Main Content */}
                 <div className="lg:col-span-2 space-y-8">
                     <GlassCard className="overflow-hidden border-indigo-100/30">
                         <div className="p-8 space-y-8">
                             {config.layout?.sections && config.layout.sections.length > 0 ? (
-                                config.layout.sections.map((section: any, idx: number) => (
-                                    <div key={section.id || section.title || idx} className="space-y-6 pt-6 border-t border-slate-100 first:border-0 first:pt-0">
-                                        {(section.title || section.description) && (
-                                            <div className="space-y-1">
-                                                {section.title && <h3 className="text-sm font-black italic uppercase tracking-tighter text-slate-800">{renderString(section.title, lang)}</h3>}
-                                                {section.description && <p className="text-[10px] text-slate-400 font-medium">{renderString(section.description, lang)}</p>}
+                                <div className="space-y-8">
+                                    {config.layout.sections.map((section: any, idx: number) => (
+                                        <div key={section.id || section.title || idx} className="space-y-6 pt-6 border-t border-slate-100 first:border-0 first:pt-0">
+                                            {(section.title || section.description) && (
+                                                <div className="space-y-1">
+                                                    {section.title && <h3 className="text-sm font-black italic uppercase tracking-tighter text-slate-800">{renderString(section.title, lang)}</h3>}
+                                                    {section.description && <p className="text-[10px] text-slate-400 font-medium">{renderString(section.description, lang)}</p>}
+                                                </div>
+                                            )}
+                                            <div className={cn(
+                                                "grid gap-x-6 gap-y-8",
+                                                section.columns === 1 ? 'grid-cols-1' :
+                                                section.columns === 2 ? 'grid-cols-1 md:grid-cols-2' :
+                                                section.columns === 3 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 
+                                                section.columns === 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2'
+                                            )}>
+                                                {(section.fields || []).map((fieldName: string) => {
+                                                    const field = fieldsList.find((f: any) => f.name === fieldName);
+                                                    return field ? renderField(field) : null;
+                                                })}
                                             </div>
-                                        )}
-                                        <div className={cn(
-                                            "grid gap-x-6 gap-y-8",
-                                            section.columns === 1 ? 'grid-cols-1' :
-                                            section.columns === 2 ? 'grid-cols-1 md:grid-cols-2' :
-                                            section.columns === 3 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 
-                                            section.columns === 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2'
-                                        )}>
-                                            {(section.fields || []).map((fieldName: string) => {
-                                                const field = fieldsList.find((f: any) => f.name === fieldName);
-                                                return field ? renderField(field) : null;
-                                            })}
                                         </div>
-                                    </div>
-                                ))
+                                    ))}
+
+                                    {/* Level 8: Catch-all for fields not assigned to any section */}
+                                    {(() => {
+                                        const AUDIT_FIELDS = ['id', 'ID', 'workspaceId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt', 'archived', 'archivedAt', 'deletedAt', 'password', 'secret', '__v', '_id'];
+                                        const sectionFields = new Set(config.layout.sections.flatMap((s: any) => s.fields || []));
+                                        const unsectionedFields = fieldsList.filter(f => 
+                                            !sectionFields.has(f.name) && 
+                                            !AUDIT_FIELDS.includes(f.name) &&
+                                            !config.uiConfig?.form?.hiddenFields?.includes(f.name)
+                                        );
+
+                                        if (unsectionedFields.length > 0) {
+                                            return (
+                                                <div className="space-y-6 pt-8 border-t-2 border-dashed border-slate-100">
+                                                    <div className="space-y-1">
+                                                        <h3 className="text-[10px] font-black italic uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                                                            <PlusCircle size={14} /> 
+                                                            {renderString({ ro: 'Câmpuri Adiționale', en: 'Additional Fields' }, lang)}
+                                                        </h3>
+                                                        <p className="text-[9px] text-slate-300 font-medium italic">
+                                                            {renderString({ 
+                                                                ro: 'Aceste câmpuri au fost adăugate recent și nu sunt încă atribuite unei secțiuni.', 
+                                                                en: 'These fields were added recently and are not yet assigned to a section.' 
+                                                            }, lang)}
+                                                        </p>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
+                                                        {unsectionedFields.map(renderField)}
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
+                                </div>
                             ) : (
                                 <div className={cn(
                                     "grid gap-x-6 gap-y-8",
@@ -1045,6 +1359,28 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                    );
                                 })}
                             </div>
+                        </GlassCard>
+                    )}
+
+                    {/* Enterprise Level 8: Contact Interactions (WhatsApp, Email, Printing History) */}
+                    {!isNew && entityId === 'contact' && (
+                        <GlassCard className="p-8 border-none shadow-sm bg-white/40 dark:bg-slate-900/40">
+                            <ContactInteractions contact={{ 
+                                id: recordId as string, 
+                                name: formData.name || formData.label || 'Contact',
+                                email: formData.email,
+                                phone: formData.phone
+                            }} />
+                        </GlassCard>
+                    )}
+
+                    {/* Enterprise Level 8: Subtasks for Task Entities */}
+                    {!isNew && (entityId === 'todo' || entityId === 'task') && (
+                        <GlassCard className="p-8 border-none shadow-sm bg-white/40 dark:bg-slate-900/40">
+                            <SubtaskManager 
+                                parentTaskId={recordId as string} 
+                                workspaceId={formData.workspaceId}
+                            />
                         </GlassCard>
                     )}
                 </div>

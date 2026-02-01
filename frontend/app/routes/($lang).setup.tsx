@@ -92,67 +92,69 @@ export default function SetupPage() {
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-8">
-                        <div className="space-y-6">
-                            <div className="space-y-2 group">
-                                <Label htmlFor="name" className="text-[10px] font-black uppercase italic tracking-widest text-slate-400 ml-1 flex items-center gap-1 group-focus-within:text-indigo-500 transition-colors">
-                                    <User size={10} /> {t('auth:full_name')}
-                                </Label>
-                                <Input
-                                    required
-                                    id="name"
-                                    className="h-12 rounded-2xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50 transition-all font-bold"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder={t('auth:full_name_placeholder')}
-                                    autoComplete="name"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <fieldset disabled={loading} className="space-y-8 contents">
+                            <div className="space-y-6">
                                 <div className="space-y-2 group">
-                                    <Label htmlFor="email" className="text-[10px] font-black uppercase italic tracking-widest text-slate-400 ml-1 flex items-center gap-1 group-focus-within:text-indigo-500 transition-colors">
-                                        <Mail size={10} /> {t('auth:email')}
+                                    <Label htmlFor="name" className="text-[10px] font-black uppercase italic tracking-widest text-slate-400 ml-1 flex items-center gap-1 group-focus-within:text-indigo-500 transition-colors">
+                                        <User size={10} /> {t('auth:full_name')}
                                     </Label>
                                     <Input
                                         required
-                                        id="email"
-                                        type="email"
+                                        id="name"
                                         className="h-12 rounded-2xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50 transition-all font-bold"
-                                        value={formData.email}
-                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                        placeholder={t('auth:email_placeholder')}
-                                        autoComplete="username"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                        placeholder={t('auth:full_name_placeholder')}
+                                        autoComplete="name"
                                     />
                                 </div>
 
-                                <div className="space-y-2 group">
-                                    <Label htmlFor="password" title={t('auth:password')} className="text-[10px] font-black uppercase italic tracking-widest text-slate-400 ml-1 flex items-center gap-1 group-focus-within:text-indigo-500 transition-colors">
-                                        <Lock size={10} /> {t('auth:password')}
-                                    </Label>
-                                    <Input
-                                        required
-                                        id="password"
-                                        type="password"
-                                        className="h-12 rounded-2xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50 transition-all font-bold"
-                                        value={formData.password}
-                                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                        placeholder={t('auth:password_placeholder')}
-                                        autoComplete="new-password"
-                                    />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-2 group">
+                                        <Label htmlFor="email" className="text-[10px] font-black uppercase italic tracking-widest text-slate-400 ml-1 flex items-center gap-1 group-focus-within:text-indigo-500 transition-colors">
+                                            <Mail size={10} /> {t('auth:email')}
+                                        </Label>
+                                        <Input
+                                            required
+                                            id="email"
+                                            type="email"
+                                            className="h-12 rounded-2xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50 transition-all font-bold"
+                                            value={formData.email}
+                                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                            placeholder={t('auth:email_placeholder')}
+                                            autoComplete="username"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2 group">
+                                        <Label htmlFor="password" title={t('auth:password')} className="text-[10px] font-black uppercase italic tracking-widest text-slate-400 ml-1 flex items-center gap-1 group-focus-within:text-indigo-500 transition-colors">
+                                            <Lock size={10} /> {t('auth:password')}
+                                        </Label>
+                                        <Input
+                                            required
+                                            id="password"
+                                            type="password"
+                                            className="h-12 rounded-2xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50 transition-all font-bold"
+                                            value={formData.password}
+                                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                            placeholder={t('auth:password_placeholder')}
+                                            autoComplete="new-password"
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <Button 
-                            type="submit" 
-                            className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase italic tracking-widest text-xs shadow-xl shadow-indigo-100 dark:shadow-none hover:translate-y-[-2px] active:translate-y-[0px] transition-all gap-2 relative overflow-hidden" 
-                            disabled={loading}
-                        >
-                            <span className="relative z-10 flex items-center gap-2">
-                                {loading ? <Rocket className="animate-bounce" size={16} /> : <Shield size={16} />}
-                                {loading ? t('auth:registering') : t('auth:create_admin')}
-                            </span>
-                        </Button>
+                            <Button 
+                                type="submit" 
+                                className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase italic tracking-widest text-xs shadow-xl shadow-indigo-100 dark:shadow-none hover:translate-y-[-2px] active:translate-y-[0px] transition-all gap-2 relative overflow-hidden" 
+                                disabled={loading}
+                            >
+                                <span className="relative z-10 flex items-center gap-2">
+                                    {loading ? <Rocket className="animate-bounce" size={16} /> : <Shield size={16} />}
+                                    {loading ? t('auth:registering') : t('auth:create_admin')}
+                                </span>
+                            </Button>
+                        </fieldset>
 
                         <div className="text-center mt-6">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">

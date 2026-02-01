@@ -101,8 +101,8 @@ export function EntityDefinitionsPanel() {
         // Check if any other entity depends on this one
         const dependents = entities.filter(e => 
             e.name !== entity.name && 
-            Array.isArray(e.requires) && 
-            e.requires.includes(entity.name)
+            Array.isArray(e.dependencies) && 
+            e.dependencies.includes(entity.name)
         );
 
         if (dependents.length > 0) {
@@ -133,6 +133,11 @@ export function EntityDefinitionsPanel() {
             if (res.success) {
                 toast.success(`Entity ${entity.name} deleted${dropDatabase ? ' and database table dropped' : ''}`);
                 setDeleteDialog({ open: false, entity: null });
+                
+                // Optimistic UI: Remove from local state immediately
+                setEntities(prev => prev.filter(e => e.name !== entity.name));
+                if (editingEntity?.name === entity.name) setEditingEntity(null);
+
                 await fetchEntities();
                 await refreshConfig(true);
                 
@@ -508,20 +513,20 @@ export function EntityDefinitionsPanel() {
                                         </div>
                                         <div className="space-y-2">
                                             <div className="flex flex-wrap gap-1 mb-2">
-                                                {(editingEntity.requires || []).map((dep: string) => (
+                                                {(editingEntity.dependencies || []).map((dep: string) => (
                                                     <Badge key={dep} variant="outline" className="bg-white border-amber-200 text-amber-700 gap-1 text-[9px] py-0 px-2">
                                                         {renderString(entities.find(e => e.name === dep)?.label || dep, lang)}
                                                         <X 
                                                             size={10} 
                                                             className="cursor-pointer hover:text-red-500" 
                                                             onClick={() => {
-                                                                const requires = (editingEntity.requires || []).filter((r: string) => r !== dep);
-                                                                setEditingEntity({ ...editingEntity, requires });
+                                                                const dependencies = (editingEntity.dependencies || []).filter((r: string) => r !== dep);
+                                                                setEditingEntity({ ...editingEntity, dependencies });
                                                             }}
                                                         />
                                                     </Badge>
                                                 ))}
-                                                {(!editingEntity.requires || editingEntity.requires.length === 0) && (
+                                                {(!editingEntity.dependencies || editingEntity.dependencies.length === 0) && (
                                                     <span className="text-[9px] text-amber-500/50 italic">No dependencies defined</span>
                                                 )}
                                             </div>
@@ -529,17 +534,17 @@ export function EntityDefinitionsPanel() {
                                                 className="h-8 rounded-lg border border-amber-200 text-[10px] font-bold bg-white px-2 w-full focus:ring-amber-500/20"
                                                 onChange={(e) => {
                                                     if (!e.target.value) return;
-                                                    const requires = [...(editingEntity.requires || [])];
-                                                    if (!requires.includes(e.target.value)) {
-                                                        requires.push(e.target.value);
+                                                    const dependencies = [...(editingEntity.dependencies || [])];
+                                                    if (!dependencies.includes(e.target.value)) {
+                                                        dependencies.push(e.target.value);
                                                     }
-                                                    setEditingEntity({ ...editingEntity, requires });
+                                                    setEditingEntity({ ...editingEntity, dependencies });
                                                     e.target.value = '';
                                                 }}
                                             >
                                                 <option value="">+ Add Dependency...</option>
                                                 {entities
-                                                    .filter(e => e.name !== editingEntity.name && !(editingEntity.requires || []).includes(e.name))
+                                                    .filter(e => e.name !== editingEntity.name && !(editingEntity.dependencies || []).includes(e.name))
                                                     .map(e => (
                                                         <option key={e.name} value={e.name}>{renderString(e.label || e.name, lang)}</option>
                                                     ))
@@ -1197,13 +1202,13 @@ export function EntityDefinitionsPanel() {
                                                                         const targetName = e.target.value;
                                                                         fields[idx].relation = { ...fields[idx].relation, target: targetName };
                                                                         
-                                                                        // Auto-add to requires if not present
-                                                                        const requires = [...(editingEntity.requires || [])];
-                                                                        if (targetName && targetName !== editingEntity.name && !requires.includes(targetName)) {
-                                                                            requires.push(targetName);
+                                                                        // Auto-add to dependencies if not present
+                                                                        const dependencies = [...(editingEntity.dependencies || [])];
+                                                                        if (targetName && targetName !== editingEntity.name && !dependencies.includes(targetName)) {
+                                                                            dependencies.push(targetName);
                                                                         }
                                                                         
-                                                                        setEditingEntity({ ...editingEntity, fields, requires });
+                                                                        setEditingEntity({ ...editingEntity, fields, dependencies });
                                                                     }}
                                                                     className="w-full h-8 rounded-lg border border-slate-200 text-[10px] px-2"
                                                                 >

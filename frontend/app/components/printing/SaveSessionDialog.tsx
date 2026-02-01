@@ -53,7 +53,7 @@ export function SaveSessionDialog({
         setLoadingContacts(true);
         try {
             const res = await api.brain.get('db/collection/contact/all');
-            if (res.data?.success) {
+            if (res?.success) {
                 setContacts(res.data || []);
             }
         } catch (e) {

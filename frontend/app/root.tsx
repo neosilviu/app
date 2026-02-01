@@ -9,6 +9,7 @@ import {
 } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router";
+import { useEffect } from "react";
 import i18next from "./i18next.server";
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -55,11 +56,54 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   if (typeof window !== 'undefined') {
     // Enterprise Level 8: Force diagnostic logging for the user
-    console.log(`[STUDIO-V2] App Layout Mounting. Path: ${location.pathname} Locale: ${data?.locale}`);
+    // console.log(`[STUDIO-V2] App Layout Mounting. Path: ${location.pathname} Locale: ${data?.locale}`);
     if (location.pathname.startsWith('/api')) {
       console.error(`[ROOT-ROUTING-ERROR] API request fell through to Root Layout! Path: ${location.pathname}`);
     }
   }
+
+  // Enterprise Level 8: Global Error Reporting (Uncaught)
+  useEffect(() => {
+    if (typeof window === 'undefined' || (typeof process !== 'undefined' && process.env.NODE_ENV === 'development')) return;
+
+    const logError = (msg: string, extra: any = {}) => {
+      fetch("/api/system/log-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: msg,
+          path: window.location.pathname,
+          clientInfo: {
+            userAgent: navigator.userAgent,
+            ...extra
+          }
+        })
+      }).catch(() => {});
+    };
+
+    const handleError = (event: ErrorEvent) => {
+      logError(`Global Error: ${event.message}`, { 
+        filename: event.filename, 
+        lineno: event.lineno, 
+        colno: event.colno,
+        stack: event.error?.stack 
+      });
+    };
+
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      logError(`Unhandled Rejection: ${event.reason?.message || String(event.reason)}`, {
+        stack: event.reason?.stack
+      });
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
 
   return (
     <html lang={data?.locale ?? "ro"} dir={i18n.dir()}>
@@ -133,6 +177,36 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 
   // Ensure details is a safe string for rendering (use shared helper)
   const detailsStr = formatForRender(details, lang);
+
+  // Enterprise Level 8: Production Error Reporting
+  useEffect(() => {
+    const reportError = async () => {
+      try {
+        await fetch("/api/system/log-error", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: detailsStr,
+            stack: stack,
+            path: window.location.pathname + window.location.search,
+            status: isRouteErrorResponse(error) ? error.status : 500,
+            clientInfo: {
+              href: window.location.href,
+              userAgent: navigator.userAgent,
+              language: navigator.language,
+              screen: `${window.screen.width}x${window.screen.height}`
+            }
+          })
+        });
+      } catch (e) {
+        console.warn("[ERROR-REPORTING-FAILED]", e);
+      }
+    };
+    
+    if (typeof window !== 'undefined' && !isDev) {
+      reportError();
+    }
+  }, [detailsStr, stack, error, isDev]);
 
   return (
     <main className="pt-16 p-4 container mx-auto">

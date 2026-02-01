@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useConfig } from '~/hooks/useConfig';
 import { useTranslation } from 'react-i18next';
 import { 
@@ -32,6 +32,7 @@ export function EntityDefinitionsPanel() {
     const [editingEntity, setEditingEntity] = useState<any | null>(null);
     const [saving, setSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const savingRef = useRef(false);
 
     useEffect(() => {
         if (!configEntities) return;
@@ -44,8 +45,10 @@ export function EntityDefinitionsPanel() {
     }, [configEntities]);
 
     const handleSave = async () => {
+        if (savingRef.current) return;
         if (!editingEntity.name) return toast.error("Entity name is required");
-        
+
+        savingRef.current = true;
         setSaving(true);
         try {
             const res = await api.brain.post('entity/save', editingEntity);
@@ -59,6 +62,7 @@ export function EntityDefinitionsPanel() {
         } catch (e: any) {
             toast.error(getErrorMessage(e, 'Save failed'));
         } finally {
+            savingRef.current = false;
             setSaving(false);
         }
     };

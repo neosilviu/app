@@ -7,6 +7,7 @@ import {
 import { 
     socket, 
     socketRequest, 
+    initRegistry,
     api,
     debounce 
 } from '../lib/core';
@@ -62,10 +63,15 @@ const deepMerge = (target: any, source: any) => {
     if (!source || typeof source !== 'object') return result;
     
     Object.keys(source).forEach(key => {
-        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-            result[key] = deepMerge(target[key] || {}, source[key]);
-        } else {
-            result[key] = source[key];
+        // Enterprise Level 8: Only override if source has a valid value.
+        // If source has null or empty string, we prefer the baseline (target).
+        const sourceVal = source[key];
+        const isNullish = sourceVal === null || sourceVal === undefined || sourceVal === '';
+        
+        if (sourceVal && typeof sourceVal === 'object' && !Array.isArray(sourceVal)) {
+            result[key] = deepMerge(target[key] || {}, sourceVal);
+        } else if (!isNullish) {
+            result[key] = sourceVal;
         }
     });
     return result;
@@ -73,21 +79,56 @@ const deepMerge = (target: any, source: any) => {
 
 const mergeConstantsIntoEntities = (ents: Record<string, any>, consts: Record<string, any>) => {
     const result: Record<string, any> = {};
-    Object.keys(ents).forEach(entityKey => {
-        const rawEntity = { ...ents[entityKey] };
+    
+    // Enterprise Level 8: Unified Entity Map
+    // Combine Registry Baseline keys and Database Entity keys to ensure no-code entities work
+    const registryEntities = consts.ENTITY_CONFIG || {};
+    const allEntityKeys = Array.from(new Set([
+        ...Object.keys(registryEntities),
+        ...Object.keys(ents)
+    ]));
+
+    allEntityKeys.forEach(entityKey => {
+        const rawEntity = { ...(ents[entityKey] || {}) };
         
-        // Mark as baseline if it exists in static constants
-        if ((STATIC_CONSTANTS.ENTITY_CONFIG as any)?.[entityKey] || (STATIC_CONSTANTS.ENTITY_CONFIG as any)?.[entityKey]) {
+        // Mark as baseline if it exists in static constants or current registry consts
+        if ((STATIC_CONSTANTS.ENTITY_CONFIG as any)?.[entityKey] || registryEntities[entityKey]) {
             rawEntity.__is_baseline = true;
         }
 
-        // Apply Registry Overrides (if any)
-        const registryOverride = consts.ENTITY_CONFIG?.[entityKey] || consts.ENTITY_CONFIG?.[entityKey] || {};
-        Object.assign(rawEntity, registryOverride);
+        // Apply Registry Overrides/Baseline
+        const registryOverride = registryEntities[entityKey] || {};
+        
+        // Enterprise Level 8: Field-by-Field merging to preserve Registry baseline while allowing DB overrides
+        const registryFields = registryOverride.fields || {};
+        const databaseFieldsRaw = rawEntity.fields;
+        let databaseFieldsArray = [];
+        if (Array.isArray(databaseFieldsRaw)) {
+            databaseFieldsArray = databaseFieldsRaw;
+        } else if (typeof databaseFieldsRaw === 'object' && databaseFieldsRaw !== null) {
+            databaseFieldsArray = Object.entries(databaseFieldsRaw).map(([k, f]: [string, any]) => ({
+                ...(typeof f === 'object' ? f : { type: f }),
+                name: k
+            }));
+        }
+
+        const databaseFieldsMap = databaseFieldsArray.reduce((acc: any, f: any) => {
+            const name = f.name || f.id;
+            if (name) acc[name] = f;
+            return acc;
+        }, {});
+
+        // Combine fields: Registry baseline fields are augmented or overridden by DB fields
+        const mergedFieldsMap = { ...registryFields };
+        Object.keys(databaseFieldsMap).forEach(name => {
+            mergedFieldsMap[name] = deepMerge(mergedFieldsMap[name] || {}, databaseFieldsMap[name]);
+        });
+        
+        // Final Merge: Baseline (registryOverride) + DB (rawEntity) with correctly merged fields
+        const mergedEntity = deepMerge(registryOverride, { ...rawEntity, fields: mergedFieldsMap });
 
         // ENSURE NORMALIZATION (Enterprise Level 8)
-        // This generates missing labels, sets defaults, humanizes technical IDs, etc.
-        const entity = normalizeEntity({ ...rawEntity, id: entityKey });
+        const entity = normalizeEntity({ ...mergedEntity, id: entityKey });
 
         // Extra Logic: Map Options from Constants (Registry-based selection lists)
         if (entity.fields && Array.isArray(entity.fields)) {
@@ -225,6 +266,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                     
                     setEntity(mergedEntities);
                     setConstants(mergedConstants);
+                    initRegistry(mergedConstants);
                     syncI18n(mergedConstants.I18N);
                     setMarketplace(mergedConstants.MARKETPLACE_TEMPLATE || []);
                     setUiConfig(ui);
@@ -330,6 +372,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
                 setEntity(mergedEntities);
                 setConstants(mergedConstants);
+                initRegistry(mergedConstants);
                 syncI18n(mergedConstants.I18N);
                 setMarketplace(mergedConstants.MARKETPLACE_TEMPLATE || []);
                 setUiConfig(ui);

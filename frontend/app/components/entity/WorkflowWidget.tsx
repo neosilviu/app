@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowRight, AlertCircle, CheckCircle, Clock, Zap } from 'lucide-react';
 import { useConfig } from '~/hooks/useConfig';
-import { api } from '~/lib/core';
+import { api, getErrorMessage } from '~/lib/core';
 import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
 import { Badge } from '~/components/ui/badge';
@@ -50,7 +50,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
         setTransitions(payload.availableTransitions || []);
       }
     } catch (err: any) {
-      setError(err.message || renderString({ ro: 'Eroare la încărcare tranziții', en: 'Failed to load transitions' }, lang));
+      setError(getErrorMessage(err, renderString({ ro: 'Eroare la încărcare tranziții', en: 'Failed to load transitions' }, lang)));
     } finally {
       setLoading(false);
     }
@@ -79,7 +79,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
         await loadTransitions();
       }
     } catch (err: any) {
-      setError(err.message || renderString({ ro: 'Eroare la tranziție', en: 'Transition failed' }, lang));
+      setError(getErrorMessage(err, renderString({ ro: 'Eroare la tranziție', en: 'Transition failed' }, lang)));
     } finally {
       setTransitioning(false);
     }

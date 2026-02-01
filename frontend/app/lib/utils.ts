@@ -5,10 +5,13 @@
 
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { IconMap, resolveIcon } from './icons';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+export { resolveIcon };
 
 let _registry: any = null;
 
@@ -107,12 +110,12 @@ export function debounce<T extends (...args: any[]) => any>(
  * Enterprise Level 8: Recursive & Bulletproof
  */
 export function renderString(value: any, lang: string = 'ro'): string {
-    if (value === null || value === undefined) return '';
+    if (value === null || value === undefined || value === 'undefined') return '';
     
     // 1. Handle Strings
     if (typeof value === 'string') {
-        // Anti-corruption: NEVER return "[object Object]"
-        if (value === '[object Object]') return '';
+        // Anti-corruption: NEVER return "[object Object]" or "undefined"
+        if (value === '[object Object]' || value === 'undefined') return '';
 
         // Handle JSON strings that might contain i18n objects
         if (value.startsWith('{') || value.startsWith('[')) {
@@ -163,7 +166,7 @@ export function renderString(value: any, lang: string = 'ro'): string {
         }
         
         // Priority D: First non-undefined value in the object
-        const values = Object.values(value);
+        const values = Object.values(value).filter(v => v !== undefined && v !== null);
         if (values.length > 0) {
             const first = values[0];
             if (typeof first === 'string') return first;
@@ -194,6 +197,57 @@ export function safeRender(value: any): string {
     try { return JSON.stringify(value); } catch (e) { return renderString(value); }
   }
   return renderString(value);
+}
+
+/**
+ * Get display value for an entity item based on entity definition.
+ * Used in widgets and lists to show a human-readable representation.
+ * Prevents React rendering errors by ensuring primitive return values.
+ */
+export function getDisplayValue(item: any, entity: any): string {
+  if (!item || typeof item !== 'object') return '';
+
+  // Use displayField if defined in entity
+  const displayField = entity?.displayField;
+  if (displayField && item[displayField] !== undefined) {
+    const value = item[displayField];
+    if (typeof value === 'string' || typeof value === 'number') {
+      return String(value);
+    }
+    // If displayField is an object, try to extract a string
+    if (typeof value === 'object' && value !== null) {
+      return renderString(value);
+    }
+  }
+
+  // Fallback to common display fields
+  const displayFields = ['name', 'title', 'label', 'displayName', 'email', 'username'];
+  for (const field of displayFields) {
+    if (item[field] !== undefined) {
+      const value = item[field];
+      if (typeof value === 'string' || typeof value === 'number') {
+        return String(value);
+      }
+      if (typeof value === 'object' && value !== null) {
+        return renderString(value);
+      }
+    }
+  }
+
+  // Last resort: use ID or stringify
+  const finalId = item.id || item.ID || item.uuid;
+  if (finalId && String(finalId) !== 'undefined') {
+    return String(finalId);
+  }
+
+  // Prevent React errors by ensuring we never return an object
+  try {
+    const json = JSON.stringify(item);
+    return json === 'undefined' ? '' : json;
+  } catch (e) {
+    const str = String(item);
+    return str === 'undefined' ? '' : str;
+  }
 }
 
 /**
@@ -269,9 +323,11 @@ export function formatForRender(value: any, lang = 'ro'): string {
   }
 
   try {
-    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+    const res = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return res === 'undefined' ? '' : res;
   } catch (e) {
-    return String(value);
+    const res = String(value);
+    return res === 'undefined' ? '' : res;
   }
 }
 
@@ -346,18 +402,4 @@ export function getErrorMessage(err: any, fallback = ''): string {
   }
 }
 
-export const CoreUtils = {
-    generateId,
-    formatDate,
-    deepClone,
-    debounce,
-    isValidEmail,
-    sanitizeFilename,
-    getRomanianTime,
-    checkIsWorkingHours,
-    cn,
-    safeRender,
-    assertRenderable,
-  formatForRender,
-  getErrorMessage
-};
+

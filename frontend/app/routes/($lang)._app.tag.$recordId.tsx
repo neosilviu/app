@@ -20,6 +20,17 @@ export default function TagDetailPage() {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
+  // Helper to normalize tag data and extract strings from i18n objects
+  const normalizeTag = (rawTag: any) => {
+    if (!rawTag) return null;
+    return {
+      ...rawTag,
+      name: typeof rawTag.name === 'string' ? rawTag.name : rawTag.name?.ro || rawTag.name?.en || 'Unnamed Tag',
+      description: typeof rawTag.description === 'string' ? rawTag.description : rawTag.description?.ro || rawTag.description?.en || '',
+      label: typeof rawTag.label === 'string' ? rawTag.label : rawTag.label?.ro || rawTag.label?.en || ''
+    };
+  };
+
   // Use DynamicEntityDetail for "new" tag
   if (tagId === 'new') {
     return <DynamicEntityDetail entityId="tag" recordId="new" config={configMap?.['tag']} />;
@@ -33,7 +44,7 @@ export default function TagDetailPage() {
       try {
         // 1. Fetch Tag Info from Brain (Cloud - where tag are stored)
         const tagRes = await api.brain.get(`db/tag/${tagId}`);
-        if (tagRes.success) setTag(tagRes.data);
+        if (tagRes.success) setTag(normalizeTag(tagRes.data));
 
         // 2. Fetch Global Results (Now from Brain for unified cloud data)
         const cloudResultsRes = await api.brain.get(`tag/results/${tagId}`);

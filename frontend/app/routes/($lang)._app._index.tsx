@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { localAgentApi, api, socketRequest } from '~/lib/core';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { resolveCollection, cn, normalizeEntity, renderString } from '~/lib/core';
+import { resolveCollection, cn, normalizeEntity, normalizeFormData, renderString } from '~/lib/core';
 import { useAuth } from '~/hooks/useAuth';
 import { EntityWidget } from '~/components/dashboard/EntityWidget';
 import { UnifiedActivityFeed } from '~/components/dashboard/UnifiedActivityFeed';
@@ -24,7 +24,7 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
 
 export default function Dashboard() {
   const { entity: configMap, uiConfig, constants } = useConfig();
-  const { user } = useAuth();
+  const { user, hasPermission, hasPageAccess } = useAuth();
   const { lang = 'ro' } = useParams();
   const { t, i18n } = useTranslation(['common', 'entity', 'dashboard']);
   const [stats, setStats] = useState<Record<string, any>>({});
@@ -48,18 +48,36 @@ export default function Dashboard() {
            return;
         }
 
+        const canReadAudit = hasPermission('audit_log', 'read');
+        const canViewMonitoring = hasPageAccess('monitoring');
+
         // Use Socket.IO for monitoring and Brain API for Audit Logs (Enterprise Level 8)
         const [statsRes, auditRes, healthRes, todosRes] = await Promise.allSettled([
-          socketRequest("monitoring:db", { withRecent: true }).catch(() => ({ success: false })),
-          api.brain.get(`db/audit_log?limit=15&workspaceId=${user?.workspaceId || 'system'}`).catch(() => ({ success: false, data: [] })),
-          socketRequest("monitoring:workers").catch(() => ({ success: false })),
+          canViewMonitoring 
+            ? socketRequest("monitoring:db", { withRecent: true }).catch(() => ({ success: false }))
+            : Promise.resolve({ success: true, data: { tables: [] } } as any),
+          canReadAudit 
+            ? api.brain.get(`db/audit_log?limit=15&workspaceId=${user?.workspaceId || 'system'}`).catch(() => ({ success: false, data: [] }))
+            : Promise.resolve({ success: true, data: [] } as any),
+          canViewMonitoring
+            ? socketRequest("monitoring:workers").catch(() => ({ success: false }))
+            : Promise.resolve({ success: true, data: [] } as any),
           socketRequest("monitoring:todos").catch(() => ({ success: false }))
         ]);
         
         // Map monitoring:db table data to entity stats format
         const dbData = statsRes.status === 'fulfilled' && statsRes.value?.data?.tables 
           ? statsRes.value.data.tables.reduce((acc: any, t: any) => {
-              acc[t.table] = { total: t.counts?.local || 0, recentData: t.recent || [] };
+              // Find the entity definition for this table
+              const entityName = Object.keys(configMap).find(key => resolveCollection(key) === t.table);
+              const entityDef = entityName ? configMap[entityName] : null;
+              
+              // Normalize recent data to prevent React rendering errors
+              const normalizedRecent = entityDef && Array.isArray(t.recent) 
+                ? t.recent.map((item: any) => normalizeFormData(item, entityDef.fields || []))
+                : (t.recent || []);
+              
+              acc[t.table] = { total: t.counts?.local || 0, recentData: normalizedRecent };
               return acc;
             }, {})
           : {};

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { registryRouter } from './handlers/registry.handler';
 import { RegistryManager } from '../core/registry';
 import { entityRouter } from './handlers/entity.handler';
+import { dbRouter } from './handlers/db.handler';
 import { auditRouter } from './handlers/audit.handler';
 import { printingRouter } from './handlers/printing.handler';
 import { systemRouter } from './handlers/system.handler';
@@ -31,6 +32,7 @@ router.get('/health', (req, res) => { res.json({ status: 'ok', service: 'backend
 
 router.use('/registry', registryRouter);
 router.use('/entity', entityRouter);
+router.use('/db', dbRouter);
 router.use('/audit', auditRouter);
 router.use('/printing', printingRouter);
 router.use('/system', systemRouter);

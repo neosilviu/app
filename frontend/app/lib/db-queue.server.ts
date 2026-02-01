@@ -74,10 +74,11 @@ class DbQueue {
         this.activeCount++;
         const queueId = Math.random().toString(36).substring(7);
         
-        // Level 8: Reduced noise for DB queueing on Windows
-        // Increased threshold from 25 to 50 to reduce log spam in high-contention scenarios
-        if (this.activeCount > 50) {
-            console.warn(`[DB-QUEUE][${queueId}] High contention detected: ${this.activeCount} tasks in queue. This is normal on Windows Dev to prevent SQLite locks.`);
+        // Level 8: Suppress high contention warnings on Windows Dev
+        // The queueing mechanism itself is working as intended to prevent SQLite locks.
+        // Only log if queue exceeds a critical threshold (e.g., > 100 tasks)
+        if (this.activeCount > 100) {
+            console.warn(`[DB-QUEUE][${queueId}] CRITICAL contention: ${this.activeCount} tasks in queue. Consider reducing concurrent requests.`);
         }
 
         const wrapped = async () => {

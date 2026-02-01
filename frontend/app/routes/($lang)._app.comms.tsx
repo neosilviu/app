@@ -337,7 +337,7 @@ export default function UnifiedComms() {
   const loadSettings = useCallback(async () => {
     try {
       const res = await api.brain.get('workspace/settings'); 
-      if (res.data?.success && res.data?.data) {
+      if (res?.success && res?.data) {
         setWsSettings((prev: any) => ({ ...prev, ...res.data }));
       }
     } catch (e) {}

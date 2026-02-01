@@ -131,6 +131,26 @@ export async function verifyAuth(request: Request, env: any) {
         workspaceId: (session.user as any).workspaceId
       };
     }
+
+    // Level 8: Support Bearer Token directly from Header for non-browser/internal clients
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        if (token) {
+            const internalSession = await auth.api.getSession({
+                headers: {
+                    cookie: `better-auth.session_token=${token}`
+                }
+            });
+            if (internalSession) {
+                return {
+                    ...internalSession.user,
+                    sub: internalSession.user.id,
+                    role: (internalSession.user as any).role || 'user',
+                    workspaceId: (internalSession.user as any).workspaceId
+                };
+            }
+        }
+    }
   } catch (e: any) {
     console.error('[AUTH-VERIFY] Verification failed:', e.message);
   }

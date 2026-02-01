@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Outlet, useParams, Link } from 'react-router';
-import { cn, api, socket, getLocalizedPath, socketRequest, type NavItem, renderString } from '~/lib/core';
+import { cn, api, socket, getLocalizedPath, socketRequest, type NavItem, renderString, resolveIcon } from '~/lib/core';
 import { assertRenderable } from '~/lib/utils';
 import { useAuth } from '~/hooks/useAuth';
 import { AiFloatingAgent } from '../AiSystemUI';
@@ -17,6 +17,88 @@ import { BugReportModal } from './LayoutUtils';
 import { AiCommandBar } from '../AiSystemUI';
 import { useSystem } from '~/hooks/useSystem';
 import { InboxDrawer } from '../dashboard/InboxDrawer';
+
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator
+} from '../ui/dropdown-menu';
+
+// ============================================================================
+// QUICK ACTIONS MENU
+// ============================================================================
+
+function QuickCreateMenu({ entities, lang, variant = 'pill' }: { entities: any[], lang: string, variant?: 'pill' | 'circle' }) {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const { constants } = useConfig();
+
+  // Robust SuperAdmin check (matching DashboardLayout logic exactly)
+  const isSuper = user?.role === 'superadmin' || 
+                 (user?.role && (constants?.SYSTEM_ROLE as any)?.[user.role]?.permission?.includes('*'));
+  
+  // LOGGING: Let's see why it's hiding
+  // console.log("[QuickCreateMenu] Role:", user?.role, "Entities:", entities.length, "isSuper:", isSuper);
+
+  // If we have no entities and not an admin, or if it's the floating circle, stay silent
+  if (entities.length === 0 && !isSuper) return null;
+  if (entities.length === 0 && variant === 'circle') return null;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button 
+            className={cn(
+                "bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg transition-all hover:-translate-y-0.5 active:scale-95 border-none shrink-0 z-[60]",
+                variant === 'pill' 
+                    ? "gap-2 rounded-2xl h-10 md:h-11 px-3 md:px-5 shadow-indigo-100 dark:shadow-none min-w-[44px]" 
+                    : "w-14 h-14 rounded-full shadow-indigo-200 dark:shadow-indigo-900/40 p-0"
+            )}
+            title={renderString(t('common:new'), lang)}
+        >
+            <Plus size={variant === 'pill' ? 20 : 28} className="stroke-[3]" />
+            {variant === 'pill' && (
+                <span className="hidden sm:inline font-extrabold uppercase text-[10px] tracking-widest leading-none">
+                    {renderString(t('common:new'), lang)}
+                </span>
+            )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent 
+        align={variant === 'pill' ? "end" : "center"} 
+        side={variant === 'pill' ? "bottom" : "top"}
+        sideOffset={variant === 'pill' ? 8 : 20}
+        className="w-64 p-3 rounded-[2rem] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-slate-100 dark:border-slate-800 shadow-2xl z-[100]"
+      >
+        <DropdownMenuLabel className="px-3 pb-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+            {renderString(t('sidebar:main_menu'), lang)}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator className="bg-slate-50 dark:bg-slate-800 mb-2" />
+        <div className="space-y-1 overflow-y-auto max-h-[60vh] custom-scrollbar">
+            {entities.length === 0 && isSuper && (
+                <div className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase italic text-center">
+                    {renderString(t('common:no_entities_found'), lang) || "Initialising..."}
+                </div>
+            )}
+            {entities.map(([id, entityDef]: [string, any]) => (
+                <DropdownMenuItem 
+                    key={id}
+                    onClick={() => navigate(getLocalizedPath(`/${id}?action=new`, lang))}
+                    className="px-4 py-3 text-xs font-bold rounded-2xl focus:bg-indigo-50 dark:focus:bg-indigo-900/20 text-slate-600 dark:text-slate-300 focus:text-indigo-600 transition-colors flex items-center justify-between group cursor-pointer"
+                >
+                    <span className="truncate">{renderString(entityDef.label || id, lang)}</span>
+                    <Plus size={14} className="opacity-40 group-focus:opacity-100 transition-opacity" />
+                </DropdownMenuItem>
+            ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 // ============================================================================
 // USER MENU CONTENT
@@ -51,9 +133,11 @@ function UserMenuContent({ onClose, onOpenChangelog, onOpenThemeEditor }: { onCl
                 if (item.hidden) return false;
                 
                 // Enterprise Level 8: Unified Page Permission Check
+                // Profile is allowed for everyone as a basic requirement.
+                // Settings and others must strictly follow registry permissions.
                 if (item.id && !hasPageAccess(item.id)) {
-                    const isBasic = ['profile', 'setting'].includes(item.id);
-                    if (!isBasic) return false;
+                    const isCore = ['profile'].includes(item.id);
+                    if (!isCore) return false;
                 }
 
                 if (item.permission && !hasPermission(item.permission)) return false;
@@ -123,18 +207,6 @@ const BrandText = ({ name, hasSystemIssues, lang }: { name: any, hasSystemIssues
       {resolvedName}
     </span>
   );
-};
-
-const resolveIcon = (iconName: any) => {
-  if (!iconName) return IconMap.HelpCircle;
-  if (typeof iconName === 'function' || typeof iconName === 'object') return iconName;
-  const Icon = IconMap[iconName];
-  if (!Icon) {
-    // Try PascalCase if iconName is lowercase string
-    const pascalName = iconName.charAt(0).toUpperCase() + iconName.slice(1);
-    return IconMap[pascalName] || IconMap.HelpCircle;
-  }
-  return Icon;
 };
 
 function SidebarItem({ 
@@ -701,16 +773,27 @@ interface HeaderProps {
   isChangelogOpen: boolean;
   setIsChangelogOpen: (open: boolean) => void;
   onOpenThemeEditor: () => void;
+  creatableEntities: any[];
 }
 
-function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChangelogOpen, setIsChangelogOpen, onOpenThemeEditor }: HeaderProps) {
+function Header({ 
+  title: manualTitle, 
+  isConnected, 
+  setIsMobileMenuOpen, 
+  isChangelogOpen, 
+  setIsChangelogOpen, 
+  onOpenThemeEditor,
+  creatableEntities
+}: HeaderProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [storageStats, setStorageStats] = useState<any>(null);
-  const { user, hasPermission, logout } = useAuth();
+  const { user, hasPermission, hasPageAccess, logout } = useAuth();
 
   useEffect(() => {
     const fetchStorage = async () => {
       if (!user) return; // PROD GUARD: Prevent requests if not logged in
+      if (!hasPageAccess('monitoring')) return; // Level 8: Only admins can view monitoring data
+      
       try {
         const res = await socketRequest("monitoring:storage");
         if (res.success) setStorageStats(res.data);
@@ -720,7 +803,7 @@ function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChange
     fetchStorage();
     const interval = setInterval(fetchStorage, 60000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, hasPageAccess]);
 
   const { workerStatuses } = useSystem();
   const config = useConfig();
@@ -748,14 +831,7 @@ function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChange
   // Determine help context ID
   const helpId = params.id || location.pathname;
 
-  const creatableEntities = Object.entries(entities).filter(([id, config]: [string, any]) => 
-    hasPermission(config) && 
-    config.features?.creatable !== false && 
-    config.menuConfig?.category !== 'administration' &&
-    config.menuConfig?.showInNewMenu !== false
-  );
-
-  // Breadcrumbs component
+  // Breadcrumbs component - Refined to only show Current Page Title as requested
   const Breadcrumbs = () => {
     let pathnames = location.pathname.split('/').filter((x) => x);
     
@@ -765,91 +841,86 @@ function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChange
     }
     
     if (pathnames.length === 0) return (
-        <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800 animate-in fade-in duration-500">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 animate-in fade-in duration-500">
             <LayoutDashboard size={14} className="text-indigo-600" />
             <span className="text-xs font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400">{renderString(t('sidebar:dashboard'), lang)}</span>
         </div>
     );
 
+    // Get the last valid segment for title display
+    const lastValue = pathnames[pathnames.length - 1];
+    const to = getLocalizedPath(`/${pathnames.join('/')}`, lang);
+    
+    let label = lastValue;
+    
+    // 1. Check navigation config
+    const navItem = allNavItems.find(item => getLocalizedPath(item.path, lang) === to);
+    if (navItem) {
+      label = renderString(navItem.label, lang);
+    } 
+    // 2. Check entities config (if it's a defined entity list)
+    else if (entities[lastValue]) {
+      label = renderString(entities[lastValue].labelPlural || entities[lastValue].label, lang);
+    }
+    // 3. Check if it's a record ID
+    let iconName = navItem?.icon || '';
+
+    if (lastValue === params.recordId || lastValue === params.id) {
+      const entityKey = pathnames[pathnames.length - 2];
+      const entityDef = entities[entityKey];
+      const entityLabel = entityDef ? renderString(entityDef.label, lang) : '';
+      iconName = entityDef?.icon || '';
+      
+      // Enterprise Level 8: Improved Identity Breadcrumb (Entity: Name)
+      if (manualTitle && String(manualTitle) !== 'undefined' && entityLabel) {
+        label = `${entityLabel}: ${manualTitle}`;
+      } else if (entityLabel) {
+         // If we don't have a manual title yet, show "Entity: ID" but avoid showing "undefined"
+         const displayId = (lastValue && lastValue !== 'undefined' && lastValue !== 'new') 
+            ? `${lastValue.substring(0, 8)}...` 
+            : '';
+         label = displayId ? `${entityLabel}: ${displayId}` : entityLabel;
+      } else {
+        label = manualTitle || lastValue;
+      }
+    }
+    // 4. Handle "new" record
+    else if (lastValue === 'new') {
+      const entityKey = pathnames[pathnames.length - 2];
+      const entityDef = entities[entityKey];
+      const entityLabel = entityDef ? renderString(entityDef.label, lang) : '';
+      iconName = entityDef?.icon || 'Plus';
+      label = t('common:new_record', { label: entityLabel || lastValue });
+    } else if (entities[lastValue]) {
+      iconName = entities[lastValue].icon || '';
+    }
+
+    // Enterprise Level 8: Cleanup labels (remove hyphens, handle special cases)
+    if (label === 'entity') return null;
+
+    const Icon = iconName ? resolveIcon(iconName) : null;
+
     return (
-      <nav className="flex items-center text-xs text-slate-500 dark:text-slate-400 overflow-x-auto whitespace-nowrap scrollbar-hide">
-        <Link 
-          to={getLocalizedPath("/", lang)} 
-          className="hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-1 p-1 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg"
-        >
-          <Menu size={14} />
-        </Link>
-
-        {pathnames.map((value, index) => {
-          const last = index === pathnames.length - 1;
-          const to = getLocalizedPath(`/${pathnames.slice(0, index + 1).join('/')}`, lang);
-          
-          // Try to translate / find label
-          let label = value;
-          
-          // 1. Check navigation config
-          const navItem = allNavItems.find(item => getLocalizedPath(item.path, lang) === to);
-          if (navItem) {
-            label = renderString(navItem.label, lang);
-          } 
-          // 2. Check entities config (if it's a defined entity list)
-          else if (entities[value]) {
-            label = renderString(entities[value].labelPlural || entities[value].label, lang);
-          }
-          // 3. Check if it's a record ID (following an entity slug)
-          else if (index > 0 && entities[pathnames[index-1]] && value === params.recordId) {
-            label = value; // Record Detail
-          }
-          // 4. Check if it's a dynamic parameter from routes
-          else if (params.recordId === value) {
-            label = value;
-          }
-          else if (params.id === value && !entities[value]) {
-            label = value;
-          }
-          
-          // Handle specific segments
-          if (value === 'entity') return null; // Skip the "entity" segment for cleaner UI
-
-          return (
-            <React.Fragment key={to}>
-              <ChevronRight size={12} className="mx-1 text-slate-300 dark:text-slate-600 shrink-0" />
-              {last ? (
-                <span className="font-extrabold text-slate-900 dark:text-white truncate max-w-[150px] uppercase tracking-tight">
-                  {label}
-                </span>
-              ) : (
-                <Link 
-                  to={to} 
-                  className="hover:text-slate-900 dark:hover:text-white transition-colors truncate max-w-[150px] font-bold"
-                >
-                  {label}
-                </Link>
-              )}
-            </React.Fragment>
-          );
-        })}
-      </nav>
+      <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+        {Icon ? (
+           <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-sm">
+              <Icon size={16} className="text-indigo-600 dark:text-indigo-400" />
+           </div>
+        ) : (
+          <div className="h-4 w-1.5 bg-indigo-500 rounded-full" />
+        )}
+        <h2 className="font-black text-slate-900 dark:text-white uppercase tracking-tighter text-sm md:text-lg leading-tight truncate max-w-[200px] md:max-w-md">
+          {renderString(label, lang)}
+        </h2>
+      </div>
     );
   };
 
   return (
     <header className="h-14 w-full bg-white/60 dark:bg-slate-950/60 backdrop-blur-2xl border-b border-slate-100 dark:border-slate-900 flex items-center justify-between px-2 md:px-6 shrink-0 z-40 sticky top-0">
       <div className="flex items-center gap-1 md:gap-6 flex-1 min-w-0 mr-4">
-        <div className="shrink-0 flex items-center gap-2">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="lg:hidden hover:bg-slate-100 dark:hover:bg-slate-900 h-9 w-9 rounded-xl"
-            onClick={() => setIsMobileMenuOpen(true)}
-          >
-            <Menu size={20} />
-          </Button>
-
-          {/* Breadcrumbs - Hidden on small mobile if search is active but here we show it */}
-          <div className="hidden sm:block">
-            <Breadcrumbs />
-          </div>
+        <div className="shrink-0 flex items-center gap-4">
+          <Breadcrumbs />
         </div>
 
         {/* Middle Section - Expanding Search Bar */}
@@ -859,78 +930,30 @@ function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChange
       </div>
 
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
-        <div className="hidden md:block">
-            <InboxDrawer />
+        {/* Conditional Inbox/Notification Tray - Only on Communication Page */}
+        {(location.pathname.includes('/comms') || location.pathname.includes('/comunicare')) && (
+            <div className="hidden md:block">
+                <InboxDrawer />
+            </div>
+        )}
+
+        {/* Support Tools - Visible for all users */}
+        <div className="flex items-center p-1 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
+            <BugReportModal />
+            <HelpDialog id={helpId} />
         </div>
 
-        {/* Global Controls */}
-        <div className="flex items-center gap-1 md:gap-3">
-            {/* Storage/Status Badges */}
-            {storageStats?.inbox && (
-                <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 rounded-xl">
-                    <HardDrive className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                    <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 uppercase tracking-tighter">
-                        {(storageStats.inbox.size / (1024 * 1024 * 1024)).toFixed(2)} GB
-                    </span>
-                </div>
-            )}
+        {/* Quick Actions */}
+        <div className="hidden sm:block">
+             <QuickCreateMenu entities={creatableEntities} lang={lang || 'ro'} />
+        </div>
 
-            {/* Bug & Help Group */}
-            <div className="hidden lg:flex items-center p-1 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
-               <BugReportModal />
-               <HelpDialog id={helpId} />
-            </div>
-
-            {/* Language & Actions Group */}
-            <div className="hidden sm:flex items-center p-1 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
-                <button 
-                    onClick={() => changeLanguage('ro')}
-                    className={cn(
-                        "px-2.5 py-1.5 text-[10px] font-black rounded-xl transition-all",
-                        lang === 'ro' ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm" : "text-slate-400 hover:text-slate-600"
-                    )}
-                >
-                    RO
-                </button>
-                <button 
-                    onClick={() => changeLanguage('en')}
-                    className={cn(
-                        "px-2.5 py-1.5 text-[10px] font-black rounded-xl transition-all",
-                        lang === 'en' ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm" : "text-slate-400 hover:text-slate-600"
-                    )}
-                >
-                    EN
-                </button>
-            </div>
-
-            {creatableEntities.length > 0 && (
-                <div className="relative group hidden sm:block">
-                    <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 rounded-2xl h-11 px-5 shadow-lg shadow-indigo-100 dark:shadow-none transition-all hover:-translate-y-0.5 active:scale-95">
-                        <Plus size={20} className="stroke-[3]" />
-                        <span className="font-extrabold uppercase text-[10px] tracking-widest">{renderString(t('common:new'), lang)}</span>
-                    </Button>
-                    <div className="absolute right-0 mt-3 w-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 opacity-0 invisible group-hover:opacity-100 group-hover:visible translate-y-2 group-hover:translate-y-0 transition-all duration-300 z-50 p-3">
-                        <p className="px-3 pb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50 dark:border-slate-800 mb-2">{renderString(t('sidebar:main_menu'), lang)}</p>
-                        {creatableEntities.map(([id, config]: [string, any]) => (
-                            <button 
-                                key={id}
-                                onClick={() => navigate(getLocalizedPath(`/${id}/new`, lang))}
-                                className="w-full text-left px-4 py-3 text-xs font-bold rounded-2xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors flex items-center justify-between group/item"
-                            >
-                                {renderString(config.label || t(`entities:${id}.label`), lang)}
-                                <Plus size={14} className="opacity-40 group-hover/item:opacity-100 transition-opacity" />
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* User Dropdown */}
-            <div className="relative">
-                <button 
-                    onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                    className="flex items-center gap-3 p-1.5 pr-3 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 hover:bg-white dark:hover:bg-slate-800 transition-all group active:scale-95"
-                >
+        {/* User Dropdown */}
+        <div className="relative">
+            <button 
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center gap-3 p-1.5 pr-3 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 hover:bg-white dark:hover:bg-slate-800 transition-all group active:scale-95"
+            >
                     <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-[11px] shadow-lg group-hover:scale-105 transition-transform">
                         {renderString(user?.name).charAt(0) || 'U'}
                     </div>
@@ -957,7 +980,6 @@ function Header({ title: manualTitle, isConnected, setIsMobileMenuOpen, isChange
                 )}
             </div>
         </div>
-      </div>
     </header>
   );
 }
@@ -976,10 +998,8 @@ function MobileBottomBar({
   setIsUserMenuOpen: (o: boolean) => void
 }) {
   const { lang } = useParams();
-  const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
-  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 px-4 py-2 z-50 flex items-center justify-between pb-safe">
@@ -1007,41 +1027,9 @@ function MobileBottomBar({
             <span className="text-[10px] font-bold uppercase tracking-tighter">{renderString(t('sidebar:contact'), lang)}</span>
         </Link>
 
-        {/* Plus Active Button */}
+        {/* Quick Actions (Repus în topbar și aici) */}
         <div className="relative -translate-y-4">
-            <Button 
-                onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
-                className={cn(
-                    "w-14 h-14 rounded-full bg-indigo-600 shadow-xl shadow-indigo-200 dark:shadow-indigo-900/40 flex items-center justify-center text-white transition-all transform active:scale-95",
-                    isPlusMenuOpen ? "rotate-45" : "rotate-0"
-                )}
-            >
-                <Plus size={28} className="stroke-[3]" />
-            </Button>
-
-            {isPlusMenuOpen && (
-                <>
-                    <div 
-                        className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm -z-10" 
-                        onClick={() => setIsPlusMenuOpen(false)}
-                    />
-                    <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-64 bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 animate-in slide-in-from-bottom-4 fade-in duration-300">
-                        {creatableEntities.map(([id, config]: [string, any]) => (
-                            <button 
-                                key={id}
-                                onClick={() => {
-                                    navigate(getLocalizedPath(`/${id}/new`, lang));
-                                    setIsPlusMenuOpen(false);
-                                }}
-                                className="w-full text-left px-5 py-3.5 text-xs font-bold rounded-2xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors flex items-center justify-between group"
-                            >
-                                {renderString(config.label || t(`entities:${id}.label`), lang)}
-                                <Plus size={16} className="text-slate-300 group-hover:text-indigo-500" />
-                            </button>
-                        ))}
-                    </div>
-                </>
-            )}
+            <QuickCreateMenu entities={creatableEntities} lang={lang || 'ro'} variant="circle" />
         </div>
 
         {/* User Profile */}
@@ -1084,6 +1072,7 @@ export default function DashboardLayout({ children, title }: { children?: React.
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
+  const [dynamicTitle, setDynamicTitle] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { lang } = useParams();
@@ -1095,12 +1084,34 @@ export default function DashboardLayout({ children, title }: { children?: React.
 
   const allNavItems = [...navigation.main, ...navigation.admin, ...navigation.user];
 
-  const creatableEntities = Object.entries(entities).filter(([id, config]: [string, any]) => 
-    hasPermission(config) && 
-    config.features?.creatable !== false && 
-    config.menuConfig?.category !== 'administration' &&
-    config.menuConfig?.showInNewMenu !== false
-  );
+  const creatableEntities = React.useMemo(() => {
+    if (!entities) return [];
+    
+    // Check if user has overall admin permission or "*"
+    const isSuper = user?.role === 'superadmin' || 
+                   (user?.role && (config?.constants?.SYSTEM_ROLE as any)?.[user.role]?.permission?.includes('*'));
+    
+    return Object.entries(entities).filter(([id, entityDef]: [string, any]) => {
+        const canCreate = isSuper || 
+                         hasPermission(`${id}:create`) || 
+                         hasPermission(`${id}:*`) || 
+                         hasPermission('workspace:manage');
+                         
+        if (!canCreate) return false;
+        
+        const cfg = entityDef as any;
+        // Don't show entities explicitly marked as not creatable
+        if (cfg.features?.creatable === false) return false;
+        
+        // Hide administrative entities from the main "New" menu unless SuperAdmin
+        if (!isSuper && cfg.menuConfig?.category === 'administration') return false;
+        
+        // Check explicit menu visibility override
+        if (cfg.menuConfig?.showInNewMenu === false) return false;
+        
+        return true;
+    }).sort((a, b) => ((a[1] as any).menuConfig?.priority || 50) - ((b[1] as any).menuConfig?.priority || 50));
+  }, [entities, user, config, hasPermission]);
 
   const isAuthPage = location.pathname.includes('/login') || 
                      location.pathname.includes('/register') || 
@@ -1133,10 +1144,10 @@ export default function DashboardLayout({ children, title }: { children?: React.
   // Automatic Document Title
   React.useEffect(() => {
     const navItem = allNavItems.find((item: any) => getLocalizedPath(item.path, lang) === location.pathname);
-    const pageTitle = title || (navItem ? renderString(navItem.label, lang) : '');
+    const pageTitle = dynamicTitle || title || (navItem ? renderString(navItem.label, lang) : '');
     const appName = renderString(uiConfig.appName || uiConfig.layout?.appName || '', lang);
     document.title = pageTitle ? `${pageTitle} | ${appName}` : appName;
-  }, [location.pathname, title, t, uiConfig, allNavItems, lang]);
+  }, [location.pathname, title, dynamicTitle, t, uiConfig, allNavItems, lang]);
 
   React.useEffect(() => {
     localStorage.setItem('sidebar_open', JSON.stringify(isSidebarOpen));
@@ -1223,12 +1234,13 @@ export default function DashboardLayout({ children, title }: { children?: React.
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header 
-          title={title} 
+          title={dynamicTitle || title} 
           isConnected={isConnected} 
           setIsMobileMenuOpen={setIsMobileMenuOpen} 
           isChangelogOpen={isChangelogOpen}
           setIsChangelogOpen={setIsChangelogOpen}
           onOpenThemeEditor={() => setIsThemeEditorOpen(true)}
+          creatableEntities={creatableEntities}
         />
 
         {/* Page Content */}
@@ -1243,7 +1255,12 @@ export default function DashboardLayout({ children, title }: { children?: React.
             )}
             style={isFullScreenPage ? {} : { maxWidth: 'var(--content-width, 80rem)' }}
           >
-            {children || <Outlet />}
+            {/* Enterprise Level 8: Ensuring context is passed even through children wrapper */}
+            {children ? (
+                 React.isValidElement(children) ? React.cloneElement(children as React.ReactElement, { context: { setDynamicTitle, dynamicTitle } }) : children
+            ) : (
+                <Outlet context={{ setDynamicTitle, dynamicTitle }} />
+            )}
           </div>
         </main>
         

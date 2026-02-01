@@ -19,7 +19,7 @@ export function SubtaskManager({ parentTaskId, workspaceId }: SubtaskManagerProp
   const { lang } = useParams();
   const { t } = useTranslation(['common', 'entity']);
   const { entity } = useConfig();
-  const { data: allTasks, create, update, remove, refresh } = useEntity('todo');
+  const { data: allTasks, create, update, remove, refresh } = useEntity('task');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 

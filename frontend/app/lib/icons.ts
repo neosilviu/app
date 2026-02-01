@@ -600,8 +600,17 @@ export const IconMap: Record<string, any> = {
 };
 
 export const resolveIcon = (iconName: any) => {
-  if (!iconName) return HelpCircle;
+  if (!iconName) return IconMap.HelpCircle || HelpCircle;
   if (typeof iconName === 'function') return iconName;
-  if (typeof iconName === 'object') return HelpCircle;
-  return IconMap[iconName] || HelpCircle;
+  if (typeof iconName === 'object') return IconMap.HelpCircle || HelpCircle;
+  
+  const Icon = IconMap[iconName];
+  if (!Icon) {
+    // Try PascalCase if iconName is lowercase string
+    const pascalName = (typeof iconName === 'string' && iconName.length > 0) 
+      ? iconName.charAt(0).toUpperCase() + iconName.slice(1)
+      : '';
+    return IconMap[pascalName] || IconMap.HelpCircle || HelpCircle;
+  }
+  return Icon;
 };

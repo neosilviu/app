@@ -1,0 +1,12 @@
+STUDIO APP v2 - UNUSED SYMBOLS REPORT
+Generated: 2026-01-30T09:15:38.416Z
+
+[\frontend\app\lib\entity-engine.tsx]
+  - getAuditSnapshot
+  - isFieldVisible
+  - renderTemplate
+  - getSearchableFields
+
+[\frontend\app\lib\utils.ts]
+  - safeRender
+  - sanitizeFilename

@@ -71,8 +71,9 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
       const res = await api.brain.get('db/collection/tag/all');
       if (res.success) {
         const validTags = (res.data || []).map((t: any) => ({
-          ...t,
-          id: t.id || t._id || t.ID || t.tagId
+          id: t.id || t._id || t.ID || t.tagId,
+          name: t.name || t.label || '',
+          color: t.color || '#3b82f6'
         }));
         cachedAllTags = validTags;
         setAllTags(validTags);
@@ -91,8 +92,9 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
       isFetchingAllTags = false; // Mark as done after socket response
       if (res.success) {
         const validTags = (res.data || []).map((t: any) => ({
-          ...t,
-          id: t.id || t._id || t.ID || t.tagId
+          id: t.id || t._id || t.ID || t.tagId,
+          name: t.name || t.label || '',
+          color: t.color || '#3b82f6'
         }));
         cachedAllTags = validTags;
         setAllTags(validTags);
@@ -119,7 +121,12 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
            // Fallback if allTags isn't loaded yet
            const allRes = await api.brain.get('db/collection/tag/all');
            if (allRes.success) {
-              const matches = (allRes.data || []).filter((t: any) => tagIds.includes(t.id || t.tagId));
+              const cleanedTags = (allRes.data || []).map((t: any) => ({
+                id: t.id || t._id || t.ID || t.tagId,
+                name: t.name || t.label || '',
+                color: t.color || '#3b82f6'
+              }));
+              const matches = cleanedTags.filter((t: any) => tagIds.includes(t.id));
               setEntityTags(matches);
            }
         }
@@ -134,8 +141,9 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
     socket.emit('tag:get-entity-tag', { entityType, entityId }, (res: any) => {
       if (res.success) {
         const validTags = (res.data || []).map((t: any) => ({
-          ...t,
-          id: t.id || t._id || t.ID || t.tagId
+          id: t.id || t._id || t.ID || t.tagId,
+          name: t.name || t.label || '',
+          color: t.color || '#3b82f6'
         }));
         setEntityTags(validTags);
         // if (onTagsChange) onTagsChange(validTags);

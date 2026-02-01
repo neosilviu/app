@@ -16,10 +16,36 @@ if (process.env.NODE_ENV === "development") {
   EventEmitter.defaultMaxListeners = 100;
 }
 
-// Initialize registry on server startup
+// Initialize registry ONCE at startup, cache it globally
 let registryPromise: Promise<any> | null = null;
+let registryCache: any = null;
+
 function ensureRegistry() {
-  if (!registryPromise) registryPromise = initializeRegistry();
+  if (registryCache) return Promise.resolve(registryCache);
+  
+  if (!registryPromise) {
+    registryPromise = (async () => {
+      let retries = 0;
+      const maxRetries = 3;
+      while (retries < maxRetries) {
+        try {
+          const result = await initializeRegistry();
+          registryCache = result;  // Cache globally after first success
+          return result;
+        } catch (e: any) {
+          if (e.message?.includes('module runner has been closed')) {
+            retries++;
+            if (retries < maxRetries) {
+              console.warn(`[ENTRY-REGISTRY] Module runner closed, retrying (${retries}/${maxRetries})...`);
+              await new Promise(resolve => setTimeout(resolve, 300));
+              continue;
+            }
+          }
+          throw e;
+        }
+      }
+    })();
+  }
   return registryPromise;
 }
 
@@ -31,19 +57,26 @@ export default async function handleRequest(
   loadContext: AppLoadContext
 ) {
   const url = new URL(request.url);
-  console.log(`[ENTRY-SERVER] handleRequest called for: ${request.method} ${url.pathname}`);
+  const requestId = Math.random().toString(36).substring(7);
+  const timestamp = new Date().toISOString();
   
-  // CRITICAL: Route /api/* directly to Brain handler to avoid SSR HTML
+  // console.log(`[ENTRY-START] [${requestId}] ${timestamp} ${request.method} ${url.pathname}`);
+  
+  // CRITICAL: Handle /api/* routes BEFORE React Router processes them
   if (url.pathname.startsWith('/api/')) {
-    console.log(`[ENTRY-SERVER] Routing API request to Brain handler`);
     const { handleBrainRequest } = await import("./brain.server");
     const env = (loadContext as any).cloudflare?.env || (process as any).env;
     const ctx = (loadContext as any).cloudflare?.ctx;
+    
+    // console.log(`[ENTRY-API-START] [${requestId}] ${request.method} ${url.pathname}`);
+    
+    // We pass the request directly and let Brain handle body recovery ONCE.
+    // Pre-parsing in entry.server.tsx often fails in dev because of RR7's internal request handling.
     const response = await handleBrainRequest(request, env, ctx);
-    console.log(`[ENTRY-SERVER] API response: ${response.status}`);
+    
+    // console.log(`[ENTRY-API-END] [${requestId}] ${response.status}`);
     return response;
   }
-
   
   // Ensure registry is ready before any rendering
   await ensureRegistry();

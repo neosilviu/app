@@ -16,7 +16,7 @@ Sistemul nu foloseste migrari traditionale. Schema este derivata din **Registry*
 
 ##  Audit & Undo Engine
 Fiecare tabel are auditarea activata automat:
-- **audit_logs**: Inregistreaza cine, ce si cand a modificat.
+- **audit_log**: Inregistreaza cine, ce si cand a modificat.
 - **Snapshots**: Salveaza snapshot_before si snapshot_after sub forma de JSON.
 - **Polymorphic Attachments**: Tabelul entity_attachments permite legarea fisierelor de orice entitate folosind entityType si entityId.
 

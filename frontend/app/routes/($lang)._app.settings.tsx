@@ -14,6 +14,7 @@ import { ThemeEditor } from '~/components/ThemeSystem';
 import { useTranslation } from 'react-i18next';
 import { verifyAuth } from '~/lib/auth-core.server';
 import { getDb } from '~/lib/d1.server';
+import { useSmartBack } from '~/hooks/useSmartBack';
 
 // --- SUB-COMPONENTS (OPTIMIZED) ---
 import { GeneralTab } from '~/components/settings/GeneralTab';
@@ -117,17 +118,19 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
     const { lang } = useParams();
     const { initialSettings, systemSettings: initialSystemSettings = {} } = loaderData || {};
     const { user, hasPermission, hasPageAccess, switchWorkspace, userList, userLoading, fetchUserList } = useAuth();
-    const { refreshConfig, constants: registry } = useConfig();
+    const { refreshConfig, constants: registry, entity: configEntities } = useConfig();
     const { t, i18n } = useTranslation(["common", "settings", "auth"]);
     
     // Security check: Role-based page access
     useEffect(() => {
         if (user && !hasPageAccess('settings')) {
-            navigate('/');
+            navigate(-1);
         }
     }, [user, hasPageAccess, navigate]);
 
     const [searchParams, setSearchParams] = useSearchParams();
+
+    const workspaceId = useMemo(() => user?.workspaceId, [user?.workspaceId]);
 
     const [settings, setSettings] = useState<any>(initialSettings || {});
     const [systemSettings, setSystemSettings] = useState<any>(initialSystemSettings || {});
@@ -225,15 +228,6 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             setActiveTab(tab);
         }
     }, [searchParams]);
-
-    useEffect(() => {
-        if (searchParams.get("tab") !== activeTab) {
-            setSearchParams(prev => {
-                prev.set("tab", activeTab);
-                return prev;
-            }, { replace: true });
-        }
-    }, [activeTab]);
 
     // Users Tab State
     const [inviteEmail, setInviteEmail] = useState("");
@@ -424,29 +418,21 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
      * as UsersTab handles its own logic now.
      */
 
-    useEffect(() => {
-        if (activeTab === 'user') {
-            fetchUserList();
-        }
-        
-        // Sync tab with URL
-        if (searchParams.get("tab") !== activeTab) {
-            setSearchParams(prev => {
-                prev.set("tab", activeTab);
-                return prev;
-            }, { replace: true });
-        }
-    }, [activeTab, user?.workspaceId]);
+    // Track when we switch to user tab to avoid calling fetchUserList on every re-render
+    const lastActiveTabRef = useRef(activeTab);
+    const savingRef = useRef(false);
 
     useEffect(() => {
-        if (!user?.workspaceId) return;
+        if (!workspaceId) return;
 
         // Removed redundant fetchSettings, fetchRbac, fetchWorkspaces that were hitting the Brain API
         // which the loader already provides. This prevents a request storm on page load.
         
+        // Only fetch user list when on the user tab
         if (activeTab === 'user') {
             fetchUserList();
         }
+        lastActiveTabRef.current = activeTab;
         
         // Finalize loading state immediately if we have data or after a short delay
         if (initialSettings) {
@@ -456,9 +442,11 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             return () => clearTimeout(timer);
         }
 
-    }, [user?.workspaceId, user?.id, hasPermission, activeTab, initialSettings]);
+    }, [workspaceId, user?.id, hasPermission, activeTab, initialSettings]);
 
     const handleSave = async () => {
+        if (savingRef.current) return;
+        savingRef.current = true;
         try {
             const response = await api.brain.post(`workspace/update-settings`, {
                 workspaceId: user?.workspaceId,
@@ -479,6 +467,8 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             }
         } catch (error) {
             toast.error(getErrorMessage(error, t('settings:failed_save')));
+        } finally {
+            savingRef.current = false;
         }
     };
 
@@ -590,7 +580,7 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                                 } catch (e) { toast.error(t('settings:user.failed_remove_user')); }
                             }
                         }}
-                        entity={registry?.ENTITY_CONFIG || {}}
+                        entity={configEntities || registry?.ENTITY_CONFIG || {}}
                         roles={registry?.SYSTEM_ROLE || registry?.AUTH_CONFIG?.role || {}}
                         workspaceId={user?.workspaceId || ""}
                         api={api}

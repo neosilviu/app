@@ -55,12 +55,7 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     command === 'serve' ? cloudflareDevProxy({
-      configPath: path.resolve("../.dev/wrangler-dev.toml"),
-      persist: {
-        // Match Wrangler CLI persistence path exactly (Enterprise Level 8 Consistency)
-        // Wrangler CLI --persist-to ../.dev/.wrangler/state results in state/v3/d1
-        path: path.resolve("../.dev/.wrangler/state")
-      }
+      configPath: path.resolve("wrangler.toml"),
     }) : undefined,
     reactRouter(),
     tailwindcss(), 
@@ -111,7 +106,7 @@ export default defineConfig(({ command }) => ({
     },
     watch: {
       usePolling: false,
-      ignored: ["**/node_modules/**", "**/backend/**", "**/logs/**", "**/backups/**", "**/whatsapp_session/**", "**/local-inbox/**", "**/.dev-logs/**", "**/.dev/.wrangler/**"],
+      ignored: ["**/node_modules/**", "**/backend/**", "**/logs/**", "**/backups/**", "**/whatsapp_session/**", "**/local-inbox/**", "**/.dev-logs/**"],
     },
     hmr: {
       clientPort: 8788,
@@ -131,12 +126,7 @@ export default defineConfig(({ command }) => ({
       
       // Proxy legacy APIs to backend, but EXCLUDE new RR7 routes + auth
       // This regex matches /api/ followed by anything EXCEPT the listed RR7 routes
-      "^/api/(?!(db|auth|config|workspace|ai|architect|companies|contact|entity|system|stats|file|upload|help|health|health_brain|tag|monitoring|registry|search|workflow|member|asset|action|check-admin|setup-admin|local-token))": {
-        target: "http://127.0.0.1:4001",
-        changeOrigin: true,
-//        timeout: 10000,
-//        proxyTimeout: 10000,
-      }
+      // REMOVED: Proxy to backend-v2 abandoned, all API calls go to Worker
     }
   },
 }));

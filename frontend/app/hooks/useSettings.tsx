@@ -19,6 +19,7 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const { constants, isInitialized } = useConfig();
   const { isAdminExists, user } = useAuth() || { isAdminExists: null, user: null };
+  const useLocalAgent = constants?.SYSTEM_SETTING?.use_local_agent === true;
   const [settings, setSettings] = useState<Settings>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +30,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setError(null);
 
       // Enterprise Level 8: Skip backend fetch if we are in Setup phase (No Admin)
-      // or if we don't have a logged-in user yet (socket won't be connected).
-      if (isAdminExists === false || !user) {
+      // or if we don't have a logged-in user yet (socket won't be connected),
+      // OR if Local Agent is disabled in Registry.
+      if (isAdminExists === false || !user || !useLocalAgent) {
           const registrySettings = constants?.SYSTEM_SETTING || {};
           setSettings(registrySettings);
           setLoading(false);
@@ -71,14 +73,18 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       fetchSettings();
     };
 
-    socket.on('system:settings-updated', handleSettingsUpdate);
-    socket.on('connect', fetchSettings);
+    if (useLocalAgent) {
+        socket.on('system:settings-updated', handleSettingsUpdate);
+        socket.on('connect', fetchSettings);
+    }
 
     return () => {
-      socket.off('system:settings-updated', handleSettingsUpdate);
-      socket.off('connect', fetchSettings);
+      if (useLocalAgent) {
+          socket.off('system:settings-updated', handleSettingsUpdate);
+          socket.off('connect', fetchSettings);
+      }
     };
-  }, [isInitialized]);
+  }, [isInitialized, useLocalAgent]);
 
   return (
     <SettingsContext.Provider value={{ settings, loading, error, refreshSettings }}>

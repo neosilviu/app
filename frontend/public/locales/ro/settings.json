@@ -43,7 +43,7 @@
     "manage_users": "Management Utilizatori",
     "manage_roles": "Definire Roluri (RBAC)",
     "manage_settings": "Setări Sistem",
-    "view_audit_logs": "Log-uri Audit",
+    "view_audit_log": "Log-uri Audit",
     "view_archive": "Acces Arhivă",
     "view_print_queue": "Coadă Printare",
     "core": "Bazat pe Nucleu",

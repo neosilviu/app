@@ -332,7 +332,7 @@ ${colors.bright}What is this?${colors.reset}
 
 ${colors.bright}Database Types:${colors.reset}
   ${colors.green}LOCAL${colors.reset}:       Development database on your machine
-                 Path: .wrangler/state/v3/d1/
+                 Path: .wrangler/v3/d1/
   
   ${colors.yellow}PRODUCTION${colors.reset}: Online Cloudflare D1 database
                  Requires: wrangler login

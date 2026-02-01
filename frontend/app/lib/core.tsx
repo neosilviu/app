@@ -33,6 +33,7 @@ export {
     socket,
     whatsappSocket,
     socketRequest,
+    initRegistry,
     getLocalAgentUrl,
     AiService,
     BaseAiEngine,

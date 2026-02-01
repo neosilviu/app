@@ -117,7 +117,7 @@ npm run dev
   - Support Polymorphic Attachments: ensure `entity_attachments` table is available
 - [ ] Create `src/core/audit.ts`
   - `createAuditProxy()` - Intercept DB mutations
-  - Store `snapshot_before`, `snapshot_after` in `audit_logs`
+  - Store `snapshot_before`, `snapshot_after` in `audit_log`
   - Enable Undo engine
   - **EVERY write operation must have audit trail**
 
@@ -356,7 +356,7 @@ curl http://localhost:4001/api/v2/registry
 - [ ] Implement `printJob()`
   - PowerShell `Start-Process -Verb Print`
   - Support printer selection
-  - **Audit:** Log every print job in `audit_logs`
+  - **Audit:** Log every print job in `audit_log`
 
 #### 7.5 Integration
 - [ ] Create `src/workers/TaskWorker.ts`
@@ -392,7 +392,7 @@ curl http://localhost:4001/api/v2/registry
   - Remove files older than TTL (from Registry: `system.inbox_ttl_days`)
   - Protect files linked to orders (printing_sessions)
   - Delete orphaned notifications
-  - **Audit:** Log cleanup operations in audit_logs
+  - **Audit:** Log cleanup operations in audit_log
 
 #### 8.3 Integration
 - [ ] Create `src/workers/InboxWorker.ts`
@@ -512,7 +512,7 @@ curl http://localhost:4001/api/v2/registry
     });
     ```
   - Navigation updates automatically when Registry changes
-  - Audit trail: Every change logged in audit_logs
+  - Audit trail: Every change logged in audit_log
 
 #### 10.6 Socket.IO Port Configuration (Runtime)
 - [ ] Update socket connection in Frontend (entry point or hook):

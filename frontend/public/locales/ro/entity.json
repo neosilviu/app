@@ -136,7 +136,7 @@
   "notifications": { "label": "Notificare", "labelPlural": "Notificări" },
   "changelogs": { "label": "Jurnal Modificări", "labelPlural": "Jurnal Modificări" },
   "workspaces": { "label": "Workspace", "labelPlural": "Workspace-uri" },
-  "audit_logs": { "label": "Log Audit", "labelPlural": "Log-uri Audit" },
+  "audit_log": { "label": "Log Audit", "labelPlural": "Log-uri Audit" },
   "table": {
     "load_more": "Încarcă Mai Multe",
     "showing_count": "Se afișează {{count}} înregistrări",

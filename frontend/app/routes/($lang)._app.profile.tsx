@@ -103,7 +103,12 @@ export async function action({ request, context }: ActionFunctionArgs) {
     try {
       const { handleBrainRequest } = await import("../brain.server");
       const ctx = (context as any).cloudflare?.ctx;
-      return await handleBrainRequest(request, env, ctx);
+
+      // Pre-parse JSON body and pass it as preParsedBody to avoid body re-use
+      let preParsedBody: any = undefined;
+      try { preParsedBody = await request.json(); } catch (e) { /* ignore */ }
+
+      return await handleBrainRequest(request, env, ctx, preParsedBody);
     } catch (err) {
       console.error("[PROFILE-ACTION] Proxy failed:", err);
     }
@@ -262,7 +267,7 @@ export default function ProfilePage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("common:role")}</Label>
+                      <Label>{t("common:role_label") || "Rol"}</Label>
                       <div className="pt-2 flex gap-2">
                         <Badge variant="outline" className="capitalize">
                           <Shield className="h-3 w-3 mr-1" />

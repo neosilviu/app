@@ -84,13 +84,14 @@ function ContactTimeline({ contact }: { contact: any }) {
                 if (contact.phone) {
                     const phoneNumeric = contact.phone.replace(/\D/g, '');
                     const chatId = phoneNumeric.includes('@') ? phoneNumeric : `${phoneNumeric}@c.us`;
-                    const res = await api.brain.get(`db/collection/interaction?chatId=${chatId}&provider=whatsapp&limit=5&sortBy=timestamp&sortOrder=DESC`);
+                    // Align with Registry: channel, createdAt, type (inbound/outbound)
+                    const res = await api.brain.get(`db/collection/interaction?contactId=${contact.id}&channel=whatsapp&limit=5&sortBy=createdAt&sortOrder=DESC`);
                     if (res.success) {
                         res.data.forEach((m: any) => results.push({
                             id: m.id,
-                            timestamp: m.timestamp,
+                            timestamp: m.createdAt || m.timestamp,
                             type: 'whatsapp',
-                            title: m.fromMe ? 'Mesaj Trimis' : 'Mesaj Primit',
+                            title: m.type === 'outbound' ? 'Mesaj Trimis' : 'Mesaj Primit',
                             description: m.body,
                             iconType: 'whatsapp',
                             color: 'bg-green-500',
@@ -103,11 +104,11 @@ function ContactTimeline({ contact }: { contact: any }) {
 
                 // 2. Fetch Emails from unified interaction
                 if (contact.email) {
-                    const res = await api.brain.get(`db/collection/interaction?chatId=${contact.email}&provider=email&limit=5&sortBy=timestamp&sortOrder=DESC`);
+                    const res = await api.brain.get(`db/collection/interaction?contactId=${contact.id}&channel=email&limit=5&sortBy=createdAt&sortOrder=DESC`);
                     if (res.success) {
                         res.data.forEach((e: any) => results.push({
                             id: e.id,
-                            timestamp: e.timestamp,
+                            timestamp: e.createdAt || e.timestamp,
                             type: 'email',
                             title: `Email: ${e.subject}`,
                             description: e.body?.substring(0, 100) + '...',
@@ -218,11 +219,8 @@ function ContactWhatsApp({ contact }: { contact: any }) {
         const fetchMessages = async () => {
             setLoading(true);
             try {
-                // Formatting phone for chat ID (removing non-digits and ensuring country code if needed)
-                const phoneNumeric = contact.phone.replace(/\D/g, '');
-                const chatId = phoneNumeric.includes('@') ? phoneNumeric : `${phoneNumeric}@c.us`;
-                
-                const res = await api.brain.get(`db/collection/interaction?chatId=${chatId}&provider=whatsapp&limit=10&sortBy=timestamp&sortOrder=DESC`);
+                // Align with Registry: contactId, channel, createdAt
+                const res = await api.brain.get(`db/collection/interaction?contactId=${contact.id}&channel=whatsapp&limit=10&sortBy=createdAt&sortOrder=DESC`);
                 if (res.success) {
                     setMessages(res.data);
                 }
@@ -261,15 +259,15 @@ function ContactWhatsApp({ contact }: { contact: any }) {
                     <div className="py-10 text-center text-slate-400 italic">Nicio interacțiune găsită pe WhatsApp.</div>
                 ) : (
                     messages.map((msg: any) => (
-                        <div key={msg.id} className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${msg.fromMe ? 'bg-indigo-500 text-white rounded-tr-none' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-none border border-black/5 shadow-sm'}`}>
+                        <div key={msg.id} className={`flex ${msg.type === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${msg.type === 'outbound' ? 'bg-indigo-500 text-white rounded-tr-none' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-none border border-black/5 shadow-sm'}`}>
                                 <div className="flex items-center justify-between mb-1 gap-4">
                                    <div className="flex gap-1">
                                       {msg.isPinned === 1 && <Pin className="w-2.5 h-2.5 rotate-45" />}
                                       {msg.isFavorite === 1 && <Star className="w-2.5 h-2.5 fill-yellow-400 text-yellow-400" />}
                                    </div>
                                     <span className="text-[8px] opacity-70 font-black uppercase tracking-tighter">
-                                        {new Date(msg.timestamp).toLocaleString('ro-RO')}
+                                        {new Date(msg.createdAt).toLocaleString('ro-RO')}
                                     </span>
                                 </div>
                                 <p className="leading-relaxed">{msg.body}</p>
@@ -301,7 +299,8 @@ function ContactEmail({ contact }: { contact: any }) {
         const fetchEmails = async () => {
             setLoading(true);
             try {
-                const res = await api.brain.get(`db/collection/interaction?chatId=${contact.email}&provider=email&limit=5&sortBy=timestamp&sortOrder=DESC`);
+                // Align with Registry: contactId, channel, createdAt
+                const res = await api.brain.get(`db/collection/interaction?contactId=${contact.id}&channel=email&limit=5&sortBy=createdAt&sortOrder=DESC`);
                 if (res.success) {
                     setEmails(res.data);
                 }
@@ -347,7 +346,7 @@ function ContactEmail({ contact }: { contact: any }) {
                                    {email.isPinned === 1 && <Pin className="w-2.5 h-2.5 text-indigo-500 rotate-45 shrink-0" />}
                                    {email.isFavorite === 1 && <Star className="w-2.5 h-2.5 fill-yellow-400 text-yellow-400 shrink-0" />}
                                 </div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">{new Date(email.timestamp).toLocaleDateString()}</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">{new Date(email.createdAt).toLocaleDateString()}</span>
                             </div>
                             <p className="text-xs text-slate-500 truncate line-clamp-1 mb-2">{email.body || email.bodyHtml?.replace(/<[^>]*>/g, '').substring(0, 100) || "Fără conținut text"}</p>
                             {email.tag && (

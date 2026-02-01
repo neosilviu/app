@@ -1,28 +1,5 @@
 import { getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, clearRegistryCache, loadBaseline } from './core';
 
-/**
- * AUTO-HEAL: Sync Table Schema (Enterprise Level 8)
- * Compares current DB columns with expected definition and ALTERS if needed.
- * This is a core feature of the No-Code Engine to handle schema evolution.
- */
-export async function syncTableSchema(db: any, table: string, expectedColumns: string[], forceLog = false) {
-    const resolved = resolveCollection(table);
-    if (forceLog) console.log(`[DB-AUTOHEAL] Checking schema for ${resolved}...`);
-    const info = await db.query(`PRAGMA table_info("${resolved}")`);
-    if (!info || info.length === 0) {
-        // Table doesn't exist yet - skip auto-heal for it
-        return;
-    }
-    const existingColumns = info.map((r: any) => r.name.toLowerCase());
-    
-    for (const col of expectedColumns) {
-        if (!existingColumns.includes(col.toLowerCase())) {
-            console.log(`[DB-AUTOHEAL] Adding missing column "${col}" to table "${resolved}"`);
-            await db.exec(`ALTER TABLE "${resolved}" ADD COLUMN "${col}" TEXT`);
-        }
-    }
-}
-
 // --- DB INIT STATE ---
 const global = globalThis as any;
 if (global.IS_DB_INITIALIZED === undefined) global.IS_DB_INITIALIZED = false;
@@ -83,6 +60,10 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
 
     global.DB_INIT_PROMISE = (async () => {
         try {
+            // DEBUG: Logam startul initializarii cu PID si context
+            if (typeof process !== 'undefined') {
+                console.log(`[DB-INIT-DEBUG] PID=${process.pid}, Request=${requestUrl}`);
+            }
             const start = Date.now();
             console.log(`[DB-INIT] Starting database initialization check (Request: ${requestUrl || 'internal'})...`);
             
@@ -111,7 +92,7 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             // CORE TABLES: Must be ready before we mark DB as initialized
             // Better Auth depends on 'user' and 'session'
             // Setup-Admin depends on 'contact' for business profile sync
-            const coreSyncList = ['user', 'session', 'contact', 'entity_definition', 'workspace', 'system_setting'];
+            const coreSyncList = ['user', 'session', 'account', 'verification', 'contact', 'entity_definition', 'workspace', 'system_setting', 'system_error', '_ai_prompt'];
             
             console.log(`[DB-INIT] Starting Core DNA Sync (${coreSyncList.join(', ')})...`);
             for (const entityName of coreSyncList) {
@@ -124,21 +105,21 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             // Enterprise Level 8: Namespace Normalization & Deduplication Migration
             // Now that we are sure the 'system_setting' table exists and has correct columns.
             try {
-                // Step A: Deduplicate records that would collide when lowercased (keeping the first one)
-                // This prevents UNIQUE(id) or UNIQUE(namespace, key) failures during normalization
-                await db.exec(`
-                    DELETE FROM system_setting 
-                    WHERE rowid NOT IN (
-                        SELECT MIN(rowid) 
-                        FROM system_setting 
-                        GROUP BY LOWER(namespace), LOWER(key)
-                    )
-                `);
+                // Step A: Deduplicate records (lowercase match)
+                try {
+                    await db.exec("DELETE FROM system_setting WHERE rowid NOT IN (SELECT MIN(rowid) FROM system_setting GROUP BY LOWER(namespace), LOWER(key))");
+                } catch (dedupErr: any) {
+                    console.warn("[DB-INIT] Deduplication step failed:", dedupErr.message);
+                }
                 
                 // Step B: Normalize remaining records to lowercase
-                await db.exec("UPDATE system_setting SET namespace = LOWER(namespace), id = LOWER(id)");
+                try {
+                    await db.exec("UPDATE system_setting SET namespace = LOWER(namespace), id = LOWER(id)");
+                } catch (normErr: any) {
+                    console.warn("[DB-INIT] Normalization step failed:", normErr.message);
+                }
             } catch (e: any) {
-                console.warn("[DB-INIT] Namespace normalization skipped or partial:", e.message);
+                console.warn("[DB-INIT] Namespace normalization procedure failed:", e.message);
             }
 
             // Step 3: Specific Migrations / Fixes (Keep only what's absolutely necessary)
@@ -176,7 +157,11 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             console.log(`[DB-INIT] Initialization procedure finished in ${Date.now() - start}ms.`);
 
         } catch (e: any) {
-            console.error("[DB-INIT-FATAL] Database initialization CRASHED:", e.message, e.stack);
+            if (e?.name === 'AbortError') {
+                console.error(`[DB-INIT-ABORT] Initializarea DB a fost intrerupta de client sau server (AbortError). Request=${requestUrl} Stack:`, e.stack);
+            } else {
+                console.error("[DB-INIT-FATAL] Database initialization CRASHED:", e.message, e.stack);
+            }
             global.DB_INIT_PROMISE = null;
             throw e;
         }
@@ -193,22 +178,41 @@ export function mapFieldType(type: string): string {
 
 export async function ensureBaselineSync(db: any, registry: any) {
     const baselineEntities = registry.ENTITY_CONFIG || registry.ENTITY_CONFIG || registry.entity_definition || registry.entity_definition || {};
+    const jsonStringify = (value: any, fallback: string | null = null) => {
+        if (value === null || value === undefined) return fallback;
+        if (typeof value === 'string') return value;
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return fallback;
+        }
+    };
+
+    const formatLabelValue = (value: any, fallback: string) => {
+        if (value === null || value === undefined) return fallback;
+        if (typeof value === 'string') return value;
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return fallback;
+        }
+    };
     
     // Step 0: Ensure entity_definition has all required columns (Enterprise Level 8 Auto-Heal)
     const requiredColumns = [
         'id', 'name', 'label', 'labelPlural', 'description', 'icon', 'colorTheme',
-        'tableName', 'displayField', 'fields', 'validations', 'relationships',
+        'tableName', 'displayField', 'fields', 'validations', 'relationships', 'dependencies',
         'uiConfig', 'menuConfig', 'permission', 'features', 'layout',
         'dashboardConfig', 'isSystem', 'workspaceId', 'createdAt', 'updatedAt'
     ];
     
     try {
         const existingCols = await db.query(`PRAGMA table_info("entity_definition")`);
-        const existingColNames = existingCols.map((c: any) => c.name);
+        const existingColNamesLower = existingCols.map((c: any) => (c.name || '').toLowerCase());
         
         for (const col of requiredColumns) {
-            if (!existingColNames.includes(col)) {
-                const colType = ['fields', 'validations', 'relationships', 'uiConfig', 'menuConfig', 'permission', 'features', 'layout', 'dashboardConfig'].includes(col) ? 'JSON' : 'TEXT';
+            if (!existingColNamesLower.includes(col.toLowerCase())) {
+                const colType = ['fields', 'validations', 'relationships', 'dependencies', 'uiConfig', 'menuConfig', 'permission', 'features', 'layout', 'dashboardConfig'].includes(col) ? 'JSON' : 'TEXT';
                 console.log(`[DB-INIT] AUTO-HEAL: Adding missing column "${col}" to entity_definition`);
                 await db.exec(`ALTER TABLE "entity_definition" ADD COLUMN "${col}" ${colType}`);
             }
@@ -228,17 +232,30 @@ export async function ensureBaselineSync(db: any, registry: any) {
                 if (normalized) {
                     metaStatements.push(
                         db.prepare(`INSERT OR REPLACE INTO entity_definition (
-                            id, name, label, labelPlural, tableName, icon, fields, workspaceId
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+                            id, name, label, labelPlural, tableName, icon, fields, 
+                            validations, relationships, dependencies, uiConfig, menuConfig, 
+                            permission, features, layout, dashboardConfig,
+                            workspaceId, isSystem
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                         .bind(
+                            normalized.id || normalized.name, 
                             normalized.name, 
-                            normalized.name, 
-                            typeof normalized.label === 'object' ? JSON.stringify(normalized.label) : normalized.label,
-                            typeof normalized.labelPlural === 'object' ? JSON.stringify(normalized.labelPlural) : normalized.labelPlural,
+                            jsonStringify(normalized.label),
+                            jsonStringify(normalized.labelPlural),
                             normalized.tableName || normalized.name, 
                             normalized.icon || 'Box',
-                            JSON.stringify(normalized.fields || []),
-                            'system'
+                            jsonStringify(normalized.fields || []),
+                            jsonStringify(normalized.validations || {}),
+                            jsonStringify(normalized.relationships || []),
+                            jsonStringify(normalized.dependencies || []),
+                            jsonStringify(normalized.uiConfig || {}),
+                            jsonStringify(normalized.menuConfig || {}),
+                            jsonStringify(normalized.permission || {}),
+                            jsonStringify(normalized.features || {}),
+                            jsonStringify(normalized.layout || {}),
+                            jsonStringify(normalized.dashboardConfig || {}),
+                            'system',
+                            normalized.isSystem ? 1 : 0
                         )
                     );
                 }
@@ -486,7 +503,7 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
                 // Skip workspaceId for workspace table (redundant)
                 if (s === 'workspaceId' && tableName === 'workspace') return;
                 
-                if (!fields.find((f: any) => (f.name || f.id) === s)) {
+                if (!fields.find((f: any) => ((f.name || f.id) || '').toLowerCase() === s.toLowerCase())) {
                     colDefs.push(`"${s}" ${s === 'archived' ? 'INTEGER DEFAULT 0' : 'TEXT'}`);
                 }
             });
@@ -497,20 +514,34 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
             await db.query(sql);
             console.log(`[DB-SCHEMA] Created table "${tableName}" in ${Date.now() - createStart}ms`);
         } else {
-            const existingCols = rows.map((r: any) => r.name);
-            const missing = fields.filter((f: any) => {
+            const existingColsRaw = rows.map((r: any) => r.name);
+            const existingColsLower = existingColsRaw.map((n: string) => n.toLowerCase());
+            
+            const missing: any[] = [];
+            const processedMissing = new Set<string>();
+
+            // 1. Process fields from entity definition
+            fields.forEach((f: any) => {
                 const fname = f.name || f.id;
-                return fname && !existingCols.includes(fname);
+                if (fname && !existingColsLower.includes(fname.toLowerCase())) {
+                    if (!processedMissing.has(fname.toLowerCase())) {
+                        missing.push(f);
+                        processedMissing.add(fname.toLowerCase());
+                    }
+                }
             });
             
-            // Core system fields check - From Registry
+            // 2. Core system fields check - From Registry
             const std = registry?.CONSTANT?.systemFields || [];
             std.forEach((s: string) => {
                 // Skip workspaceId for workspace table
                 if (s === 'workspaceId' && tableName === 'workspace') return;
                 
-                if (!existingCols.includes(s)) {
-                    missing.push({ name: s, label: s, type: s === 'archived' ? 'boolean' : 'text' });
+                if (!existingColsLower.includes(s.toLowerCase())) {
+                    if (!processedMissing.has(s.toLowerCase())) {
+                        missing.push({ name: s, label: s, type: s === 'archived' ? 'boolean' : 'text' });
+                        processedMissing.add(s.toLowerCase());
+                    }
                 }
             });
 

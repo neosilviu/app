@@ -24,6 +24,7 @@ import { LiveLogs } from "~/components/monitoring/LiveLogs";
 import { DatabaseTab } from "~/components/monitoring/DatabaseTab";
 import { HistoryLogs } from "~/components/monitoring/HistoryLogs";
 import { DatabaseBrowserDialog } from "~/components/monitoring/DatabaseBrowserDialog";
+import { useSmartBack } from '~/hooks/useSmartBack';
 
 export async function loader({ params }: Route.LoaderArgs) {
     return {
@@ -48,7 +49,7 @@ export default function MonitoringPage() {
 
         if (user && !hasPageAccess('monitoring')) {
             toast.error("Acces neautorizat la pagina de monitorizare");
-            navigate('/');
+            navigate(-1);
             return;
         }
 

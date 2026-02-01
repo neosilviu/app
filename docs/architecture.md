@@ -30,4 +30,4 @@ Ruleaza pe hardware-ul local (Node.js) pentru sarcini inaccesibile din Cloudflar
 ##  Reguli de Operare (Regula de Aur)
 1. **Niciodata hardcodat**: Orice string sau configurare trebuie sa fie in Registry.
 2. **Sequential Migration**: Scrierile pe D1 (DDL) se fac secvential pentru a evita lock-urile SQLite (SQLITE_BUSY).
-3. **Audit Obligatoriu**: Toate modificarile de date trebuie sa lase o urma in audit_logs.
+3. **Audit Obligatoriu**: Toate modificarile de date trebuie sa lase o urma in audit_log.

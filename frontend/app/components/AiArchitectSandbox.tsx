@@ -20,7 +20,8 @@ export function AiArchitectSandbox() {
             icon: "Package",
             color: "blue",
             fields: {
-                name: { label: "Product Name", type: "text", primary: true, required: true },
+                id: { type: "uuid", primaryKey: true, hidden: true },
+                name: { label: "Product Name", type: "text", required: true, searchable: true },
                 price: { label: "Price", type: "number", grid: 6 },
                 stock: { label: "Stock", type: "number", grid: 6 },
                 category: { label: "Category", type: "enum", options: ["Electronics", "Food", "Tools"] },
@@ -56,12 +57,14 @@ export function AiArchitectSandbox() {
     const generateMockData = () => {
         if (!parsedDraft || !parsedDraft.fields) return;
         const newMock = Array.from({ length: 5 }).map((_, i) => {
-            const row: any = { id: i + 1 };
+            const row: any = {};
             Object.keys(parsedDraft.fields).forEach(key => {
                 const f = parsedDraft.fields[key];
                 const labelStr = typeof f.label === 'object' ? (f.label.ro || f.label.en || key) : (f.label || key);
                 
-                if (f.type === 'number' || f.type === 'currency') {
+                if (key === 'id') {
+                    row[key] = f.type === 'uuid' ? `uuid-${i + 1}` : i + 1;
+                } else if (f.type === 'number' || f.type === 'currency') {
                     row[key] = Math.floor(Math.random() * 1000);
                 } else if (f.type === 'boolean' || f.type === 'toggle') {
                     row[key] = Math.random() > 0.5;
@@ -80,6 +83,8 @@ export function AiArchitectSandbox() {
                     row[key] = `${labelStr} ${i + 1}`;
                 }
             });
+            // Ensure ID exists if not in fields (legacy compat)
+            if (!row.id) row.id = i + 1;
             return row;
         });
         setMockData(newMock);

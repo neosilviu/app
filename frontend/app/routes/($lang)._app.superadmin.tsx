@@ -44,6 +44,7 @@ import { RegistrySettingsPanel } from '~/components/RegistrySettingsPanel';
 import { EntityDefinitionsPanel } from '~/components/EntityDefinitionsPanel';
 import { AiArchitectSandbox } from '~/components/AiArchitectSandbox';
 import { useAuth } from '~/hooks/useAuth';
+import { useSmartBack } from '~/hooks/useSmartBack';
 
 const getIconComponent = (name: any) => {
     if (!name || typeof name !== 'string') return Box;
@@ -59,13 +60,14 @@ export default function SuperadminPage() {
     const { t } = useTranslation(['common', 'superadmin', 'settings', 'ai_settings', 'entity']);
     const [searchParams, setSearchParams] = useSearchParams();
     const { user, switchWorkspace, hasPageAccess } = useAuth();
+    const goBack = useSmartBack();
 
     // Security check: Only superadmins
     useEffect(() => {
         if (user && !hasPageAccess('superadmin')) {
-            navigate('/');
+            goBack();
         }
-    }, [user, hasPageAccess, navigate]);
+    }, [user, hasPageAccess, goBack]);
     
     // Tab Sync Logic
     const currentTab = searchParams.get('tab') || 'ai-architect';
