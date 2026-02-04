@@ -31,13 +31,8 @@ export default function TagDetailPage() {
     };
   };
 
-  // Use DynamicEntityDetail for "new" tag
-  if (tagId === 'new') {
-    return <DynamicEntityDetail entityId="tag" recordId="new" config={configMap?.['tag']} />;
-  }
-
   useEffect(() => {
-    if (!tagId) return;
+    if (!tagId || tagId === 'new') return;
 
     const fetchData = async () => {
       setLoading(true);
@@ -66,6 +61,10 @@ export default function TagDetailPage() {
 
     fetchData();
   }, [tagId, navigate, lang]);
+
+  if (tagId === 'new') {
+    return <DynamicEntityDetail entityId="tag" recordId="new" config={configMap?.['tag']} />;
+  }
 
   if (isEditing) {
     return (

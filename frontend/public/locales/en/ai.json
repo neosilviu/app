@@ -11,5 +11,9 @@
   "to_open": "to open",
   "to_search": "to search",
   "search_files": "for files",
-  "search_contacts": "for contacts"
+  "search_contacts": "for contacts",
+  "mic_start": "Click to speak",
+  "mic_stop": "Click to stop",
+  "mic_transcribing": "Transcribing...",
+  "mic_error": "Error accessing microphone"
 }

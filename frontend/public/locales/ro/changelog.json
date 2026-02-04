@@ -1,0 +1,14 @@
+{
+  "title": "Istoric Actualizări",
+  "description": "Vezi noutățile și îmbunătățirile aduse sistemului.",
+  "syncing": "Se sincronizează istoricul...",
+  "no_changes": "Nicio actualizare înregistrată.",
+  "ai_success": "Draft generat cu succes via AI!",
+  "publish_success": "Update-ul a fost publicat!",
+  "publish_error": "Eroare la publicarea update-ului.",
+  "generate_error": "Eroare la analiza AI a istoricului Git.",
+  "ai_draft": "DRAFT AI",
+  "cancel": "Anulează",
+  "publish": "Publică",
+  "analyzing": "Analiză AI..."
+}

@@ -5,6 +5,7 @@ import winston from 'winston';
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
+import axios from 'axios';
 import { RegistryManager } from '../core/registry';
 import { WorkerManager } from '../core/WorkerManager';
 import { DatabaseDriver } from '../db/driver';
@@ -611,6 +612,188 @@ export class SocketManager {
           const { fullPath, notes, contactId } = data;
           // Store metadata in a simple way or update an existing attachment record
           callback({ success: true, notes, contactId });
+        } catch (e: any) {
+          callback({ success: false, error: e.message });
+        }
+      });
+
+      // --- Changelog Handlers (Git-Driven) ---
+      socket.on('changelog:get', async (data, callback) => {
+        if (typeof callback !== 'function') return;
+        try {
+          const db = DatabaseDriver.getInstance();
+          const logs = await db.query('SELECT * FROM "changelog" ORDER BY createdAt DESC');
+          
+          // Group by module/version for UI (mapping to expectations)
+          const grouped: Record<string, any[]> = {};
+          logs.forEach((log: any) => {
+            const key = log.module || 'System';
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push({
+              ...log,
+              // Map DB fields to UI expectations (backwards compat)
+              description: log.description || log.details || '',
+              type: log.type || 'improvement',
+              date: log.createdAt ? log.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]
+            });
+          });
+
+          callback({ success: true, data: grouped });
+        } catch (e: any) {
+          callback({ success: false, error: e.message });
+        }
+      });
+
+      socket.on('changelog:generate', async (data, callback) => {
+        if (typeof callback !== 'function') return;
+        console.log('[CHANGELOG] Generation started...');
+        try {
+          // 1. Get real Git history
+          let gitLog = '';
+          try {
+            gitLog = execSync('git log -n 15 --pretty=format:"%h - %s"', { encoding: 'utf8' });
+          } catch (e) {
+            gitLog = 'Nu s-a putut citi istoricul Git.';
+          }
+          console.log('[CHANGELOG] Git log fetched.');
+
+          // 2. Resolve AI Settings
+          const registry = RegistryManager.getInstance().get();
+          const settings = registry.SYSTEM_SETTING || {};
+          const aiConfig = registry.AI_CONFIG || {};
+          const prompts = registry.AI_PROMPT?.system || [];
+
+          // Resolve Prompts from Registry (Enterprise Level 8)
+          const changelogPrompt = prompts.find((p: any) => p.id === 'CHANGELOG_GENERATOR');
+          const systemPrompt = changelogPrompt?.content || "";
+          
+          const aiProvider = (aiConfig.changelog_provider && aiConfig.changelog_provider !== '__inherit__') ? aiConfig.changelog_provider : aiConfig.default_provider;
+          const aiModel = (aiConfig.changelog_model && aiConfig.changelog_model !== '__inherit__') ? aiConfig.changelog_model : aiConfig.model;
+          console.log(`[CHANGELOG] Using ${aiProvider} with ${aiModel}`);
+
+          const providersNode = aiConfig.providers || {};
+          const pDef = providersNode[aiProvider] || {};
+          
+          const aiKey = settings[`${aiProvider}_api_key`] || 
+                        settings[`${aiProvider}_api_token`] || 
+                        settings.cloudflare_api_token || 
+                        settings.ai_api_key || 
+                        pDef.apiKey || 
+                        pDef.apiToken || 
+                        process.env[`${aiProvider.toUpperCase()}_API_KEY`] ||
+                        process.env.CLOUDFLARE_API_TOKEN;
+
+          const cfId = settings.cloudflare_account_id || pDef.accountId || process.env.CLOUDFLARE_ACCOUNT_ID;
+
+          if (!aiKey || (aiProvider === 'cloudflare' && !cfId)) {
+            console.warn(`[CHANGELOG] Missing AI credentials: Key=${aiKey ? 'OK' : 'MISSING'}, AccountID=${cfId ? 'OK' : 'MISSING'}`);
+            return callback({ 
+              success: true, 
+              data: {
+                module: 'Studio App v2',
+                version: '2.0.x',
+                details: gitLog.split('\n').map(l => `- ${l}`).join('\n') + `\n\n(AI Fallback: Credentials missing for ${aiProvider})`,
+                type: 'improvement',
+                date: new Date().toISOString().split('T')[0]
+              }
+            });
+          }
+
+          const prompt = `Generate a professional Changelog entry based on this Git history. 
+          Use Romanian language.
+          Follow the structure and style defined in system prompt.
+
+          Commits:
+          ${gitLog}
+          
+          Return ONLY raw JSON.`;
+
+          let aiResponse = '';
+          const baseUrl = pDef.baseUrl || '';
+
+          console.log(`[CHANGELOG] Requesting AI summary from ${aiProvider}...`);
+          if (aiProvider === 'cloudflare') {
+            const res = await axios.post(
+              `https://api.cloudflare.com/client/v4/accounts/${cfId}/ai/run/${aiModel}`,
+              { prompt, system_prompt: systemPrompt },
+              { headers: { Authorization: `Bearer ${aiKey}` }, timeout: 15000 }
+            );
+            aiResponse = res.data.result.response;
+          } else if (aiProvider === 'gemini') {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${aiKey}`;
+            const res = await axios.post(url, {
+                contents: [
+                  { role: 'user', parts: [{ text: `SYSTEM INSTRUCTION: ${systemPrompt}\n\nUSER PROMPT: ${prompt}` }] }
+                ]
+            });
+            aiResponse = res.data.candidates[0].content.parts[0].text;
+          } else {
+            const url = baseUrl || (aiProvider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : '');
+            if (!url) throw new Error(`Provider URL not found for ${aiProvider}`);
+            
+            const res = await axios.post(url, {
+                model: aiModel,
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: prompt }
+                ]
+            }, { headers: { Authorization: `Bearer ${aiKey}` } });
+            
+            aiResponse = res.data.choices[0].message.content;
+          }
+          console.log(`[CHANGELOG] AI Response received (length: ${aiResponse?.length || 0})`);
+
+          try {
+            // Enterprise Level 8: Robust JSON Extraction for Backend
+            let clean = aiResponse.trim();
+            const jsonMatch = clean.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i) || clean.match(/\{[\s\S]*\}/);
+            const potential = jsonMatch ? jsonMatch[1] || jsonMatch[0] : clean;
+            
+            let parsed;
+            try {
+               parsed = JSON.parse(potential);
+            } catch (e) {
+               // Reparare rapidă (trailing commas + newlines)
+               const repaired = potential
+                 .replace(/,\s*([\}\]])/g, '$1')
+                 .replace(/(\r\n|\n|\r)/gm, "\\n");
+               parsed = JSON.parse(repaired);
+            }
+
+            callback({ success: true, data: { ...parsed, date: new Date().toISOString().split('T')[0] } });
+          } catch (e) {
+            console.warn('[CHANGELOG] AI Response was not valid JSON, returning raw with title/desc.');
+            callback({ 
+              success: true, 
+              data: {
+                module: "",
+                version: "",
+                title: "",
+                description: aiResponse,
+                details: aiResponse,
+                type: "",
+                date: new Date().toISOString().split('T')[0]
+              }
+            });
+          }
+        } catch (e: any) {
+          console.error('[CHANGELOG] Generation failed:', e.message);
+          callback({ success: false, error: e.message });
+        }
+      });
+
+      socket.on('changelog:add', async (data, callback) => {
+        if (typeof callback !== 'function') return;
+        try {
+          const db = DatabaseDriver.getInstance();
+          const result = await db.save('changelog', {
+            module: data.module || "",
+            version: data.version,
+            title: data.title,
+            description: data.description || data.details || "",
+            type: data.type || ""
+          });
+          callback({ success: true, id: result.id });
         } catch (e: any) {
           callback({ success: false, error: e.message });
         }

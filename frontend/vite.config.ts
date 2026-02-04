@@ -117,8 +117,26 @@ export default defineConfig(({ command }) => ({
         target: "http://127.0.0.1:4001",
         ws: true,
         changeOrigin: true,
-   //     timeout: 10000,
-  //      proxyTimeout: 10000,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err: any, _req, _res) => {
+            if (err.code === 'ECONNREFUSED') {
+              // Silence noisy logs in dev when local agent is offline
+              return;
+            }
+            console.warn('[VITE-PROXY-ERR]', err.message);
+          });
+        }
+      },
+      "/api-local": {
+        target: "http://127.0.0.1:4001",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-local/, ""),
+        configure: (proxy, _options) => {
+          proxy.on('error', (err: any, _req, _res) => {
+            if (err.code === 'ECONNREFUSED') return;
+            console.warn('[VITE-PROXY-ERR-LOCAL]', err.message);
+          });
+        }
       },
       // Proxy /api/auth/* to Brain handler (React Router will handle via api/*) 
       // Do NOT proxy to backend - Better-Auth is integrated into Brain handler

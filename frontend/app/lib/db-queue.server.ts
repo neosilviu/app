@@ -40,7 +40,9 @@ class DbQueue {
         const isWinDev = typeof process !== 'undefined' && (process.env.NODE_ENV === 'development' || process.platform === 'win32');
         if (typeof process === 'undefined' || !isWinDev) return false; 
         
-        return true; 
+        // Enterprise Level 8: Only queue WRITES. SQLite supports concurrent readers.
+        // Queueing reads creates unnecessary bottlenecks during page loads.
+        return isWrite === true; 
     }
 
     async enqueue<T>(fn: () => Promise<T>, isWrite = true): Promise<T> {

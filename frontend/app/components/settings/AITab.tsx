@@ -3,7 +3,7 @@ import { Card, CardTitle, CardDescription } from '~/components/ui/card';
 import { Label } from '~/components/ui/label';
 import { Switch } from '~/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
-import { Sparkles, Bot, Cpu, Plus, Trash, ShieldCheck, MessageSquareQuote } from 'lucide-react';
+import { Sparkles, Bot, Cpu, Plus, Trash, ShieldCheck, MessageSquareQuote, CheckCircle2, XCircle, Loader2, Send, Database, LayoutGrid, Bug, RefreshCw, Activity, Terminal, Brain, Github, Search, Zap, Cloud } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BufferedInput, BufferedTextarea } from '~/components/ui/BufferedInput';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '~/components/ui/accordion';
@@ -14,7 +14,8 @@ import { AIInsights } from '~/components/monitoring/AIInsights';
 
 import { useParams } from 'react-router';
 import { renderString } from '~/lib/core';
-import { formatForRender } from '~/lib/utils';
+import { cn, formatForRender } from '~/lib/utils';
+import { api } from '~/lib/services';
 
 interface AITabProps {
     settings: any; // Workspace Settings
@@ -48,13 +49,135 @@ export const AITab: React.FC<AITabProps> = ({
     const { constants } = useConfig();
     const { lang } = useParams();
 
+    const ICON_MAP: Record<string, any> = { Brain, Cpu, Github, Bot, Sparkles, Zap, Cloud, RefreshCw, Search, LayoutGrid };
+
+    const [testingProvider, setTestingProvider] = React.useState<string | null>(null);
+    const [testResults, setTestResults] = React.useState<Record<string, { status: 'success' | 'error', message: string }>>({});
+    const [diagLog, setDiagLog] = React.useState<string[]>([]);
+    const [isReindexing, setIsReindexing] = React.useState(false);
+    const [isAuditing, setIsAuditing] = React.useState(false);
+
+    React.useEffect(() => {
+        setDiagLog([t('ai_dashboard:synapse_ready')]);
+    }, [t]);
+
+    const addLog = (msg: string) => {
+        const time = new Date().toLocaleTimeString();
+        setDiagLog(prev => [...prev.slice(-10), `[${time}] ${msg}`]);
+    };
+
+    const runQualityTest = async () => {
+        setTestingProvider('quality');
+        addLog(t('ai_dashboard.starting_quality_test'));
+        try {
+            const res = await api.post('ai/test-quality', {});
+            if (res.success) {
+                addLog(t('ai_dashboard.quality_ok', { latency: res.latency, logic: res.diagnostic?.logic || 'OK' }));
+            } else {
+                addLog(t('ai_dashboard:quality_error', { error: res.error }));
+            }
+        } catch (err: any) {
+            addLog(t('ai_dashboard:fatal_error', { error: err.message }));
+        } finally {
+            setTestingProvider(null);
+        }
+    };
+
+    const runSyncRAG = async () => {
+        addLog(t('ai_dashboard:syncing_rag'));
+        try {
+            const res = await api.post('ai/sync-rag', {});
+            if (res.success) {
+                addLog(t('ai_dashboard.sync_success', { count: res.count || 0 }));
+            } else {
+                addLog(`✗ SYNC ERROR: ${res.error}`);
+            }
+        } catch (err: any) {
+            addLog(`✗ SYNC FATAL: ${err.message}`);
+        }
+    };
+
+    const runReindex = async () => {
+        setIsReindexing(true);
+        addLog(t('ai_dashboard:reindexing_kb'));
+        try {
+            const res = await api.post('ai/reindex-knowledge', {});
+            addLog(t('ai_dashboard:reindex_success', { message: res.message }));
+        } catch (err: any) {
+            addLog(t('ai_dashboard:reindex_failed'));
+        } finally {
+            setIsReindexing(false);
+        }
+    };
+
+    const runAudit = async () => {
+        setIsAuditing(true);
+        addLog(t('ai_dashboard:auditing_registry'));
+        try {
+            const res = await api.post('ai/audit-registry', {});
+            addLog(t('ai_dashboard:audit_success', { 
+                status: res.status, 
+                count: res.issues?.length || 0 
+            }));
+            addLog(t('ai_dashboard:audit_report', { report: res.report }));
+        } catch (err: any) {
+            addLog(t('ai_dashboard:audit_failed'));
+        } finally {
+            setIsAuditing(false);
+        }
+    };
+
+    const testConnection = async (id: string, provider: any) => {
+        setTestingProvider(id);
+        // Priority: Workspace Settings -> System settings
+        const apiKey = settings?.ai?.[`${id}_api_key`] || systemSettings?.ai?.[`${id}_api_key`] || '';
+        
+        try {
+            const res = await api.post('ai/test-connection', { 
+                provider: id,
+                apiKey
+            });
+
+            if (res.success) {
+                setTestResults(prev => ({ ...prev, [id]: { status: 'success', message: 'Connected' } }));
+            } else {
+                setTestResults(prev => ({ ...prev, [id]: { status: 'error', message: res.error || 'Failed' } }));
+            }
+        } catch (err: any) {
+            setTestResults(prev => ({ ...prev, [id]: { status: 'error', message: err.message || 'Error' } }));
+        } finally {
+            setTestingProvider(null);
+            setTimeout(() => {
+                setTestResults(prev => {
+                    const next = { ...prev };
+                    delete next[id];
+                    return next;
+                });
+            }, 5000);
+        }
+    };
+
     // Registry Source (SuperAdmin Definitions)
     const globalConfig = constants.AI_CONFIG ?? {};
-    const globalModels = globalConfig.models ?? [];
+    
+    // Convert current configuration models to array for UI mapping
+    // Filtered by ENABLED models and active providers
+    const globalModels = React.useMemo(() => {
+        const models = Array.isArray(globalConfig.models) ? globalConfig.models : [];
+        const activeProviders = globalConfig.active_providers || [];
+        
+        return models
+            .filter((m: any) => activeProviders.includes(m.provider) && m.enabled !== false)
+            .map((m: any) => ({
+                id: m.id,
+                name: m.name || m.id,
+                provider: m.provider || 'generic'
+            }));
+    }, [globalConfig.models, globalConfig.active_providers]);
     
     // Workspace Specific AI Settings
     const wsAi = settings?.ai ?? {
-        preferredModel: globalConfig?.active_model,
+        preferredModel: globalConfig?.model,
         temperature: globalConfig?.temperature,
         maxTokens: globalConfig?.max_tokens,
         customPrompts: []
@@ -86,298 +209,299 @@ export const AITab: React.FC<AITabProps> = ({
 
     return (
         <div className="space-y-6">
-            {/* AI Monitoring & Insights (Moved from Monitoring) */}
-            {aiStats && (
-                <AIInsights 
-                    aiStats={aiStats}
-                    cloudflareStats={cloudflareStats}
-                    isAIOperating={isAIOperating}
-                    aiTestOutput={aiTestOutput}
-                    handleSyncRAG={handleSyncRAG}
-                    handleTestAIQuality={handleTestAIQuality}
-                    localStats={null}
-                />
-            )}
+            {/* HIGH-DENSITY STATS - Level 8 Header (Synapse Identity) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="p-4 rounded-[2.5rem] bg-indigo-500 text-white border-none shadow-xl shadow-indigo-100 flex items-center justify-between">
+                    <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase italic opacity-70 tracking-widest">Synapse Core</p>
+                        <p className="text-xl font-black italic tracking-tighter uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-[120px]">
+                            {globalModels.find((m: any) => m.id === wsAi.preferredModel)?.name || ''}
+                        </p>
+                        <p className="text-[8px] font-bold uppercase opacity-60 italic">Motor Principal Activ</p>
+                    </div>
+                    <div className="h-12 w-12 rounded-2xl bg-white/20 flex items-center justify-center">
+                        <Sparkles className="h-6 w-6" />
+                    </div>
+                </Card>
 
-            <Accordion type="multiple" defaultValue={["model_pref", "ws_prompts", "ai_providers"]} className="space-y-6">
-                {/* 0. Providers Config (SuperAdmin) */}
-                {(systemSettings?.ai || systemSettings?.SYSTEM_SETTING) && (
-                    <AccordionItem value="ai_providers" className="border-none">
-                        <Card className="border-none shadow-xl shadow-slate-100 rounded-[2rem] overflow-hidden bg-white/50 backdrop-blur-sm">
-                            <AccordionTrigger className="px-6 py-5 hover:no-underline group">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-500 group-hover:scale-110 transition-transform">
-                                        <Bot className="h-6 w-6" />
+                <Card className="p-4 rounded-[2.5rem] bg-orange-100 border-none shadow-xl shadow-orange-50 flex items-center justify-between">
+                    <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase italic text-orange-500 tracking-widest">Compute Grid</p>
+                        <p className="text-xl font-black italic text-orange-950 tracking-tighter">
+                            {globalConfig.activeProviders?.length || 0} ACTIVE
+                        </p>
+                        <p className="text-[8px] font-bold uppercase text-orange-500/60 italic">Infrastructură Cloud Grid</p>
+                    </div>
+                    <div className="h-12 w-12 rounded-2xl bg-orange-500 text-white flex items-center justify-center">
+                        <Cpu className="h-6 w-6" />
+                    </div>
+                </Card>
+
+                <Card className="p-4 rounded-[2.5rem] bg-emerald-100 border-none shadow-xl shadow-emerald-50 flex items-center justify-between">
+                    <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase italic text-emerald-600 tracking-widest">Neural Index</p>
+                        <p className="text-xl font-black italic text-emerald-950 tracking-tighter">
+                            {aiStats?.vectorCount || 0}
+                        </p>
+                        <p className="text-[8px] font-bold uppercase text-emerald-600/60 italic">Embeddings în Baza de Cunoștințe</p>
+                    </div>
+                    <div className="h-12 w-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center">
+                        <Database className="h-6 w-6" />
+                    </div>
+                </Card>
+
+                <Card className="p-4 rounded-[2.5rem] bg-slate-800 border-none shadow-xl shadow-slate-200 flex items-center justify-between">
+                    <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase italic text-slate-400 tracking-widest">Active Synapses</p>
+                        <p className="text-xl font-black italic text-white tracking-tighter">
+                            {aiStats?.activeAgents || 11}
+                        </p>
+                        <p className="text-[8px] font-bold uppercase text-slate-500 italic">Sesiuni și Agenți AI Activi</p>
+                    </div>
+                    <div className="h-12 w-12 rounded-2xl bg-slate-700 text-indigo-400 flex items-center justify-center border border-slate-600">
+                        <LayoutGrid className="h-6 w-6" />
+                    </div>
+                </Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* LEFT: Diagnostic & Logs (40%) */}
+                <div className="lg:col-span-5 space-y-6">
+                    <Card className="border-none shadow-xl shadow-slate-100 rounded-[2.5rem] p-6 bg-slate-900 text-slate-300">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 rounded-xl bg-indigo-500 text-white shadow-lg">
+                                <Bug size={18} />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-black uppercase italic tracking-widest text-white">Instrumente Diagnostic AI</h3>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">AI_CORE_X7_SYNAPSE ENGINE</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <Button 
+                                variant="outline" 
+                                className="w-full h-11 rounded-2xl border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-indigo-400 font-black uppercase text-[10px] italic tracking-widest justify-start gap-3"
+                                onClick={runSyncRAG}
+                                disabled={isAIOperating}
+                            >
+                                <Sparkles size={14} />
+                                Sincronizează Cunoștințele (RAG)
+                            </Button>
+                            
+                            <Button 
+                                variant="outline" 
+                                className="w-full h-11 rounded-2xl border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-emerald-400 font-black uppercase text-[10px] italic tracking-widest justify-start gap-3"
+                                onClick={runReindex}
+                                disabled={isReindexing}
+                            >
+                                <RefreshCw size={14} className={isReindexing ? "animate-spin" : ""} />
+                                Reindex Knowledge
+                            </Button>
+
+                            <Button 
+                                variant="outline" 
+                                className="w-full h-11 rounded-2xl border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-amber-400 font-black uppercase text-[10px] italic tracking-widest justify-start gap-3"
+                                onClick={runQualityTest}
+                                disabled={testingProvider === 'quality'}
+                            >
+                                <ShieldCheck size={14} />
+                                Test Calitate Model
+                            </Button>
+
+                            <Button 
+                                variant="outline" 
+                                className="w-full h-11 rounded-2xl border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-rose-400 font-black uppercase text-[10px] italic tracking-widest justify-start gap-3"
+                                onClick={runAudit}
+                                disabled={isAuditing}
+                            >
+                                <Activity size={14} />
+                                Run Audit Path
+                            </Button>
+                        </div>
+
+                        {/* Terminal Logic */}
+                        <div className="mt-8 pt-6 border-t border-slate-800">
+                            <div className="text-xs text-indigo-400 mb-2 font-mono flex items-center gap-2">
+                                <Terminal size={14} />
+                                {t("ai_dashboard.terminal_title")}
+                            </div>
+                            <div className="bg-black/50 rounded-3xl p-4 font-mono text-[9px] min-h-[120px] space-y-1">
+                                {diagLog.map((log, i) => (
+                                    <div key={i} className={cn(
+                                        "leading-relaxed",
+                                        log.includes('✗') ? "text-red-400" : 
+                                        log.includes('✓') ? "text-emerald-400" :
+                                        log.includes('>') ? "text-indigo-400" : "text-slate-500"
+                                    )}>
+                                        {log}
                                     </div>
-                                    <div className="flex flex-col items-start gap-1 text-left">
-                                        <CardTitle className="text-sm font-black uppercase italic tracking-widest">{t('monitoring:ai.providers')}</CardTitle>
-                                        <CardDescription className="text-[10px] uppercase font-bold text-slate-400">Configure Global AI Engines & API Keys</CardDescription>
+                                ))}
+                                <div className="animate-pulse text-indigo-500">_</div>
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+
+                {/* RIGHT: Active Config (60%) */}
+                <div className="lg:col-span-7 space-y-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="p-4 rounded-[2rem] bg-indigo-500/5 border border-indigo-100/50 flex flex-col gap-1">
+                            <p className="text-[9px] font-black uppercase italic text-indigo-500/60 tracking-widest">Active Model</p>
+                            <p className="text-xs font-black italic text-slate-700 truncate">{globalModels.find((m: any) => m.id === wsAi.preferredModel)?.name || ''}</p>
+                        </div>
+                        <div className="p-4 rounded-[2rem] bg-emerald-500/5 border border-emerald-100/50 flex flex-col gap-1">
+                            <p className="text-[9px] font-black uppercase italic text-emerald-500/60 tracking-widest">Inventory</p>
+                            <p className="text-xs font-black italic text-slate-700">{globalModels.length} Models Ready</p>
+                        </div>
+                        <div className="p-4 rounded-[2rem] bg-orange-500/5 border border-orange-100/50 flex flex-col gap-1">
+                            <p className="text-[9px] font-black uppercase italic text-orange-500/60 tracking-widest">Temperature</p>
+                            <p className="text-xs font-black italic text-slate-700">{wsAi.temperature || 0.7} Precision</p>
+                        </div>
+                        <div className="p-4 rounded-[2rem] bg-slate-500/5 border border-slate-100/50 flex flex-col gap-1">
+                            <p className="text-[9px] font-black uppercase italic text-slate-500/60 tracking-widest">Token Limit</p>
+                            <p className="text-xs font-black italic text-slate-700">{wsAi.maxTokens || 2048} Tokens</p>
+                        </div>
+                    </div>
+
+                    <Card className="border-none shadow-xl shadow-slate-100 rounded-[2.5rem] p-6 bg-white/50 backdrop-blur-sm space-y-6">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2 rounded-xl bg-indigo-500 text-white shadow-lg shadow-indigo-100">
+                                <Cpu size={18} />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-black uppercase italic tracking-widest">Core Intelligence</h3>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">Manage default model and behavioral parameters</p>
+                            </div>
+                        </div>
+                        {/* Core settings form remains similarly but styled slightly more compact */}
+                        <div className="space-y-4">
+                            <div className="space-y-1">
+                                <Label className="text-[9px] font-black uppercase tracking-widest text-slate-400 italic ml-2">Preferred AI Engine</Label>
+                                <Select value={wsAi.preferredModel} onValueChange={(v) => updateWsAi('preferredModel', v)}>
+                                    <SelectTrigger className="h-10 rounded-2xl bg-white border-slate-100 font-bold text-xs">
+                                        <SelectValue placeholder="Select a model..." />
+                                    </SelectTrigger>
+                                    <SelectContent className="rounded-2xl border-none shadow-2xl">
+                                        {globalModels.map((m: any) => (
+                                            <SelectItem key={m.id} value={m.id} className="rounded-xl">
+                                                <span className="font-bold text-xs italic">{m.name}</span>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <Label className="text-[9px] font-black uppercase tracking-widest text-slate-400 italic ml-2">Temperature</Label>
+                                    <BufferedInput type="number" step="0.1" value={wsAi.temperature} onChange={(v) => updateWsAi('temperature', parseFloat(v))} className="h-10 rounded-2xl bg-white border-slate-100 text-xs font-black" />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-[9px] font-black uppercase tracking-widest text-slate-400 italic ml-2">Max Tokens</Label>
+                                    <BufferedInput type="number" value={wsAi.maxTokens} onChange={(v) => updateWsAi('maxTokens', parseInt(v))} className="h-10 rounded-2xl bg-white border-slate-100 text-xs font-black" />
+                                </div>
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* Infrastructure Card */}
+                    <Card className="border-none shadow-xl shadow-slate-100 rounded-[2.5rem] p-6 bg-white/50 backdrop-blur-sm">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 rounded-xl bg-amber-500 text-white shadow-lg shadow-amber-100">
+                                <Bot size={18} />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-black uppercase italic tracking-widest">Provider Infrastructure</h3>
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            {Object.entries(globalConfig.providers || {})
+                                .filter(([id]) => (globalConfig.activeProviders || []).includes(id))
+                                .map(([id, p]: [string, any]) => (
+                                <div key={id} className="p-3 rounded-2xl border border-slate-100 flex items-center justify-between bg-white transition-all hover:shadow-md">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-8 w-8 rounded-xl bg-slate-50 flex items-center justify-center">
+                                            {(() => {
+                                                const Icon = ICON_MAP[p.icon] || Bot;
+                                                return <Icon className={cn("h-4 w-4", p.iconColor || "text-slate-400")} />;
+                                            })()}
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black italic text-slate-700 leading-none">{p.typeName || p.name || id}</p>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">{p.typeName || p.name || p.type || 'ACTIVE'}</p>
+                                        </div>
+                                    </div>
+                                    <Badge variant="outline" className="text-[8px] font-black uppercase border-emerald-100 text-emerald-500 bg-emerald-50">ONLINE</Badge>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+            </div>
+
+            {/* Collapsible Custom Prompts & DNA */}
+            <div className="space-y-4">
+                <Card className="border-none shadow-xl shadow-slate-100 rounded-[2.5rem] bg-white/50 backdrop-blur-sm overflow-hidden">
+                    <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="ws_prompts" className="border-none">
+                            <AccordionTrigger className="px-6 py-4 hover:no-underline group">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 rounded-xl bg-indigo-500 text-white">
+                                        <MessageSquareQuote size={18} />
+                                    </div>
+                                    <div className="text-left">
+                                        <h3 className="text-sm font-black uppercase italic tracking-widest">Workspace Persona & Custom Prompts</h3>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Contextual overrides for this environment</p>
                                     </div>
                                 </div>
                             </AccordionTrigger>
-                            <AccordionContent className="px-6 pb-6 pt-2 space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Gemini */}
-                                    <div className="p-6 rounded-[2rem] bg-indigo-50/30 border border-indigo-100 flex flex-col gap-4">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-10 w-10 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                                                    <Sparkles className="h-5 w-5 text-indigo-500" />
-                                                </div>
-                                                <div>
-                                                    <p className="font-black italic text-slate-700">Google Gemini</p>
-                                                    <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-tighter">Pro & Flash Engine</p>
-                                                </div>
+                            <AccordionContent className="px-6 pb-6 pt-0 space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {(wsAi?.customPrompts ?? []).map((prompt: any) => (
+                                        <div key={prompt.id} className="p-4 rounded-[2rem] bg-white border border-slate-100 shadow-sm space-y-2 relative group mt-2">
+                                            <div className="flex items-center justify-between">
+                                                <BufferedInput 
+                                                    value={prompt.name}
+                                                    onChange={(v) => updatePrompt(prompt.id, 'name', v)}
+                                                    className="h-7 w-2/3 rounded-lg border-none bg-slate-50 font-black italic text-[10px] tracking-tight"
+                                                />
+                                                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-red-300 hover:text-red-500" onClick={() => removePrompt(prompt.id)}>
+                                                    <Trash size={12} />
+                                                </Button>
                                             </div>
-                                            <Switch 
-                                                checked={!!systemSettings?.ai?.gemini_enabled}
-                                                onCheckedChange={(v) => updateSystemSetting('gemini_enabled', v, 'ai')}
+                                            <BufferedTextarea 
+                                                value={prompt.content}
+                                                onChange={(v) => updatePrompt(prompt.id, 'content', v)}
+                                                placeholder="Instruction..."
+                                                className="min-h-[60px] rounded-xl border-none bg-slate-50/50 text-[10px] leading-snug resize-none"
                                             />
                                         </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[9px] font-black uppercase italic text-slate-400 ml-2">Google AI Studio API Key</Label>
-                                            <BufferedInput 
-                                                type="password"
-                                                value={formatForRender(systemSettings?.ai?.gemini_api_key || '', lang)}
-                                                onChange={(v) => updateSystemSetting('gemini_api_key', v, 'ai')}
-                                                placeholder="AIzaSy..."
-                                                className="h-11 rounded-2xl border-none bg-white shadow-sm font-mono text-xs"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Cloudflare AI */}
-                                    <div className="p-6 rounded-[2rem] bg-orange-50/30 border border-orange-100 flex flex-col gap-4">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-10 w-10 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-                                                    <Cpu className="h-5 w-5 text-orange-500" />
-                                                </div>
-                                                <div>
-                                                    <p className="font-black italic text-slate-700">Cloudflare AI</p>
-                                                    <p className="text-[9px] font-bold text-orange-400 uppercase tracking-tighter">Workers AI Runtime</p>
-                                                </div>
-                                            </div>
-                                            <Badge className="bg-orange-500 text-white border-none rounded-lg text-[9px] font-black uppercase italic px-2 h-5">NATIVE</Badge>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Label className="text-[9px] font-black uppercase italic text-slate-400 ml-2">AI Status</Label>
-                                            <div className="h-11 rounded-2xl flex items-center px-4 bg-white shadow-sm">
-                                                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse mr-2" />
-                                                <span className="text-[10px] font-black uppercase italic text-slate-600">Active (System Bound)</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Placeholder for Future Providers */}
-                                    <div className="p-6 rounded-[2rem] border border-dashed border-slate-200 flex items-center justify-center group opacity-50">
-                                        <div className="text-center">
-                                            <Plus className="h-6 w-6 text-slate-300 mx-auto mb-1 group-hover:scale-110 transition-transform" />
-                                            <p className="text-[9px] font-black uppercase italic text-slate-400 tracking-widest">Add More Providers</p>
-                                        </div>
-                                    </div>
+                                    ))}
+                                    <button 
+                                        onClick={addPrompt}
+                                        className="mt-2 p-4 rounded-[2rem] border-2 border-dashed border-slate-200 text-slate-300 hover:text-indigo-500 hover:border-indigo-100 hover:bg-indigo-50/30 transition-all flex flex-col items-center justify-center gap-1 group min-h-[120px]"
+                                    >
+                                        <Plus className="group-hover:scale-125 transition-transform" />
+                                        <span className="text-[8px] font-black uppercase tracking-widest">Add Persona</span>
+                                    </button>
                                 </div>
                             </AccordionContent>
-                        </Card>
-                    </AccordionItem>
-                )}
+                        </AccordionItem>
+                    </Accordion>
+                </Card>
+            </div>
 
-                {/* 1. Workspace Model Preference */}
-                <AccordionItem value="model_pref" className="border-none">
-                    <Card className="border-none shadow-xl shadow-slate-100 rounded-[2rem] overflow-hidden bg-white/50 backdrop-blur-sm">
-                        <AccordionTrigger className="px-6 py-5 hover:no-underline group">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 rounded-2xl bg-indigo-500/10 text-indigo-500 group-hover:scale-110 transition-transform">
-                                    <Cpu className="h-6 w-6" />
-                                </div>
-                                <div className="flex flex-col items-start gap-1 text-left">
-                                    <CardTitle className="text-sm font-black uppercase italic tracking-widest">{renderString(t('settings:workspace_ai_engine'), lang)}</CardTitle>
-                                    <CardDescription className="text-[10px] uppercase font-bold text-slate-400">{renderString(t('settings:workspace_ai_engine_desc'), lang)}</CardDescription>
-                                </div>
-                            </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-6 pb-6 pt-2 space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <div className="space-y-3">
-                                    <Label className="text-[10px] font-black uppercase tracking-widest text-indigo-600 italic">{renderString(t('settings:preferred_model'), lang)}</Label>
-                                    <Select 
-                                        value={wsAi.preferredModel} 
-                                        onValueChange={(v) => updateWsAi('preferredModel', v)}
-                                    >
-                                        <SelectTrigger className="h-12 rounded-2xl bg-white border-none shadow-sm font-bold">
-                                            <SelectValue placeholder={renderString(t('settings:select_model'), lang)} />
-                                        </SelectTrigger>
-                                        <SelectContent className="rounded-2xl border-none shadow-2xl">
-                                            {globalModels.map((m: any) => (
-                                                <SelectItem key={m.id} value={m.id} className="rounded-xl">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-bold">{m.name}</span>
-                                                        <span className="text-[9px] uppercase font-black text-slate-400">{m.provider}</span>
-                                                    </div>
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <p className="text-[9px] text-slate-400 font-bold uppercase italic">{t('settings:models_limit_note')}</p>
-                                </div>
-
-                                <div className="space-y-6">
-                                    <div className="space-y-3">
-                                        <Label className="text-[10px] font-black uppercase tracking-widest text-indigo-600 italic">{t('settings:ai_personality')}</Label>
-                                        <Select 
-                                            value={wsAi.personality ?? ''} 
-                                            onValueChange={(v) => updateWsAi('personality', v)}
-                                        >
-                                            <SelectTrigger className="h-12 rounded-2xl bg-white border-none shadow-sm font-bold">
-                                                <SelectValue placeholder={t('settings:select_personality')} />
-                                            </SelectTrigger>
-                                            <SelectContent className="rounded-2xl border-none shadow-2xl">
-                                                <SelectItem value="professional" className="rounded-xl">{t('settings:personality_professional')}</SelectItem>
-                                                <SelectItem value="creative" className="rounded-xl">{t('settings:personality_creative')}</SelectItem>
-                                                <SelectItem value="technical" className="rounded-xl">{t('settings:personality_technical')}</SelectItem>
-                                                <SelectItem value="friendly" className="rounded-xl">{t('settings:personality_friendly')}</SelectItem>
-                                                <SelectItem value="analytical" className="rounded-xl">{t('settings:personality_analytical')}</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2 p-4 bg-white/50 rounded-2xl border border-slate-100/50">
-                                            <Label className="text-[10px] font-black uppercase tracking-widest text-indigo-600 italic">{t('settings:creativity')} ({wsAi.temperature})</Label>
-                                            <input 
-                                                type="range" min="0" max="1" step="0.1" 
-                                                value={wsAi.temperature}
-                                                onChange={(e) => updateWsAi('temperature', parseFloat(e.target.value))}
-                                                className="w-full h-1 bg-indigo-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                                            />
-                                        </div>
-                                        <div className="space-y-2 p-4 bg-white/50 rounded-2xl border border-slate-100/50">
-                                            <Label className="text-[10px] font-black uppercase tracking-widest text-indigo-600 italic">{t('settings:response_length')}</Label>
-                                            <input 
-                                                type="number" 
-                                                value={wsAi.maxTokens}
-                                                onChange={(e) => updateWsAi('maxTokens', parseInt(e.target.value))}
-                                                className="w-full bg-transparent border-none text-[12px] font-bold focus:ring-0 p-0"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-900 text-white">
-                                        <div className="flex flex-col">
-                                            <Label className="text-[11px] font-black uppercase italic tracking-widest">{t('settings:fast_mode')}</Label>
-                                            <span className="text-[9px] text-slate-400 uppercase font-bold">{t('settings:fast_mode_desc')}</span>
-                                        </div>
-                                        <Switch 
-                                            checked={!!wsAi.fastMode} 
-                                            onCheckedChange={(v) => updateWsAi('fastMode', v)}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </AccordionContent>
-                    </Card>
-                </AccordionItem>
-
-                {/* 2. Workspace Custom Prompts */}
-                <AccordionItem value="ws_prompts" className="border-none">
-                    <Card className="border-none shadow-xl shadow-slate-100 rounded-[2rem] overflow-hidden bg-white/50 backdrop-blur-sm">
-                        <AccordionTrigger className="px-6 py-5 hover:no-underline group">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 rounded-2xl bg-purple-500/10 text-purple-500 group-hover:scale-110 transition-transform">
-                                    <MessageSquareQuote className="h-6 w-6" />
-                                </div>
-                                <div className="flex flex-col items-start gap-1 text-left">
-                                    <CardTitle className="text-sm font-black uppercase italic tracking-widest">{t('settings:workspace_custom_prompts')}</CardTitle>
-                                    <CardDescription className="text-[10px] uppercase font-bold text-slate-400">{t('settings:workspace_custom_prompts_desc')}</CardDescription>
-                                </div>
-                            </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-6 pb-6 pt-2 space-y-6">
-                            <div className="flex justify-between items-center bg-purple-50/50 p-4 rounded-2xl border border-purple-100/50">
-                                <p className="text-[10px] text-purple-700 font-bold uppercase tracking-tight">
-                                    {t('settings:custom_prompts_info')}
-                                </p>
-                                <Button size="sm" onClick={addPrompt} className="bg-purple-600 text-white rounded-xl h-8 text-[9px] font-black uppercase tracking-widest">
-                                    <Plus className="h-3 w-3 mr-1" /> {t('settings:new_prompt')}
-                                </Button>
-                            </div>
-
-                            <div className="space-y-4">
-                                {(wsAi.customPrompts || []).map((p: any) => (
-                                    <div key={p.id} className="p-5 rounded-3xl bg-white border border-slate-100 shadow-sm space-y-3 relative group">
-                                        <div className="flex justify-between items-center">
-                                            <BufferedInput 
-                                                value={p.name}
-                                                onChange={(v) => updatePrompt(p.id, 'name', v)}
-                                                className="border-none font-black uppercase italic tracking-widest text-[10px] p-0 h-auto w-auto focus-visible:ring-0 bg-transparent text-slate-600"
-                                            />
-                                            <Button variant="ghost" size="icon" onClick={() => removePrompt(p.id)} className="h-8 w-8 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Trash size={14} />
-                                            </Button>
-                                        </div>
-                                        <BufferedTextarea 
-                                            value={p.content}
-                                            onChange={(v) => updatePrompt(p.id, 'content', v)}
-                                            placeholder={t('settings:placeholder_prompt_content')}
-                                            className="min-h-[100px] rounded-2xl bg-slate-50 border-none text-[11px] font-medium leading-relaxed p-4 scrollbar-hide"
-                                        />
-                                    </div>
-                                ))}
-
-                                {(wsAi.customPrompts ?? []).length === 0 && (
-                                    <div className="text-center py-10 border-2 border-dashed border-slate-100 rounded-[2rem]">
-                                        <Bot className="h-8 w-8 text-slate-200 mx-auto mb-2" />
-                                        <p className="text-[10px] font-black uppercase text-slate-300 tracking-widest">{t('settings:no_custom_prompts')}</p>
-                                    </div>
-                                )}
-                            </div>
-                        </AccordionContent>
-                    </Card>
-                </AccordionItem>
-
-                {/* 3. System DNA Overrides */}
-                <AccordionItem value="dna_overrides" className="border-none">
-                    <Card className="border-none shadow-xl shadow-slate-100 rounded-[2rem] overflow-hidden bg-white/50 backdrop-blur-sm">
-                        <AccordionTrigger className="px-6 py-5 hover:no-underline group">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-500 group-hover:scale-110 transition-transform">
-                                    <ShieldCheck className="h-6 w-6" />
-                                </div>
-                                <div className="flex flex-col items-start gap-1 text-left">
-                                    <CardTitle className="text-sm font-black uppercase italic tracking-widest">{t('settings:system_dna_overrides')}</CardTitle>
-                                    <CardDescription className="text-[10px] uppercase font-bold text-slate-400">{t('settings:system_dna_overrides_desc')}</CardDescription>
-                                </div>
-                            </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-6 pb-6 pt-2 space-y-6">
-                            <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100/50 mb-4">
-                                <p className="text-[10px] text-emerald-700 font-bold uppercase tracking-tight flex items-center gap-2">
-                                    <Sparkles size={12} className="animate-pulse" />
-                                    {t('settings:dna_overrides_info')}
-                                </p>
-                            </div>
-
-                            <div className="space-y-6">
-                                {Object.entries(globalConfig.prompts ?? {}).map(([key, defaultValue]: [string, any]) => (
-                                    <div key={key} className="space-y-2 p-4 bg-white rounded-2xl border border-slate-100">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <Label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 italic">{key.replace(/_/g, ' ')}</Label>
-                                            <Badge variant="outline" className="text-[8px] font-black uppercase tracking-tighter opacity-50">{t('settings:locked_dna')}</Badge>
-                                        </div>
-                                        <BufferedTextarea 
-                                            value={wsAi.prompts?.[key] ?? ''}
-                                            onChange={(v) => updateWsAi('prompts', { ...(wsAi.prompts ?? {}), [key]: v })}
-                                            placeholder={`${t('settings:default_prefix')}: ${typeof defaultValue === 'string' ? defaultValue.substring(0, 100) : t('settings:system_default')}...`}
-                                            className="min-h-[80px] rounded-xl bg-slate-50/50 border-none text-[10px] font-medium p-3"
-                                        />
-                                        <p className="text-[8px] text-slate-400 font-bold uppercase">{t('settings:dna_override_help')}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </AccordionContent>
-                    </Card>
-                </AccordionItem>
-            </Accordion>
+            {/* AI Troubleshooting Output (Collapsible) */}
+            {aiTestOutput && (
+                <Card className="border-none shadow-xl shadow-red-100 rounded-[2.5rem] bg-slate-900 overflow-hidden">
+                    <div className="p-3 flex items-center justify-between bg-slate-800/50">
+                        <span className="text-[9px] font-black uppercase italic text-slate-400 tracking-widest">AI Debug Context</span>
+                    </div>
+                    <pre className="p-6 text-[10px] font-mono text-emerald-400 overflow-auto max-h-[180px] whitespace-pre-wrap">
+                        {aiTestOutput}
+                    </pre>
+                </Card>
+            )}
         </div>
     );
 };

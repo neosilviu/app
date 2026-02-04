@@ -1,10 +1,11 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "~/components/ui/card";
-import { Brain, Zap, Database, Activity, ShieldCheck, RefreshCcw, Play } from "lucide-react";
+import { Brain, Zap, Database, Activity, ShieldCheck, RefreshCcw, Play, Cpu, Bot, Sparkles, Github, Search, LayoutGrid } from "lucide-react";
 import { GlassCard } from "~/components/ui/GlassCard";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/core";
 import { useTranslation } from "react-i18next";
+import { useConfig } from "~/hooks/useConfig";
 
 interface AIInsightsProps {
     aiStats: any;
@@ -26,34 +27,36 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
     localStats
 }) => {
     const { t } = useTranslation(['monitoring', 'common']);
+    const { constants } = useConfig();
+    const configProviders = constants.AI_CONFIG?.providers || {};
+    const ICON_MAP: Record<string, any> = { Brain, Zap, Cpu, Bot, Sparkles, Github, Search, LayoutGrid };
 
     const providers = aiStats?.providers || cloudflareStats?.aiStats?.providers || {};
 
     return (
         <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {/* AI Status Cards */}
-                <GlassCard className="border-emerald-500/20 shadow-xl shadow-emerald-500/5 rounded-3xl">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-[10px] font-black uppercase tracking-widest text-slate-400 italic">Gemini 1.5 Pro</CardTitle>
-                        <Brain className={cn("h-4 w-4", providers?.gemini?.status === 'ONLINE' ? 'text-emerald-500 animate-pulse' : 'text-slate-200')} />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-black italic tracking-tight">{providers?.gemini?.status || t('common:offline')}</div>
-                        <p className="text-[9px] text-emerald-600/60 mt-1 uppercase font-black">{t("monitoring:ai.google_engine")}</p>
-                    </CardContent>
-                </GlassCard>
-
-                <GlassCard className="border-amber-500/20 shadow-xl shadow-amber-500/5 rounded-3xl">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-[10px] font-black uppercase tracking-widest text-slate-400 italic">Cloudflare AI</CardTitle>
-                        <Zap className={cn("h-4 w-4", providers?.cloudflare?.status === 'ONLINE' ? 'text-amber-500 animate-pulse' : 'text-slate-200')} />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-black italic tracking-tight">{providers?.cloudflare?.status || t('common:offline')}</div>
-                        <p className="text-[9px] text-amber-600/60 mt-1 uppercase font-black">{t("monitoring:ai.worker_ai")}</p>
-                    </CardContent>
-                </GlassCard>
+                {Object.entries(providers).slice(0, 4).map(([id, p]: [string, any]) => {
+                    const isOnline = p.status === 'ONLINE';
+                    const pDef = configProviders[id] || {};
+                    const Icon = ICON_MAP[pDef.icon] || Sparkles;
+                    
+                    return (
+                        <GlassCard key={id} className={cn(
+                            "shadow-xl rounded-3xl transition-all border-l-4",
+                            isOnline ? "border-emerald-500 shadow-emerald-500/5 bg-emerald-50/10" : "border-slate-200 shadow-slate-500/5"
+                        )}>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-[10px] font-black uppercase tracking-widest text-slate-400 italic">{pDef.typeName || id}</CardTitle>
+                                <Icon className={cn("h-4 w-4 transition-all", isOnline ? (pDef.iconColor || 'text-emerald-500 animate-pulse') : 'text-slate-200')} />
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-black italic tracking-tight uppercase">{isOnline ? t('common:online') : t('common:offline')}</div>
+                                <p className="text-[9px] text-slate-400 mt-1 uppercase font-black">{pDef.typeName || t("monitoring:ai.llm_engine")}</p>
+                            </CardContent>
+                        </GlassCard>
+                    );
+                })}
 
                 <GlassCard className="shadow-xl shadow-blue-500/5 rounded-3xl">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -72,7 +75,7 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
                         <Activity className="h-4 w-4 text-indigo-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-black italic tracking-tight">{aiStats?.totalTasks || 0}</div>
+                        <div className="text-2xl font-black italic tracking-tight">{aiStats?.activeAgents || 0}</div>
                         <p className="text-[9px] text-indigo-600/60 mt-1 uppercase font-black">{t("monitoring:ai.total_sessions")}</p>
                     </CardContent>
                 </GlassCard>

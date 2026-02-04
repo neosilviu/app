@@ -2,7 +2,7 @@ import { DatabaseDriver } from '../db/driver';
 import winston from 'winston';
 // We import the baseline directly. ensure tsconfig includes this path or allows it.
 // @ts-ignore - Importing outside of rootDir
-import { CONSTANT, NAV, SYSTEM_SETTING, ENTITY_CONFIG, I18N, THEME, AUTH_CONFIG } from '../../../registry-baseline';
+import { CONSTANT, NAV, SYSTEM_SETTING, ENTITY_CONFIG, I18N, THEME, AUTH_CONFIG, AI_CONFIG } from '../../../registry-baseline';
 
 // Define the shape of the Registry based on what we know
 export interface Registry {
@@ -144,49 +144,66 @@ export class RegistryManager {
   public async load(): Promise<Registry> {
     logger.info('Loading Registry...');
 
-    // 1. Start with Baseline
-    const completeRegistry: Registry = {
-      nav: { ...NAV },
-      constants: { ...CONSTANT },
-      system: { ...SYSTEM_SETTING },
-      entity: { ...ENTITY_CONFIG, ...SYSTEM_ENTITIES },
-      uiConfig: { ...THEME },
-      i18n: { ...I18N },
-      prompt: {},
-      model: {},
-      role: { ...AUTH_CONFIG.role }
+    // 1. Start with Baseline (Standardized Uppercase Keys)
+    const completeRegistry: any = {
+      NAV: { ...NAV },
+      CONSTANTS: { ...CONSTANT },
+      SYSTEM_SETTING: { ...SYSTEM_SETTING },
+      ENTITY_CONFIG: { ...ENTITY_CONFIG, ...SYSTEM_ENTITIES },
+      THEME: { ...THEME },
+      I18N: { ...I18N },
+      AI_CONFIG: { ...AI_CONFIG },
+      AI_PROMPT: {},
+      MODEL: {},
+      ROLE: { ...AUTH_CONFIG.role }
     };
 
     // Merge system translations safely
     const sysI18n = SYSTEM_I18N as any;
     Object.keys(sysI18n).forEach(lang => {
-      const target = (completeRegistry.i18n as any)[lang] || {};
+      const target = completeRegistry.I18N[lang] || {};
       Object.keys(sysI18n[lang]).forEach(ns => {
         target[ns] = { ...(target[ns] || {}), ...sysI18n[lang][ns] };
       });
-      (completeRegistry.i18n as any)[lang] = target;
+      completeRegistry.I18N[lang] = target;
     });
 
-    // 1.5 Auto-sync System Translations to DB (for Cloud/Brain visibility)
-    // This allows the Cloud Brain to see these translations without them being in the static baseline file.
-    await this.syncSystemTranslationsToDb();
+    // 1.5 Auto-sync System Translations to DB
 
     // 2. Load System Settings from DB (D1)
-    // Table: system_setting (key, value, type, group)
     try {
       const settings = await this.db.query('SELECT * FROM system_setting');
+      
+      // Use the mapping defined in CONSTANTS (SSOT)
+      const nsMap: Record<string, string> = (completeRegistry.CONSTANTS?.namespaceMapping || {});
+
       settings.forEach((row: any) => {
-        // Handle dot notation (e.g., 'app.enable_workers')
+        const rawNs = (row.namespace || 'system').toLowerCase();
+        // Resolve target namespace: explicitly mapped OR capitalize for common cases
+        const targetNs = nsMap[rawNs] || rawNs.toUpperCase();
+        
+        if (!completeRegistry[targetNs]) {
+          completeRegistry[targetNs] = {};
+        }
+
+        const value = this.parseValue(row.value, row.dataType);
+
+        // Handle dot notation
         if (row.key.includes('.')) {
           const parts = row.key.split('.');
-          let current = completeRegistry.system as any;
+          let current = completeRegistry[targetNs] as any;
           for (let i = 0; i < parts.length - 1; i++) {
             if (!current[parts[i]]) current[parts[i]] = {};
             current = current[parts[i]];
           }
-          current[parts[parts.length - 1]] = this.parseValue(row.value, row.dataType);
+          current[parts[parts.length - 1]] = value;
         } else {
-          (completeRegistry.system as any)[row.key] = this.parseValue(row.value, row.dataType);
+          (completeRegistry[targetNs] as any)[row.key] = value;
+          
+          // Backward compatibility: Merge into original baseline names if they differ
+          if (targetNs === 'SYSTEM_SETTING') {
+             (completeRegistry.SYSTEM_SETTING as any)[row.key] = value;
+          }
         }
       });
     } catch (e: any) {

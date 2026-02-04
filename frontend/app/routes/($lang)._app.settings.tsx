@@ -346,14 +346,14 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             api.brain.get("monitoring/cloudflare").then(res => setCloudflareStats(res.data || res)).catch(() => {});
         }
         if (activeTab === 'ai') {
-            api.brain.get("monitoring/ai").then(res => setAiStats(res.data || res)).catch(() => {});
+            api.brain.get("ai/stats").then(res => setAiStats(res.data || res)).catch(() => {});
         }
     }, [activeTab]);
 
     const handleSyncRAG = async () => {
         setIsAIOperating(true);
         try {
-            const res = await api.brain.post("monitoring/ai/sync-rag", {});
+            const res = await api.brain.post("ai/sync-rag", {});
             if (res.success) toast.success("Knowledge base re-indexed");
         } catch (e) {
             toast.error("RAG Sync failed");
@@ -485,7 +485,7 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
     }
 
     return (
-        <div className="flex flex-col gap-6 p-4 md:p-8 pb-32">
+        <div className="flex flex-col gap-6 p-4 md:p-8 pb-48">
             <div className="flex items-center justify-between mb-2">
                 <div>
                    <h1 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900 dark:text-white leading-none">
@@ -593,17 +593,19 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                 onClose={() => setIsThemeEditorOpen(false)} 
             />
 
-            {/* FIXED BOTTOM ACTION BAR */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 p-4 px-6 md:px-12 z-50 flex items-center justify-end gap-4 animate-in slide-in-from-bottom duration-500">
-                <Button 
-                    variant="default" 
-                    size="lg" 
-                    onClick={handleSave} 
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl h-14 px-12 shadow-2xl shadow-indigo-200 dark:shadow-none transition-all hover:-translate-y-1 active:scale-95 font-black uppercase italic tracking-widest text-sm"
-                >
-                    <Save className="mr-2 h-5 w-5" />
-                    {renderString(t("common:save"), lang)}
-                </Button>
+            {/* FLOATING BOTTOM ACTION BAR - Enterprise Level 8 (Compact Style) */}
+            <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 w-auto px-6 z-50 animate-in slide-in-from-bottom duration-500">
+                <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-800 p-2 md:p-3 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-center">
+                    <Button 
+                        variant="default" 
+                        size="sm" 
+                        onClick={handleSave} 
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full h-10 px-8 shadow-lg shadow-indigo-200 dark:shadow-none transition-all hover:-translate-y-1 active:scale-95 font-black uppercase italic tracking-widest text-xs"
+                    >
+                        <Save className="mr-2 h-4 w-4" />
+                        {renderString(t("common:save"), lang)}
+                    </Button>
+                </div>
             </div>
         </div>
     );

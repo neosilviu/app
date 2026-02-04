@@ -1,0 +1,14 @@
+{
+  "title": "Changelog History",
+  "description": "View the latest updates and improvements to the system.",
+  "syncing": "Syncing history...",
+  "no_changes": "No updates recorded.",
+  "ai_success": "Draft generated successfully via AI!",
+  "publish_success": "Update published!",
+  "publish_error": "Error publishing update.",
+  "generate_error": "Error during AI Git history analysis.",
+  "ai_draft": "AI DRAFT",
+  "cancel": "Cancel",
+  "publish": "Publish",
+  "analyzing": "AI Analyzing..."
+}

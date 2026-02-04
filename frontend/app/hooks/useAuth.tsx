@@ -66,28 +66,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const init = useCallback(async () => {
     try {
-      const { data: sessionData } = await authClient.getSession();
+      // Enterprise Level 8 Optimization: Check local cache first for admin status
+      // This allows almost instant decision on whether to show setup or login
+      if (typeof localStorage !== 'undefined') {
+        const cachedAdmin = localStorage.getItem('isAdminExists');
+        if (cachedAdmin === 'true') setIsAdminExists(true);
+      }
+
+      // Enterprise Level 8 Parallelization: Fetch session AND system status concurrently
+      // We also add a small timestamp to bypass aggressive middleware caches if needed
+      const [sessionRes, adminRes] = await Promise.all([
+        authClient.getSession(),
+        api.brain.get(`auth/check-admin?t=${Date.now()}`).catch(() => null)
+      ]);
       
+      const sessionData = sessionRes?.data;
+      
+      // Update Admin Exists status
       if (sessionData?.user) {
-        setUser(sessionData.user);
         setIsAdminExists(true);
-      } else {
-        // Use 'auth/check-admin' directly (not /api/auth/) to avoid interception by Better-Auth middleware
-        const res = await api.brain.get(`auth/check-admin?t=${Date.now()}`);
-        // Enterprise Level 8: Ensure we check inside 'data' property of the response
-        const exists = !!(res?.data?.exists ?? res?.exists);
+        localStorage.setItem('isAdminExists', 'true');
+      } else if (adminRes) {
+        const exists = !!(adminRes.data?.exists ?? adminRes.exists);
         setIsAdminExists(exists);
+        if (exists) localStorage.setItem('isAdminExists', 'true');
+        else localStorage.removeItem('isAdminExists');
       }
 
       if (sessionData?.user) {
-        const res = await api.brain.get('auth/local-token');
-        const tokenRes = res?.data || res;
-        if (tokenRes?.token) {
-          localStorage.setItem('token', tokenRes.token);
-          if (sessionData?.user?.email) {
-            localStorage.setItem('userEmail', sessionData.user.email);
+        setUser(sessionData.user);
+        
+        // Parallelized Local Token Fetch (Background)
+        // We don't await this to avoid blocking the main UI gate
+        api.brain.get('auth/local-token').then(res => {
+          const tokenRes = res?.data || res;
+          if (tokenRes?.token) {
+            localStorage.setItem('token', tokenRes.token);
+            if (sessionData?.user?.email) {
+              localStorage.setItem('userEmail', sessionData.user.email);
+            }
           }
-        }
+        }).catch(err => console.warn("[AUTH] Local token recovery failed", err));
       }
     } catch (err: any) {
       console.error("[AUTH-INIT-ERROR]", err.message);
@@ -316,6 +335,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasPageAccess = useCallback((pageId: string) => {
     if (!user) return false;
+
+    // Enterprise Level 8: Core Page Bypass (Always accessible for authenticated users)
+    if (['profile', 'dashboard', 'blueprint-architect'].includes(pageId)) return true;
     
     const roles = config?.constants?.SYSTEM_ROLE || {};
     const roleDef = roles[user.role];
@@ -403,13 +425,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, config, hasPermission]);
 
   const switchWorkspace = useCallback(async (id: string) => {
-    const res = await api.brain.post("workspace/switch", { id });
-    if (res?.success) {
-      // Re-inițializăm auth-ul pentru a reflecta noul workspaceId în state-ul React
-      await init();
-      // Socket join noul workspace
-      socket.emit("workspace:join", { workspaceId: id });
-      window.location.reload(); // Hard refresh pentru a reîncărca configurația specifică noului workspace
+    setLoading(true); // Blocează UI-ul și arată loader-ul global
+    try {
+      const res = await api.brain.post("workspace/switch", { id });
+      if (res?.success) {
+        // Re-inițializăm auth-ul pentru a reflecta noul workspaceId în state-ul React
+        await init();
+        // Socket join noul workspace
+        socket.emit("workspace:join", { workspaceId: id });
+        window.location.reload(); // Hard refresh pentru a reîncărca configurația specifică noului workspace
+      } else {
+        setLoading(false);
+      }
+    } catch (e) {
+      console.error("[AUTH] Switch workspace failed:", e);
+      setLoading(false);
     }
   }, [init]);
 

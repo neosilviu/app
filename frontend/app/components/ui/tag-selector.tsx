@@ -107,11 +107,11 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
   const fetchEntityTags = useCallback(async () => {
     setIsLoading(true);
     try {
-      // 1. Try Brain API (Generic CRUD for assignments)
-      const res = await api.brain.get(`db/collection/tag_assignment/all?entityType=${entityType}&entityId=${entityId}`);
+      // 1. Try Brain API (Generic CRUD for assignments - Universalized)
+      const res = await api.brain.get(`db/collection/entity_relation_many/all?sourceType=${entityType}&sourceId=${entityId}&targetType=tag`);
       if (res.success) {
         const assignments = res.data || [];
-        const tagIds = assignments.map((a: any) => a.tagId);
+        const tagIds = assignments.map((a: any) => a.targetId);
         
         // Match tag objects from allTags
         if (cachedAllTags) {
@@ -341,10 +341,16 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
         <PopoverContent 
           align="end" 
           className="w-[320px] p-0 overflow-hidden border-none shadow-2xl rounded-2xl bg-white"
-          onOpenAutoFocus={(e) => {
+          onOpenAutoFocus={(e: any) => {
              // Aceasta previne eroarea de tip "Blocked aria-hidden on an element because its descendant retained focus"
              // în tabelele complexe unde focus-ul se poate pierde la randare
-             // e.preventDefault();
+             e.preventDefault();
+             // Focusăm manual input-ul dacă există
+             const target = e.currentTarget as HTMLElement;
+             if (target) {
+                const input = target.querySelector('input');
+                if (input) setTimeout(() => (input as HTMLInputElement).focus(), 0);
+             }
           }}
         >
           <div className="p-5 space-y-4">

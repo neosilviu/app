@@ -44,7 +44,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const skipNextSocketUpdate = useRef<string | null>(null);
-  const { entity } = useConfig();
+  const { entity, constants } = useConfig();
   const { autoRefreshEnabled, canAutoRefresh } = useTheme();
   const params = useParams();
   const lang = (params.lang as string) || 'ro';
@@ -53,7 +53,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     if (!entityName || entityName === 'undefined') return false;
     return !!entity[entityName] || 
            LOCAL_FALLBACK_ENTITIES.includes(entityName) || 
-           ['workspace', 'user', 'SYSTEM_SETTING', 'entity_definition'].includes(entityName);
+           ['workspace', 'user', 'SYSTEM_SETTING', 'entity_definition', 'config_version', 'interaction'].includes(entityName);
   }, [entityName, entity]);
 
   // Selection helpers
@@ -125,17 +125,28 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     }
 
     const filters = { ...options.filters };
-    const GLOBAL_ENTITIES = ['workspace', 'user', 'role', 'SYSTEM_SETTING', 'entity_definition', 'audit_log', '_ai_prompt', 'workspace_user', 'workspace_invitation', 'workspace_setting'];
-    const isGlobal = GLOBAL_ENTITIES.includes(entityName);
+    const GLOBAL_ENTITIES = [
+      'workspace', 'user', 'role', 'SYSTEM_SETTING', 'entity_definition', 
+      'audit_log', '_ai_prompt', 'workspace_user', 'workspace_invitation', 
+      'workspace_setting', 'session', 'changelog', 'bug_report', 'config_version', 'system_error', '_help_content', 'system_performance_log'
+    ];
+    
+    // Dynamic global check from registry constants
+    const registryGlobals = constants?.globalEntity || [];
+    const isGlobal = GLOBAL_ENTITIES.includes(entityName) || 
+                     registryGlobals.includes(entityName) || 
+                     registryGlobals.map((e: string) => e.toLowerCase()).includes(entityName.toLowerCase());
     
     // Handle archived items
-    if (!options.includeArchived && !filters.archived && !isGlobal) {
+    // Level 8: Improved archival filter - don't force 0 if not needed, as NULL also means non-archived in some schemas
+    // For superadmins, we show everything by default unless they explicitly filter
+    if (!options.includeArchived && filters.archived === undefined && !isGlobal && !hasPermission('*')) {
       filters.archived = 0;
     }
 
     // Add workspaceId filter if not explicitly provided
-    // Skip this for global/system entities
-    if (user?.workspaceId && !filters.workspaceId && !isGlobal) {
+    // Skip this for global/system entities OR if user is a SuperAdmin (to see all by default)
+    if (user?.workspaceId && !filters.workspaceId && !isGlobal && !hasPermission('*')) {
       filters.workspaceId = user.workspaceId;
     }
 
@@ -150,7 +161,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       if (options.sortBy) queryParams.append('sortBy', options.sortBy);
       if (options.sortOrder) queryParams.append('sortOrder', options.sortOrder);
 
-      const url = `db/collection/${entityName}/${workspaceId}?${queryParams.toString()}&t=${Date.now()}`;
+      const url = `db/collection/${entityName}/${workspaceId}/all?${queryParams.toString()}&t=${Date.now()}`;
       
       let responseData;
       try {
@@ -321,7 +332,8 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     try {
       let result;
       try {
-        const response = await api.brain.post(`db/collection/${entityName}/${workspaceId}`, payload);
+        // Enterprise Level 8: Using explicit /new segment to avoid ID vs WorkspaceID ambiguity in brain.server.ts
+        const response = await api.brain.post(`db/collection/${entityName}/${workspaceId}/new`, payload);
         // console.log(`[useEntity] Brain API create response for ${entityName}:`, response);
         result = response;
       } catch (err: any) {
@@ -374,7 +386,8 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     try {
       let result;
       try {
-        const response = await api.brain.put(`db/collection/${entityName}/${id}`, payload);
+        // Enterprise Level 8: Using explicit /item segment to avoid ID vs WorkspaceID ambiguity in brain.server.ts
+        const response = await api.brain.put(`db/collection/${entityName}/item/${id}`, payload);
         result = response;
       } catch (err: any) {
         // Enterprise Level 8: Improved Error Handling (Update)
@@ -425,7 +438,8 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     try {
       let result;
       try {
-        const url = `db/collection/${entityName}/${id}${force ? '?force=true' : ''}`;
+        // Enterprise Level 8: Using explicit /item segment
+        const url = `db/collection/${entityName}/item/${id}${force ? '?force=true' : ''}`;
         result = await api.brain.delete(url);
       } catch (err: any) {
         // Enterprise Level 8: Improved Error Handling (Delete)
@@ -471,11 +485,40 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     }
   };
 
+  /**
+   * Quick Create (Enterprise Level 8)
+   * Creates a simple record with just a name/label and returns the ID.
+   * Useful for inline additions in dropdowns.
+   */
+  const quickCreate = async (name: string, additionalData: any = {}) => {
+    try {
+      const workspaceId = user?.workspaceId || 'system';
+      const res = await api.brain.quickCreate(entityName, name, additionalData, workspaceId);
+      
+      if (res.success && res.data) {
+        const newItem = res.data;
+        
+        // Update local state if we're currently viewing this entity type
+        const entityDef = entity[entityName];
+        const normalizedItem = entityDef ? normalizeFormData(newItem, entityDef.fields) : newItem;
+        setData(prev => [normalizedItem, ...prev]);
+        
+        return normalizedItem;
+      } else {
+        throw new Error(res.error || "Failed to create record");
+      }
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, `Failed to create ${entityName}`));
+      return null;
+    }
+  };
+
   const archive = async (id: string) => {
     try {
       let result;
       try {
-        const response = await api.brain.patch(`db/collection/${entityName}/${id}/archive`);
+        // Enterprise Level 8: Using explicit /item segment
+        const response = await api.brain.patch(`db/collection/${entityName}/item/${id}/archive`);
         result = response;
       } catch (err) {
         console.warn(`[useEntity] Brain API archive failed for ${entityName}, trying Socket fallback...`);
@@ -734,8 +777,9 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
                       }
                     } catch (err: any) {
                       console.error("[IMPORT] Batch failed:", err);
-                      // Non-fatal error for the whole process, but maybe show toast
-                      toast.error(`Eroare la procesarea lotului ${chunkCount}: ${err.message || 'Server error'}`);
+                      // Enterprise Level 8: Extract detailed server error message
+                      const serverError = err?.response?.data?.error || err?.response?.data?.message || err.message || 'Server error';
+                      toast.error(`Eroare la procesarea lotului ${chunkCount}: ${serverError}`);
                     }
                   }
 
@@ -910,6 +954,12 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         const normalized = normalizeEntity(config);
         const cleanedItems = items.map((item: any) => {
           const newItem = { ...item };
+
+          // SECURITATE: Dacă importăm contacte prin AI, forțăm întotdeauna rolul de 'guest' (fără permisiuni)
+          // Utilizatorul trebuie să le acorde permisiuni manual dacă este necesar.
+          if (entityName === 'contact') {
+            newItem.role = 'guest';
+          }
           
           // Try to map select options by label or name if exact value doesn't match
           normalized.fields.forEach((field: any) => {

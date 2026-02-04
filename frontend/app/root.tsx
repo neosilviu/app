@@ -28,7 +28,7 @@ import { formatForRender } from '~/lib/utils';
 
 export const handle = {
   // In the handle export, we can add a i18n key with namespaces our route needs
-  i18n: "common",
+  i18n: ["common", "settings", "changelog", "audit"],
 };
 
 export async function loader({ request }: Route.LoaderArgs) {

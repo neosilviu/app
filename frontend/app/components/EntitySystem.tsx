@@ -23,7 +23,9 @@ import { TagSelector } from "./ui/tag-selector";
 import { IconPicker } from './ui/IconPicker';
 import { ColorPicker } from './ui/ColorPicker';
 import { DatePicker } from './ui/DatePicker';
-import { Edit, Trash,  ArrowUpDown, ArrowUp, ArrowDown, Check, X, Archive, RotateCcw, FileIcon, ExternalLink, Tag as TagIcon, Zap, Code, Sparkles, Star, ArrowRight, HelpCircle, Plus } from "lucide-react";
+import { GlassCard } from '~/components/ui/GlassCard';
+import { toast } from 'sonner';
+import { Edit, Trash,  ArrowUpDown, ArrowUp, ArrowDown, Check, X, Archive, RotateCcw, FileIcon, ExternalLink, Tag as TagIcon, Zap, Code, Sparkles, Star, ArrowRight, HelpCircle, Plus, Layers } from "lucide-react";
 import { IconMap } from "~/lib/icons";
 
 // --- RelationSelect Component ---
@@ -41,6 +43,7 @@ export function RelationSelect({ entityType, value, onChange, placeholder }: Rel
     const [options, setOptions] = useState<{ value: string, label: string }[]>([]);
     const [loading, setLoading] = useState(true);
     const { user } = useAuth();
+    const systemConfig = useConfig();
 
     useEffect(() => {
         if (!entityType) return;
@@ -49,20 +52,38 @@ export function RelationSelect({ entityType, value, onChange, placeholder }: Rel
         
         socket.emit('db:list', { collection: entityType, filters }, (response: any) => {
             if (response.success && response.data) {
-                const mapped = response.data.map((item: any) => ({
-                    value: item.id,
-                    label: item.name || item.title || item.label || item.id
-                }));
+                // Enterprise Level 8: Respect Entity-level displayField
+                const entityDef = (systemConfig?.entity as any)?.[entityType.toLowerCase()];
+                const displayField = entityDef?.displayField || 'id';
+
+                const mapped = response.data.map((item: any) => {
+                    // Level 8: STRICT Display Field Resolution
+                    const getResilientLabel = (obj: any, preferred: string) => {
+                        if (!obj || typeof obj !== 'object') return String(obj);
+                        if (obj[preferred]) return obj[preferred];
+                        
+                        const keys = Object.keys(obj);
+                        const foundKey = keys.find(k => k.toLowerCase() === preferred.toLowerCase());
+                        if (foundKey && obj[foundKey]) return obj[foundKey];
+                        
+                        return obj.id || obj.ID || obj.uuid || 'N/A';
+                    };
+
+                    return {
+                        value: String(item.id || item.ID || item.uuid),
+                        label: String(getResilientLabel(item, displayField))
+                    };
+                });
                 setOptions(mapped);
             }
             setLoading(false);
         });
-    }, [entityType, user?.workspaceId]);
+    }, [entityType, user?.workspaceId, systemConfig]);
 
     return (
         <Select onValueChange={onChange} value={value || ''}>
             <SelectTrigger className="h-12 rounded-2xl bg-slate-50 border-slate-200 font-bold focus:ring-indigo-500 shadow-sm">
-                <SelectValue placeholder={loading ? t('common:loading') : placeholder || t('common:select_placeholder', { label: entityType ? t(`entities:${entityType}.label`, entityType) : '...' })} />
+                <SelectValue placeholder={loading ? t('common:loading') : placeholder || t('common:select_placeholder', { label: entityType ? t(`entities:${entityType}.label`) : '...' })} />
             </SelectTrigger>
             <SelectContent className="rounded-2xl border-none shadow-2xl p-2 bg-white/95 backdrop-blur-md">
                 {options.map((opt, idx) => (
@@ -97,6 +118,7 @@ export function MultiRelationSelector({ field, value = [], onChange, label }: Mu
     const [searchTerm, setSearchTerm] = useState('');
     const [isFocused, setIsFocused] = useState(false);
     const { user } = useAuth();
+    const systemConfig = useConfig();
 
     const targetEntity = field.relation?.target || field.relationTarget || (field.type === 'tag' ? 'tag' : null);
 
@@ -122,16 +144,33 @@ export function MultiRelationSelector({ field, value = [], onChange, label }: Mu
         
         socket.emit('db:list', { collection: targetEntity, filters }, (response: any) => {
             if (response.success && response.data) {
-                const mapped = response.data.map((item: any) => ({
-                    id: String(item.id || item._id),
-                    name: item.name || item.label || item.title || item.id,
-                    color: item.color
-                }));
+                // Enterprise Level 8: Respect Entity-level or Field-level displayField
+                const entityDef = (systemConfig?.entity as any)?.[targetEntity.toLowerCase()];
+                const displayField = field.displayField || field.relation?.displayField || field.relation?.field || entityDef?.displayField || 'id';
+
+                const mapped = response.data.map((item: any) => {
+                    const getResilientLabel = (obj: any, preferred: string) => {
+                        if (!obj || typeof obj !== 'object') return String(obj);
+                        if (obj[preferred]) return obj[preferred];
+                        
+                        const keys = Object.keys(obj);
+                        const foundKey = keys.find(k => k.toLowerCase() === preferred.toLowerCase());
+                        if (foundKey && obj[foundKey]) return obj[foundKey];
+                        
+                        return obj.id || obj.ID || obj.uuid || 'N/A';
+                    };
+
+                    return {
+                        id: String(item.id || item.ID || item.uuid || item._id),
+                        name: String(getResilientLabel(item, displayField)),
+                        color: item.color || item.colorTheme
+                    };
+                });
                 setOptions(mapped);
             }
             setLoading(false);
         });
-    }, [targetEntity, user?.workspaceId, field.options]);
+    }, [targetEntity, user?.workspaceId, field.options, field.displayField, field.relation, systemConfig]);
 
     const cleanValue = Array.isArray(value) ? value.map(v => String(v)) : [];
     const selectedItems = options.filter(opt => cleanValue.includes(opt.id));
@@ -275,18 +314,99 @@ export const DynamicTable = React.memo(function DynamicTable({
   const { lang } = useParams();
   const { entity } = useConfig();
   const config = entity[entityType];
+  const normalizedConfig = useMemo(() => normalizeEntity(config), [config]);
   const [isPending, startTransition] = useTransition();
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" | null }>({
     key: "",
     direction: null,
   });
   const [displayLimit, setDisplayLimit] = useState(config?.uiConfig?.list?.pageSize || 50);
+
+  // Enterprise Level 8: Cache for related entities labels
+  // This is used to hydrate IDs/UUIDs into proper labels (DisplayField logic)
+  const [relatedData, setRelatedData] = useState<Record<string, any[]>>({});
+  const { loading: authLoading } = useAuth();
   
   useEffect(() => {
     if (config?.uiConfig?.list?.pageSize) {
       setDisplayLimit(config.uiConfig.list.pageSize);
     }
   }, [config?.uiConfig?.list?.pageSize]);
+
+  // Enterprise Level 8: HYDRATION LOGIC
+  // Fetches labels for all relations in the current table view
+  useEffect(() => {
+    const fetchRelated = async () => {
+        if (!data || data.length === 0 || authLoading) return;
+
+        const fieldsList = normalizedConfig.fields;
+        const targetsNeeded = new Set<string>();
+
+        // Identify which entities we need to fetch labels for
+        fieldsList.forEach(f => {
+            const isRel = (f.type === 'relation' || f.type === 'entity_relation' || f.type === 'relation-many' || f.type === 'tag' || f.type === 'multi-select' || f.multiple);
+            if (!isRel) return;
+
+            const t = (f.relationEntity || f.relation?.target || (f.type === 'tag' ? 'tag' : ''))?.toLowerCase();
+
+            if (t && !relatedData[t]) {
+                targetsNeeded.add(t);
+            }
+        });
+
+        if (targetsNeeded.size === 0) return;
+
+        const newRelatedData: Record<string, any[]> = {};
+        let hasNew = false;
+
+        for (const target of Array.from(targetsNeeded)) {
+            // Collect all unique IDs for this target from the current table data
+            const allIds = new Set<string>();
+            data.forEach((row: any) => {
+                const val = row[fieldsList.find(f => (f.relationEntity || f.relation?.target || (f.name === 'tag' || f.name === 'tags' ? 'tag' : ''))?.toLowerCase() === target)?.name || ''];
+                if (!val) return;
+
+                if (Array.isArray(val)) {
+                    val.forEach(v => {
+                        const id = typeof v === 'object' ? (v.id || v.ID || v.uuid) : v;
+                        if (id) allIds.add(String(id));
+                    });
+                } else if (typeof val === 'object') {
+                    const id = val.id || val.ID || val.uuid;
+                    if (id) allIds.add(String(id));
+                } else {
+                    // String/Number (Raw ID)
+                    allIds.add(String(val));
+                }
+            });
+
+            const idsToFetch = Array.from(allIds).filter(id => id && id !== 'undefined' && id !== 'null');
+            if (idsToFetch.length === 0) continue;
+
+            try {
+                // Fetch the lookup records from Brain
+                const response = await api.brain.post(`db/list`, {
+                    entity: target,
+                    limit: 1000,
+                    where: { id: { in: idsToFetch } }
+                });
+                
+                if (response?.success && response.data) {
+                    newRelatedData[target] = response.data;
+                    hasNew = true;
+                }
+            } catch (e) {
+                console.warn(`[TABLE-HYDRATION] Failed for ${target}:`, e);
+            }
+        }
+
+        if (hasNew) {
+            setRelatedData(prev => ({ ...prev, ...newRelatedData }));
+        }
+    };
+
+    fetchRelated();
+  }, [normalizedConfig.fields, data, authLoading, relatedData]);
 
   const sortedData = useMemo(() => {
     if (!Array.isArray(data)) return [];
@@ -327,7 +447,6 @@ export const DynamicTable = React.memo(function DynamicTable({
 
   const fields = useMemo(() => {
     // Enterprise Level 8: Always use the central normalizer
-    const normalizedConfig = normalizeEntity(config);
     const allFields = normalizedConfig.fields;
     const columnNames = normalizedConfig?.uiConfig?.list?.columns;
     
@@ -493,37 +612,54 @@ export const DynamicTable = React.memo(function DynamicTable({
       );
     }
 
-    if (field.type === "tag" || field.type === "relation-many" || field.type === "multi-select" || Array.isArray(value)) {
-      const items = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(',').filter(Boolean) : []);
+    if (field.type === "tag" || field.type === "relation-many" || field.type === "multi-select" || field.type === "relation" || field.type === "entity_relation" || field.multiple) {
+      const items = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(',').filter(Boolean) : [value]);
       if (items.length === 0) return "-";
       
+      const target = (field.relationEntity || field.relation?.target || (field.type === 'tag' ? 'tag' : ''))?.toLowerCase();
+      const targetDef = target ? (entity as any)?.[target] : null;
+      
+      // Enterprise Level 8: Strict Display Field from Registry
+      const displayField = field.displayField || field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'id';
+
+      const getResilientLabel = (obj: any, preferred: string, id: any) => {
+          if (!obj || typeof obj !== 'object') return String(id || obj || '-');
+          
+          // Priority 1: Exact match for strictly requested field
+          if (obj[preferred]) return String(obj[preferred]);
+          
+          // Priority 2: Case-insensitive match for strictly requested field
+          const keys = Object.keys(obj);
+          const foundKey = keys.find(k => k.toLowerCase() === preferred.toLowerCase());
+          if (foundKey && obj[foundKey]) return String(obj[foundKey]);
+          
+          return obj.id || obj.ID || obj.uuid || String(id || '-');
+      };
+
+      const lookupItems = (target && relatedData[target]) ? relatedData[target] : [];
+
       return (
         <div className="flex flex-wrap gap-1">
           {items.map((item: any, i: number) => {
-            const label = typeof item === 'object' && item !== null ? (item.label || item.name || item.id || item.ID || JSON.stringify(item)) : String(item);
-            const color = typeof item === 'object' && item !== null ? item.color || item.colorTheme : null;
+            const sid = (typeof item === 'object' && item !== null) ? (item.id || item.ID || item.uuid) : String(item);
+            const found = lookupItems.find(it => String(it.id || it.ID || it.uuid || '').toLowerCase() === String(sid).toLowerCase()) || (typeof item === 'object' ? item : null);
+            
+            const label = getResilientLabel(found, displayField, sid);
+            const color = found?.color || found?.colorTheme;
+            
             return (
               <Badge 
                 key={i} 
                 variant="secondary" 
                 className="text-[8px] py-0 px-1 border-none font-bold uppercase tracking-tighter"
-                style={color ? { backgroundColor: `${color}15`, color: color, border: `1px solid ${color}30` } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+                style={color ? { backgroundColor: `${color}15`, color: color, border: `1px solid ${color}30` } : { backgroundColor: '#f8fafc', color: '#64748b' }}
               >
-                {label}
+                {renderString(label, lang)}
               </Badge>
             );
           })}
         </div>
       );
-    }
-
-    if (field.type === "relation" && value && typeof value === 'object') {
-       const label = value.label || value.name || value.id || value.ID || JSON.stringify(value);
-       return (
-         <Badge variant="secondary" className="font-bold bg-blue-50 text-blue-700 border-blue-100 text-[10px] px-2 py-0.5 rounded-lg">
-           {label}
-         </Badge>
-       );
     }
 
     if (field.type === "color") {
@@ -579,22 +715,36 @@ export const DynamicTable = React.memo(function DynamicTable({
               {fields.map((field: any) => (
                 <TableHead key={field.name} className="cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => handleSort(field.name)}>
                   <div className="flex items-center">
-                    {(t([`entities:fields.${field.name}`, renderString(field.label || field.name)], renderString(field.label || field.name)) as string)}
+                    {(t([`entities:fields.${field.name}`, renderString(field.label || field.name)]) as string)}
                     {getSortIcon(field.name)}
                   </div>
                 </TableHead>
               ))}
               {config.hasTags && <TableHead>{t('common:tag') as string}</TableHead>}
-              {(onEdit || onDelete || onArchive || onRestore) && (
+              {normalizedConfig.uiConfig?.list?.showActions === true && (onEdit || onDelete || onArchive || onRestore) && (
                 <TableHead className="text-right whitespace-nowrap">{t('common:actions') as string}</TableHead>
               )}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={fields.length + (config.hasTags ? 3 : 2)} className="h-24 text-center">{t('common:loading')}</TableCell></TableRow>
+              <TableRow>
+                <TableCell 
+                  colSpan={fields.length + 1 + (config.hasTags ? 1 : 0) + (normalizedConfig.uiConfig?.list?.showActions === true ? 1 : 0)} 
+                  className="h-24 text-center"
+                >
+                  {t('common:loading')}
+                </TableCell>
+              </TableRow>
             ) : sortedData.length === 0 ? (
-              <TableRow><TableCell colSpan={fields.length + (config.hasTags ? 3 : 2)} className="h-24 text-center">{t('common:no_items_found')}</TableCell></TableRow>
+              <TableRow>
+                <TableCell 
+                  colSpan={fields.length + 1 + (config.hasTags ? 1 : 0) + (normalizedConfig.uiConfig?.list?.showActions === true ? 1 : 0)} 
+                  className="h-24 text-center"
+                >
+                  {t('common:no_items_found')}
+                </TableCell>
+              </TableRow>
             ) : (
               paginatedData.map((item, index) => {
                 const rowKey = item.id || item.chatId || `row-${index}`;
@@ -619,7 +769,7 @@ export const DynamicTable = React.memo(function DynamicTable({
                         />
                       </TableCell>
                     )}
-                    {(onEdit || onDelete || onArchive || onRestore) && (
+                    {normalizedConfig.uiConfig?.list?.showActions === true && (onEdit || onDelete || onArchive || onRestore) && (
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-end gap-2">
                           {onEdit && <Button variant="ghost" size="icon" onClick={() => onEdit?.(item)}><Edit size={16} /></Button>}
@@ -657,11 +807,12 @@ interface DynamicFormProps {
   onSubmit: (data: any) => void;
   initialData?: any;
   loading?: boolean;
+  isModal?: boolean;
 }
 
-export function DynamicForm({ entityType, onSubmit, initialData, loading }: DynamicFormProps) {
+export function DynamicForm({ entityType, onSubmit, initialData, loading, isModal }: DynamicFormProps) {
   const { t } = useTranslation(['common', 'validation', 'entity']);
-  const { lang } = useParams();
+  const { lang = 'ro' } = useParams();
   const { entity } = useConfig();
   let config = entity[entityType];
   
@@ -671,10 +822,14 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
   const fieldsMap = normalizedConfig.fieldsMap;
 
   const schema = React.useMemo(() => {
+    const hiddenFields = (normalizedConfig.uiConfig?.form as any)?.hiddenFields || [];
     const schemaFields: any = {};
     fieldsArray.forEach((field: any) => {
       const name = field.name || field.id;
       if (field.readonly && !field.calculate) return;
+      
+      const isHidden = hiddenFields.includes(name);
+      
       let fieldSchema: any;
       if (field.type === 'file') fieldSchema = field.multiple ? z.array(z.any()) : z.any();
       else if (field.type === 'boolean') fieldSchema = z.boolean();
@@ -686,10 +841,10 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
       
       // New Metadata Validation - Industrial Strength
       if (field.validation) {
-        const fieldLabel = t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, 'entities:fields.name'], renderString(field.label || name));
+        const fieldLabel = renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, 'entities:fields.name'], renderString(field.label || name));
         
         if (field.validation.pattern) {
-          fieldSchema = fieldSchema.refine(val => {
+          fieldSchema = fieldSchema.refine((val: any) => {
             if (!val) return true; // Let required handle empty
             return new RegExp(field.validation.pattern).test(String(val));
           }, t('validation:invalid_format', { label: fieldLabel }));
@@ -697,7 +852,7 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
 
         if (field.validation.min !== undefined && field.validation.min !== null) {
           const minVal = Number(field.validation.min);
-          fieldSchema = fieldSchema.refine(val => {
+          fieldSchema = fieldSchema.refine((val: any) => {
             if (val === undefined || val === null || val === '') return true;
             if (field.type === 'number' || field.type === 'currency') return Number(val) >= minVal;
             if (Array.isArray(val)) return val.length >= minVal;
@@ -710,7 +865,7 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
 
         if (field.validation.max !== undefined && field.validation.max !== null) {
           const maxVal = Number(field.validation.max);
-          fieldSchema = fieldSchema.refine(val => {
+          fieldSchema = fieldSchema.refine((val: any) => {
             if (val === undefined || val === null || val === '') return true;
             if (field.type === 'number' || field.type === 'currency') return Number(val) <= maxVal;
             if (Array.isArray(val)) return val.length <= maxVal;
@@ -722,9 +877,9 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
         }
       }
 
-      if (field.required) {
-        const fieldLabel = t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, 'entities:fields.name'], renderString(field.label || name));
-        fieldSchema = fieldSchema.refine(val => {
+      if (field.required && !isHidden) {
+        const fieldLabel = renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, 'entities:fields.name'], renderString(field.label || name));
+        fieldSchema = fieldSchema.refine((val: any) => {
           if (val === undefined || val === null || val === '') return false;
           if (Array.isArray(val) && val.length === 0) return false;
           if (field.type === 'boolean') return true; // checkboxes are always initialized
@@ -737,14 +892,14 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
         fieldSchema = z.preprocess((val) => (val === '' || val === null || val === undefined ? undefined : Number(val)), fieldSchema);
       }
 
-      if (!field.required) {
+      if (!field.required || isHidden) {
         if (field.type === 'boolean') fieldSchema = fieldSchema.optional().nullable().default(false);
         else fieldSchema = fieldSchema.optional().nullable().or(z.literal(''));
       }
       schemaFields[name] = fieldSchema;
     });
     return z.object(schemaFields);
-  }, [fieldsArray, entityType]);
+  }, [fieldsArray, entityType, lang, t, normalizedConfig]);
   
   const defaultValues = React.useMemo(() => {
     const defaults: any = {};
@@ -769,8 +924,39 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
   });
 
   const watchedValues = form.watch();
+  const [isAiRefilling, setIsAiRefilling] = useState(false);
 
-  // Reset form when initialData changes (v7 values prop handles this mostly, but we keep it for safety if nested)
+  const handleAiAutoFill = async () => {
+    setIsAiRefilling(true);
+    const currentData = form.getValues();
+    
+    try {
+      const res = await api.brain.post('ai', { 
+        action: 'auto-fill', 
+        entityType, 
+        currentData, 
+        schema: fieldsArray 
+      });
+
+      if (res.success && res.data) {
+        Object.entries(res.data).forEach(([key, value]) => {
+          if (fieldsMap[key]) {
+            form.setValue(key as any, value, { shouldDirty: true, shouldValidate: true });
+          }
+        });
+        toast.success(t('common:ai_autofill_success'));
+      } else {
+        toast.error(res.error || t('common:ai_autofill_error'));
+      }
+    } catch (error: any) {
+      console.error('AI Auto-fill failed:', error);
+      toast.error(error.message || t('common:ai_autofill_error'));
+    } finally {
+      setIsAiRefilling(false);
+    }
+  };
+
+  // Reset form when initialData changes
   useEffect(() => {
     if (initialData && Object.keys(initialData).length > 0) {
       form.reset(initialData);
@@ -789,15 +975,13 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
       // 2. String-based JS Formula
       if (field.type === 'formula' && field.formula?.expression) {
         try {
-          // Dangerous but effective for internal tools: simple Function evaluator
-          // Only evaluate if dependencies are present to avoid noise
           const data = watchedValues;
           const newValue = new Function('data', `try { return ${field.formula.expression}; } catch(e) { return ""; }`)(data);
           if (newValue !== undefined && newValue !== form.getValues(name)) {
             form.setValue(name, newValue, { shouldValidate: true });
           }
         } catch (e) {
-          // Formula error - just ignore and don't block UI
+          // Formula error
         }
       }
     });
@@ -811,380 +995,504 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
 
   if (!config || !config.fields) return null;
 
-  const gridColumns = Number(config.uiConfig?.form?.columns || 2);
+  const sections = normalizedConfig.uiConfig?.form?.sections;
+  const gridColumns = isModal 
+    ? Number((normalizedConfig.uiConfig?.form as any)?.modalColumns || normalizedConfig.uiConfig?.form?.columns || 1) 
+    : Number(normalizedConfig.uiConfig?.form?.columns || 2);
+
+  const renderField = (field: any, forceCols?: number) => {
+    if (!field) return null;
+    const name = field.name || field.id;
+    const currentCols = forceCols || gridColumns;
+
+    // Visibility Logic
+    const hiddenFields = (normalizedConfig.uiConfig?.form as any)?.hiddenFields || [];
+    if (hiddenFields.includes(name)) return null;
+
+    if (field.visibility) {
+      if (field.visibility.type === 'hidden') return null;
+      if (field.visibility.type === 'conditional') {
+        const { dependsOn, operator, value } = field.visibility;
+        const targetValue = watchedValues[dependsOn];
+        
+        const isMatch = Array.isArray(value) 
+          ? value.includes(targetValue)
+          : targetValue == value;
+
+        if (operator === '==' && !isMatch) return null;
+        if (operator === '!=' && isMatch) return null;
+        if (operator === 'in' && (!targetValue || !String(targetValue).includes(String(value)))) return null;
+        if (operator === 'set' && (targetValue === null || targetValue === undefined || targetValue === '')) return null;
+      }
+    }
+
+    // Legacy showIf support
+    if (field.showIf) {
+      const { field: targetField, equals, notEquals, contains } = field.showIf;
+      const targetValue = watchedValues[targetField];
+      if (equals !== undefined && targetValue !== equals) return null;
+      if (notEquals !== undefined && targetValue === notEquals) return null;
+      if (contains !== undefined && (!targetValue || !targetValue.includes(contains))) return null;
+    }
+
+    const isFullWidth = field.type === 'textarea' || field.type === 'file' || field.type === 'image' || field.fullWidth || name === 'name' || name === 'email' || field.width === '1/1';
+    
+    let colSpan = 1;
+    if (isFullWidth) colSpan = currentCols;
+    else if (field.width === '1/2') colSpan = Math.max(1, Math.floor(currentCols / 2));
+    else if (field.width === '1/3') colSpan = Math.max(1, Math.floor(currentCols / 3));
+    else if (field.width === '1/4') colSpan = Math.max(1, Math.floor(currentCols / 4));
+    else if (typeof field.width === 'number' && field.width > 0 && field.width <= 12) {
+       // Support 12-column ratio
+       colSpan = Math.max(1, Math.floor((field.width / 12) * currentCols + 0.05));
+    }
+
+    return (
+      <div key={name} className={cn({
+        "md:col-span-1": colSpan === 1,
+        "md:col-span-2": colSpan === 2,
+        "md:col-span-3": colSpan === 3,
+        "md:col-span-4": colSpan === 4,
+      })}>
+        <FormField control={form.control} name={name} render={({ field: formField }) => (
+          <FormItem className={field.type === 'boolean' ? "flex flex-row items-start space-x-3 space-y-0 rounded-2xl border border-slate-100 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-900/30" : ""}>
+            {field.type === 'boolean' ? (
+              <>
+                <FormControl>
+                  <Checkbox 
+                    checked={!!formField.value} 
+                    onCheckedChange={formField.onChange} 
+                    className="h-6 w-6 rounded-lg border-slate-200 dark:border-slate-700 data-[state=checked]:bg-indigo-600 data-[state=checked]:border-indigo-600 transition-colors"
+                  />
+                </FormControl>
+                <div className="space-y-1.5 leading-none pt-0.5">
+                  <FormLabel className="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 cursor-pointer flex items-center gap-2">
+                    {renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name])}
+                  </FormLabel>
+                  {field.description && <FormDescription className="text-[10px] font-medium text-slate-400 dark:text-slate-500 italic leading-snug">{renderString(field.description, lang)}</FormDescription>}
+                </div>
+              </>
+            ) : (
+              <>
+                <FormLabel className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 flex items-center gap-2 mb-2 ml-1">
+                  {field.type === 'ai' && <Sparkles size={10} className="text-indigo-400" />}
+                  {field.type === 'formula' && <Code size={10} className="text-emerald-400" />}
+                  {renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name])}
+                  {field.required && <span className="text-rose-500 font-black">*</span>}
+                </FormLabel>
+                <FormControl>
+                  {field.type === 'select' || field.type === 'enum' ? (
+                    field.ui?.variant === 'buttons' ? (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {field.options?.map((opt: any, idx: number) => {
+                          const val = typeof opt === 'object' ? opt.value : opt;
+                          const lab = typeof opt === 'object' ? (opt.label || opt.value) : opt;
+                          const isSelected = formField.value === val;
+                          return (
+                            <Button
+                              key={`${val}-${idx}`}
+                              type="button"
+                              variant={isSelected ? "default" : "outline"}
+                              size="sm"
+                              className={cn(
+                                "h-8 text-[10px] font-bold uppercase tracking-tight rounded-md px-3",
+                                isSelected ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/20"
+                              )}
+                              onClick={() => formField.onChange(val)}
+                            >
+                              {renderString(lab, lang) || (typeof lab === 'string' ? t(lab) : lab)}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <Select onValueChange={formField.onChange} value={formField.value ?? field.defaultValue ?? ''}>
+                        <SelectTrigger className="h-12 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 font-bold focus:ring-indigo-500 shadow-sm transition-all dark:text-slate-200">
+                          <SelectValue placeholder={t('common:select_placeholder', { label: renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name]) })} />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-2xl border-none shadow-2xl p-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md">
+                          {field.options?.map((opt: any, idx: number) => {
+                            const val = typeof opt === 'object' ? opt.value : opt;
+                            const lab = typeof opt === 'object' ? (opt.label || opt.value) : opt;
+                            return (
+                              <SelectItem key={`${val}-${idx}`} value={val} className="rounded-xl py-3 px-4 font-bold focus:bg-indigo-50 dark:focus:bg-indigo-900/40 focus:text-indigo-600 dark:focus:text-indigo-400 transition-colors">
+                                {renderString(lab, lang) || (typeof lab === 'string' ? t(lab) : lab)}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    )
+                  ) : field.type === 'relation' ? (
+                    <RelationSelect 
+                      entityType={field.relation?.target || field.relationTo} 
+                      value={formField.value} 
+                      onChange={formField.onChange} 
+                      placeholder={t('common:select_placeholder', { label: t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, renderString(field.label || name)]) })} 
+                    />
+                  ) : field.type === 'progress' || name === 'progress' ? (
+                    <div className="flex items-center gap-4 py-2">
+                       <input 
+                         type="range" 
+                         min="0" 
+                         max="100" 
+                         step="5"
+                         value={formField.value || 0}
+                         onChange={(e) => formField.onChange(Number(e.target.value))}
+                         className="flex-1 h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                       />
+                       <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 min-w-[3rem] text-right">{formField.value || 0}%</span>
+                    </div>
+                  ) : field.type === 'rating' ? (
+                    <div className="flex items-center gap-2 py-2">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => formField.onChange(star)}
+                          className={cn(
+                            "transition-all hover:scale-110",
+                            star <= (formField.value || 0) ? "text-amber-400" : "text-slate-200 dark:text-slate-800"
+                          )}
+                        >
+                          <Star size={24} fill={star <= (formField.value || 0) ? "currentColor" : "none"} />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (field.type === 'relation-many' || field.type === 'tag' || field.type === 'multi-select') ? (
+                      <MultiRelationSelector
+                        field={field}
+                        value={(() => {
+                          const val = formField.value;
+                          if (Array.isArray(val)) {
+                            return val.map(item => (typeof item === 'object' && item !== null) ? (item.id || item.ID) : String(item));
+                          }
+                          if (typeof val === 'string' && val.length > 0) return val.split(',').filter(Boolean);
+                          return [];
+                        })()}
+                        onChange={formField.onChange}
+                        label={field.label || name}
+                      />
+                  ) : (field.type === 'enum' && field.multiple) ? (
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-2 min-h-[40px] p-2 border rounded-xl bg-slate-50/50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800">
+                          {((Array.isArray(formField.value) ? formField.value : []) as string[]).map((val, i) => (
+                            <Badge key={val || i} variant="secondary" className="gap-1 pr-1 font-bold">
+                              {renderString(field.options?.find((o: any) => (typeof o === 'object' ? o.value : o) === val)?.label || val, lang)}
+                              <X size={12} className="cursor-pointer hover:text-red-500" onClick={() => {
+                                const newVal = (formField.value as string[]).filter(v => v !== val);
+                                formField.onChange(newVal);
+                              }} />
+                            </Badge>
+                          ))}
+                          {(!formField.value || formField.value.length === 0) && (
+                            <span className="text-[10px] text-slate-400 italic py-1 px-1">No selection</span>
+                          )}
+                        </div>
+                        <select 
+                          className="w-full h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs px-2"
+                          onChange={(e) => {
+                            if (!e.target.value) return;
+                            const current = Array.isArray(formField.value) ? formField.value : [];
+                            if (!current.includes(e.target.value)) {
+                              formField.onChange([...current, e.target.value]);
+                            }
+                            e.target.value = '';
+                          }}
+                        >
+                          <option value="">+ Add {renderString(field.label || name)}...</option>
+                          {field.options?.map((opt: any, idx: number) => {
+                            const val = typeof opt === 'object' ? opt.value : opt;
+                            const lab = typeof opt === 'object' ? (opt.label || opt.value) : opt;
+                            return (
+                              <option key={`${val}-${idx}`} value={val} disabled={(formField.value || []).includes(val)}>
+                                {renderString(lab, lang)}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                  ) : field.type === 'richtext' ? (
+                    <Textarea {...formField} value={formField.value ?? ''} className="min-h-[150px] border-dashed rounded-2xl" placeholder="Rich text content..." />
+                  ) : field.type === 'file' || field.type === 'image' ? (
+                    <FileUploader 
+                      value={formField.value} 
+                      onChange={formField.onChange} 
+                      multiple={field.multiple} 
+                      storage={field.storage}
+                    />
+                  ) : field.type === 'ai' ? (
+                    <div className="relative group">
+                      <Textarea 
+                        {...formField} 
+                        value={formField.value ?? ''} 
+                        placeholder={field.placeholder || "AI will generate content..."}
+                        className="pr-12 min-h-[100px] border-indigo-100 dark:border-indigo-900/30 focus-visible:ring-indigo-300 rounded-[1.5rem] bg-slate-50/30 dark:bg-slate-900/30"
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="absolute top-2 right-2 h-8 w-8 text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-lg shadow-sm bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm"
+                        title="Generate with AI"
+                        onClick={async (e) => {
+                          const btn = e.currentTarget;
+                          btn.classList.add('animate-spin');
+                          try {
+                            const res = await api.brain.post('ai/generate', {
+                              prompt: field.ai?.prompt,
+                              model: field.ai?.model,
+                              personality: field.ai?.personality,
+                              temperature: field.ai?.temperature,
+                              data: watchedValues
+                            });
+                            if (res.success) {
+                              formField.onChange(res.data);
+                            }
+                          } catch (err) {
+                            console.error("AI Generation failed", err);
+                          } finally {
+                            btn.classList.remove('animate-spin');
+                          }
+                        }}
+                      >
+                        <Sparkles size={16} />
+                      </Button>
+                    </div>
+                  ) : field.type === 'formula' ? (
+                    <div className="relative">
+                      <Input 
+                        {...formField} 
+                        value={formField.value ?? ''} 
+                        readOnly 
+                        className="bg-emerald-50/30 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 font-mono text-[11px] text-emerald-700 dark:text-emerald-400 pl-8 rounded-xl cursor-not-allowed" 
+                      />
+                      <Code size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-500" />
+                    </div>
+                  ) : field.type === 'currency' ? (
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">
+                        {field.currency?.code || 'RON'}
+                      </span>
+                      <Input 
+                        {...formField} 
+                        type="number"
+                        step={1 / Math.pow(10, field.currency?.decimals ?? 2)}
+                        className="h-12 pl-12 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 font-mono text-indigo-600 dark:text-indigo-400 font-bold focus:bg-white dark:focus:bg-slate-900 transition-all shadow-sm"
+                        placeholder="0.00"
+                        value={formField.value ?? ''} 
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? null : parseFloat(e.target.value);
+                          formField.onChange(val);
+                        }}
+                      />
+                    </div>
+                  ) : field.type === 'textarea' ? (
+                    <Textarea {...formField} value={formField.value ?? ''} className="min-h-[120px] rounded-[2rem] bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 p-6 focus:bg-white dark:focus:bg-slate-900 transition-all shadow-sm dark:text-slate-200" />
+                  ) : field.type === 'icon' ? (
+                    <IconPicker 
+                      value={formField.value} 
+                      onChange={formField.onChange} 
+                      className="h-12 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 font-bold"
+                    />
+                  ) : field.type === 'color' ? (
+                    <ColorPicker 
+                      value={formField.value} 
+                      onChange={formField.onChange} 
+                    />
+                  ) : field.type === 'date' || field.type === 'datetime' ? (
+                    <DatePicker 
+                      value={formField.value} 
+                      onChange={formField.onChange} 
+                      showTime={field.type === 'datetime'}
+                      placeholder={t('common:select_placeholder', { label: renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name]) })}
+                    />
+                  ) : (
+                    <div className="relative overflow-hidden rounded-2xl w-full">
+                      <Input 
+                        {...formField}
+                        type={field.type === 'email' ? 'email' : field.type === 'number' ? 'number' : field.type === 'phone' ? 'tel' : field.type === 'time' ? 'time' : field.type === 'password' ? 'password' : 'text'} 
+                        readOnly={field.readonly} 
+                        className={cn(
+                          "h-12 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 font-bold focus:bg-white dark:focus:bg-slate-900 transition-all shadow-sm dark:text-slate-200",
+                          field.readonly && "bg-slate-100 dark:bg-slate-800 cursor-not-allowed opacity-70"
+                        )}
+                        autoComplete={field.autoComplete || (field.type === 'password' ? (name.includes('new') ? 'new-password' : 'current-password') : field.type === 'email' ? 'username' : field.type === 'phone' ? 'tel' : name === 'name' ? 'name' : "off")}
+                        placeholder={field.placeholder || t('common:type_placeholder', { label: renderString(field.label, lang) || (t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name]) as string) })} 
+                        value={
+                          field.type === 'time'
+                            ? (() => {
+                                const val = formField.value;
+                                if (!val) return '';
+                                try {
+                                  if (typeof val === 'number' || (typeof val === 'string' && /^\d+$/.test(val))) {
+                                    const num = typeof val === 'number' ? val : parseInt(val);
+                                    const date = new Date(num);
+                                    if (isNaN(date.getTime())) return val;
+                                    return date.toISOString().slice(11, 16);
+                                  }
+                                  const date = new Date(val);
+                                  if (isNaN(date.getTime())) return val;
+                                  return date.toISOString().slice(11, 16);
+                                } catch (e) {
+                                  return val;
+                                }
+                              })()
+                            : formField.value ?? ''
+                        }
+                        onChange={(e) => {
+                          if (field.type === 'phone') {
+                            formField.onChange(e.target.value.replace(/[^0-9\s\+\-\(\)]/g, ''));
+                          } else if (field.type === 'time') {
+                            formField.onChange(e.target.value);
+                          } else {
+                            formField.onChange(e);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                </FormControl>
+              </>
+            )}
+            <FormMessage />
+          </FormItem>
+        )} />
+      </div>
+    );
+  };
+
+  const assignedFields = new Set<string>();
+  if (sections) {
+    sections.forEach((s: any) => s.fields?.forEach((f: string) => assignedFields.add(f)));
+  }
+  const unassignedFields = fieldsArray.filter(f => !assignedFields.has(f.name || f.id));
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className={cn("grid gap-4", {
-        "grid-cols-1": gridColumns === 1,
-        "grid-cols-1 md:grid-cols-2": gridColumns === 2,
-        "grid-cols-1 md:grid-cols-3": gridColumns === 3,
-        "grid-cols-1 md:grid-cols-4": gridColumns === 4,
-      })}>
-        {fieldsArray.map((field: any) => {
-          const name = field.name || field.id;
-          // Visibility Logic
-          const hiddenFields = config.uiConfig?.form?.hiddenFields || [];
-          if (hiddenFields.includes(name)) return null;
-
-          // New Advanced Visibility Logic
-          if (field.visibility) {
-            if (field.visibility.type === 'hidden') return null;
-            if (field.visibility.type === 'conditional') {
-              const { dependsOn, operator, value } = field.visibility;
-              const targetValue = watchedValues[dependsOn];
-              
-              const isMatch = Array.isArray(value) 
-                ? value.includes(targetValue)
-                : targetValue == value;
-
-              if (operator === '==' && !isMatch) return null;
-              if (operator === '!=' && isMatch) return null;
-              if (operator === 'in' && (!targetValue || !String(targetValue).includes(String(value)))) return null;
-              if (operator === 'set' && (targetValue === null || targetValue === undefined || targetValue === '')) return null;
-            }
-          }
-
-          // Legacy showIf support
-          if (field.showIf) {
-            const { field: targetField, equals, notEquals, contains } = field.showIf;
-            const targetValue = watchedValues[targetField];
-            if (equals !== undefined && targetValue !== equals) return null;
-            if (notEquals !== undefined && targetValue === notEquals) return null;
-            if (contains !== undefined && (!targetValue || !targetValue.includes(contains))) return null;
-          }
-
-          const isFullWidth = field.type === 'textarea' || field.type === 'file' || field.fullWidth || name === 'name' || name === 'email' || field.width === '1/1';
-          
-          let colSpan = 1;
-          if (isFullWidth) colSpan = gridColumns;
-          else if (field.width === '1/2') colSpan = Math.max(1, Math.floor(gridColumns / 2));
-          else if (field.width === '1/3') colSpan = Math.max(1, Math.floor(gridColumns / 3));
-          else if (field.width === '1/4') colSpan = Math.max(1, Math.floor(gridColumns / 4));
-
-          return (
-            <div key={name} className={cn({
-              "md:col-span-1": colSpan === 1,
-              "md:col-span-2": colSpan === 2,
-              "md:col-span-3": colSpan === 3,
-              "md:col-span-4": colSpan === 4,
-            })}>
-              <FormField control={form.control} name={name} render={({ field: formField }) => (
-                <FormItem className={field.type === 'boolean' ? "flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4" : ""}>
-                  {field.type === 'boolean' ? (
-                    <>
-                      <FormControl>
-                        <Checkbox 
-                          checked={!!formField.value} 
-                          onCheckedChange={formField.onChange} 
-                          className="h-6 w-6 rounded-lg border-slate-200 data-[state=checked]:bg-indigo-600 data-[state=checked]:border-indigo-600 transition-colors"
-                        />
-                      </FormControl>
-                      <div className="space-y-1.5 leading-none pt-0.5">
-                        <FormLabel className="text-[11px] font-black uppercase tracking-widest text-slate-800 cursor-pointer flex items-center gap-2">
-                          {renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name])}
-                        </FormLabel>
-                        {field.description && <FormDescription className="text-[10px] font-medium text-slate-400 italic leading-snug">{renderString(field.description, lang)}</FormDescription>}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <FormLabel className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-2 ml-1">
-                        {field.type === 'ai' && <Sparkles size={10} className="text-indigo-400" />}
-                        {field.type === 'formula' && <Code size={10} className="text-emerald-400" />}
-                        {renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name])}
-                        {field.required && <span className="text-rose-500 font-black">*</span>}
-                      </FormLabel>
-                      <FormControl>
-                        {field.type === 'select' || field.type === 'enum' ? (
-                          field.ui?.variant === 'buttons' ? (
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              {field.options?.map((opt: any, idx: number) => {
-                                const val = typeof opt === 'object' ? opt.value : opt;
-                                const lab = typeof opt === 'object' ? (opt.label || opt.value) : opt;
-                                const isSelected = formField.value === val;
-                                return (
-                                  <Button
-                                    key={`${val}-${idx}`}
-                                    type="button"
-                                    variant={isSelected ? "default" : "outline"}
-                                    size="sm"
-                                    className={cn(
-                                      "h-8 text-[10px] font-bold uppercase tracking-tight rounded-md px-3",
-                                      isSelected ? "bg-indigo-600 hover:bg-indigo-700" : "text-slate-500 border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/30"
-                                    )}
-                                    onClick={() => formField.onChange(val)}
-                                  >
-                                    {renderString(lab, lang) || (typeof lab === 'string' ? t(lab) : lab)}
-                                  </Button>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <Select onValueChange={formField.onChange} value={formField.value ?? field.defaultValue ?? ''}>
-                              <SelectTrigger className="h-12 rounded-2xl bg-slate-50 border-slate-200 font-bold focus:ring-indigo-500 shadow-sm transition-all">
-                                <SelectValue placeholder={t('common:select_placeholder', { label: renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name]) })} />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-2xl border-none shadow-2xl p-2 bg-white/95 backdrop-blur-md">
-                                {field.options?.map((opt: any, idx: number) => {
-                                  const val = typeof opt === 'object' ? opt.value : opt;
-                                  const lab = typeof opt === 'object' ? (opt.label || opt.value) : opt;
-                                  return (
-                                    <SelectItem key={`${val}-${idx}`} value={val} className="rounded-xl py-3 px-4 font-bold focus:bg-indigo-50 focus:text-indigo-600 transition-colors">
-                                      {renderString(lab, lang) || (typeof lab === 'string' ? t(lab) : lab)}
-                                    </SelectItem>
-                                  );
-                                })}
-                              </SelectContent>
-                            </Select>
-                          )
-                        ) : field.type === 'relation' ? (
-                          <RelationSelect 
-                            entityType={field.relation?.target || field.relationTo} 
-                            value={formField.value} 
-                            onChange={formField.onChange} 
-                            placeholder={t('common:select_placeholder', { label: t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, renderString(field.label || name)]) })} 
-                          />
-                        ) : field.type === 'progress' || name === 'progress' ? (
-                          <div className="flex items-center gap-4 py-2">
-                             <input 
-                               type="range" 
-                               min="0" 
-                               max="100" 
-                               step="5"
-                               value={formField.value || 0}
-                               onChange={(e) => formField.onChange(Number(e.target.value))}
-                               className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                             />
-                             <span className="text-sm font-black text-indigo-600 min-w-[3rem] text-right">{formField.value || 0}%</span>
-                          </div>
-                        ) : field.type === 'rating' ? (
-                          <div className="flex items-center gap-2 py-2">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <button
-                                key={star}
-                                type="button"
-                                onClick={() => formField.onChange(star)}
-                                className={cn(
-                                  "transition-all hover:scale-110",
-                                  star <= (formField.value || 0) ? "text-amber-400" : "text-slate-200"
-                                )}
-                              >
-                                <Star size={24} fill={star <= (formField.value || 0) ? "currentColor" : "none"} />
-                              </button>
-                            ))}
-                          </div>
-                        ) : (field.type === 'relation-many' || field.type === 'tag' || field.type === 'multi-select') ? (
-                            <MultiRelationSelector
-                              field={field}
-                              value={(() => {
-                                const val = formField.value;
-                                if (Array.isArray(val)) {
-                                  // Level 8: Extract IDs from objects if necessary
-                                  return val.map(item => (typeof item === 'object' && item !== null) ? (item.id || item.ID) : String(item));
-                                }
-                                if (typeof val === 'string' && val.length > 0) return val.split(',').filter(Boolean);
-                                return [];
-                              })()}
-                              onChange={formField.onChange}
-                              label={field.label || name}
-                            />
-                        ) : (field.type === 'enum' && field.multiple) ? (
-                            <div className="space-y-2">
-                              <div className="flex flex-wrap gap-2 min-h-[40px] p-2 border rounded-xl bg-slate-50/50">
-                                {((Array.isArray(formField.value) ? formField.value : []) as string[]).map((val, i) => (
-                                  <Badge key={val || i} variant="secondary" className="gap-1 pr-1 font-bold">
-                                    {renderString(field.options?.find((o: any) => (typeof o === 'object' ? o.value : o) === val)?.label || val, lang)}
-                                    <X size={12} className="cursor-pointer hover:text-red-500" onClick={() => {
-                                      const newVal = (formField.value as string[]).filter(v => v !== val);
-                                      formField.onChange(newVal);
-                                    }} />
-                                  </Badge>
-                                ))}
-                                {(!formField.value || formField.value.length === 0) && (
-                                  <span className="text-[10px] text-slate-400 italic py-1 px-1">No selection</span>
-                                )}
-                              </div>
-                              <select 
-                                className="w-full h-8 rounded-lg border border-slate-200 text-xs px-2"
-                                onChange={(e) => {
-                                  if (!e.target.value) return;
-                                  const current = Array.isArray(formField.value) ? formField.value : [];
-                                  if (!current.includes(e.target.value)) {
-                                    formField.onChange([...current, e.target.value]);
-                                  }
-                                  e.target.value = '';
-                                }}
-                              >
-                                <option value="">+ Add {renderString(field.label || name)}...</option>
-                                {field.options?.map((opt: any, idx: number) => {
-                                  const val = typeof opt === 'object' ? opt.value : opt;
-                                  const lab = typeof opt === 'object' ? (opt.label || opt.value) : opt;
-                                  return (
-                                    <option key={`${val}-${idx}`} value={val} disabled={(formField.value || []).includes(val)}>
-                                      {renderString(lab, lang)}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            </div>
-                        ) : field.type === 'richtext' ? (
-                          <Textarea {...formField} value={formField.value ?? ''} className="min-h-[150px] border-dashed" placeholder="Rich text support coming soon..." />
-                        ) : field.type === 'file' || field.type === 'image' ? (
-                          <FileUploader 
-                            value={formField.value} 
-                            onChange={formField.onChange} 
-                            multiple={field.multiple} 
-                            storage={field.storage}
-                          />
-                        ) : field.type === 'ai' ? (
-                          <div className="relative group">
-                            <Textarea 
-                              {...formField} 
-                              value={formField.value ?? ''} 
-                              placeholder={field.placeholder || "AI will generate content..."}
-                              className="pr-12 min-h-[100px] border-indigo-100 focus-visible:ring-indigo-300 transition-all"
-                            />
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="absolute top-2 right-2 h-8 w-8 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg shadow-sm bg-white/50 backdrop-blur-sm"
-                              title="Generate with AI"
-                              onClick={async (e) => {
-                                const btn = e.currentTarget;
-                                btn.classList.add('animate-spin');
-                                try {
-                                  const res = await api.brain.post('ai/generate', {
-                                    prompt: field.ai?.prompt,
-                                    model: field.ai?.model,
-                                    personality: field.ai?.personality,
-                                    temperature: field.ai?.temperature,
-                                    data: watchedValues
-                                  });
-                                  if (res.success) {
-                                    formField.onChange(res.data);
-                                  }
-                                } catch (err) {
-                                  console.error("AI Generation failed", err);
-                                } finally {
-                                  btn.classList.remove('animate-spin');
-                                }
-                              }}
-                            >
-                              <Sparkles size={16} />
-                            </Button>
-                          </div>
-                        ) : field.type === 'formula' ? (
-                          <div className="relative">
-                            <Input 
-                              {...formField} 
-                              value={formField.value ?? ''} 
-                              readOnly 
-                              className="bg-emerald-50/30 border-emerald-100 font-mono text-[11px] text-emerald-700 pl-8 cursor-not-allowed" 
-                            />
-                            <Code size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-500" />
-                          </div>
-                        ) : field.type === 'currency' ? (
-                          <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase tracking-tighter">
-                              {field.currency?.code || 'RON'}
-                            </span>
-                            <Input 
-                              {...formField} 
-                              type="number"
-                              step={1 / Math.pow(10, field.currency?.decimals ?? 2)}
-                              className="h-12 pl-12 rounded-2xl bg-slate-50 border-slate-200 font-mono text-indigo-600 font-bold focus:bg-white transition-all shadow-sm"
-                              placeholder="0.00"
-                              value={formField.value ?? ''} 
-                              onChange={(e) => {
-                                const val = e.target.value === '' ? null : parseFloat(e.target.value);
-                                formField.onChange(val);
-                              }}
-                            />
-                          </div>
-                        ) : field.type === 'textarea' ? (
-                          <Textarea {...formField} value={formField.value ?? ''} className="min-h-[120px] rounded-[2rem] bg-slate-50 border-slate-200 p-6 focus:bg-white transition-all shadow-sm" />
-                        ) : field.type === 'icon' ? (
-                          <IconPicker 
-                            value={formField.value} 
-                            onChange={formField.onChange} 
-                            className="h-12 rounded-2xl bg-slate-50 border-slate-200 font-bold"
-                          />
-                        ) : field.type === 'color' ? (
-                          <ColorPicker 
-                            value={formField.value} 
-                            onChange={formField.onChange} 
-                          />
-                        ) : field.type === 'date' || field.type === 'datetime' ? (
-                          <DatePicker 
-                            value={formField.value} 
-                            onChange={formField.onChange} 
-                            showTime={field.type === 'datetime'}
-                            placeholder={t('common:select_placeholder', { label: renderString(field.label, lang) || t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name]) })}
-                          />
-                        ) : (
-                          <div className="relative overflow-hidden rounded-2xl w-full">
-                            <Input 
-                              {...formField}
-                              type={field.type === 'email' ? 'email' : field.type === 'number' ? 'number' : field.type === 'phone' ? 'tel' : field.type === 'time' ? 'time' : field.type === 'password' ? 'password' : 'text'} 
-                              readOnly={field.readonly} 
-                              className={cn(
-                                "h-12 rounded-2xl bg-slate-50 border-slate-200 font-bold focus:bg-white transition-all shadow-sm",
-                                field.readonly && "bg-slate-100 cursor-not-allowed opacity-70"
-                              )}
-                              autoComplete={field.autoComplete || (field.type === 'password' ? (name.includes('new') ? 'new-password' : 'current-password') : field.type === 'email' ? 'username' : field.type === 'phone' ? 'tel' : name === 'name' ? 'name' : "off")}
-                              placeholder={field.placeholder || t('common:type_placeholder', { label: renderString(field.label, lang) || (t([`entities:${entityType}.fields.${name}`, `entities:fields.${name}`, name]) as string) })} 
-                              value={
-                                field.type === 'time'
-                                  ? (() => {
-                                      const val = formField.value;
-                                      if (!val) return '';
-                                      try {
-                                        // Handle Unix timestamps
-                                        if (typeof val === 'number' || (typeof val === 'string' && /^\d+$/.test(val))) {
-                                          const num = typeof val === 'number' ? val : parseInt(val);
-                                          const date = new Date(num);
-                                          if (isNaN(date.getTime())) return val;
-                                          return date.toISOString().slice(11, 16);
-                                        }
-                                        // Handle ISO strings
-                                        const date = new Date(val);
-                                        if (isNaN(date.getTime())) return val;
-                                        return date.toISOString().slice(11, 16);
-                                      } catch (e) {
-                                        return val;
-                                      }
-                                    })()
-                                  : formField.value ?? ''
-                              }
-                              onChange={(e) => {
-                                if (field.type === 'phone') {
-                                  formField.onChange(e.target.value.replace(/[^0-9\s\+\-\(\)]/g, ''));
-                                } else if (field.type === 'time') {
-                                  formField.onChange(e.target.value);
-                                } else {
-                                  formField.onChange(e);
-                                }
-                              }}
-                            />
-                          </div>
-                        )}
-                      </FormControl>
-                    </>
-                  )}
-                  <FormMessage />
-                </FormItem>
-              )} />
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        {/* AI Magic Fill Header */}
+        <GlassCard className="p-1 border-indigo-100/50 dark:border-indigo-500/20 bg-gradient-to-r from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/10 dark:to-purple-950/10 overflow-hidden group">
+          <div className="flex items-center justify-between p-4 gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-500 dark:bg-indigo-600 rounded-xl shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform duration-500">
+                <Sparkles size={18} className="text-white animate-pulse" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase italic tracking-tighter">
+                  {t('common:ai_magic_fill')}
+                </h4>
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-none mt-1">
+                  {t('common:ai_magic_fill_desc')}
+                </p>
+              </div>
             </div>
-          );
-        })}
+            
+            <Button 
+              type="button" 
+              onClick={handleAiAutoFill}
+              disabled={isAiRefilling || loading}
+              className={cn(
+                "relative overflow-hidden h-10 px-6 rounded-xl font-black uppercase italic tracking-widest text-[10px] transition-all duration-500 shadow-sm",
+                "bg-indigo-600 hover:bg-indigo-700 text-white border-none",
+                "hover:shadow-indigo-500/30 hover:shadow-xl hover:-translate-y-0.5"
+              )}
+            >
+              {isAiRefilling ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="ml-2">Processing...</span>
+                </>
+              ) : (
+                <>
+                  <Zap size={14} className="mr-2" />
+                  Refill Form
+                </>
+              )}
+            </Button>
+          </div>
+        </GlassCard>
+
+        {sections && sections.length > 0 ? (
+          <div className="flex flex-col gap-8">
+            {sections.map((section: any, sIdx: number) => {
+              const SectionIcon = (section.icon && IconMap[section.icon]) ? IconMap[section.icon] : Layers;
+              const sectionFields = section.fields?.map((fName: string) => fieldsMap[fName]).filter(Boolean) || [];
+              if (sectionFields.length === 0) return null;
+
+              return (
+                <div key={section.id || sIdx} className="bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800/50 rounded-[2rem] p-8 shadow-sm">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl">
+                      <SectionIcon size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 italic uppercase tracking-tight">
+                        {renderString(section.label, lang) || section.id}
+                      </h3>
+                      {section.description && (
+                        <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                          {renderString(section.description, lang)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className={cn("grid gap-6", 
+                    (Number(section.columns) || gridColumns) === 1 ? "grid-cols-1" :
+                    (Number(section.columns) || gridColumns) === 2 ? "grid-cols-1 md:grid-cols-2" :
+                    (Number(section.columns) || gridColumns) === 3 ? "grid-cols-1 md:grid-cols-3" :
+                    (Number(section.columns) || gridColumns) === 4 ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-4" :
+                    "grid-cols-1 md:grid-cols-2"
+                  )}>
+                    {sectionFields.map((f: any) => renderField(f, Number(section.columns) || gridColumns))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {unassignedFields.length > 0 && (
+              <div className="bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800/50 rounded-[2rem] p-8 shadow-sm">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/20 text-slate-600 dark:text-slate-400 rounded-2xl">
+                    <Layers size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 italic uppercase tracking-tight">
+                      {t('common:other_details')}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className={cn("grid gap-6", 
+                  gridColumns === 1 ? "grid-cols-1" :
+                  gridColumns === 2 ? "grid-cols-1 md:grid-cols-2" :
+                  gridColumns === 3 ? "grid-cols-1 md:grid-cols-3" :
+                  gridColumns === 4 ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-4" :
+                  "grid-cols-1 md:grid-cols-2"
+                )}>
+                  {unassignedFields.map((f: any) => renderField(f, gridColumns))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className={cn("grid gap-4", 
+            gridColumns === 1 ? "grid-cols-1" :
+            gridColumns === 2 ? "grid-cols-1 md:grid-cols-2" :
+            gridColumns === 3 ? "grid-cols-1 md:grid-cols-3" :
+            gridColumns === 4 ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-4" :
+            "grid-cols-1 md:grid-cols-2"
+          )}>
+            {fieldsArray.map((f: any) => renderField(f, gridColumns))}
+          </div>
+        )}
         
         {config.hasTags && initialData?.id && (
-          <div className="md:col-span-2 p-4 border rounded-2xl bg-slate-50/30 dark:bg-slate-900/30 border-dashed border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="p-6 border rounded-[2rem] bg-slate-50/30 dark:bg-slate-900/10 border-dashed border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2 mb-4">
               <TagIcon className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-bold uppercase tracking-widest text-slate-500">{t('common:tag')}</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t('common:tag')}</span>
             </div>
             <TagSelector 
               entityType={entityType.replace(/s$/, '')} 
@@ -1194,16 +1502,11 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
           </div>
         )}
 
-        <div className={cn("pt-8 mt-4 border-t border-slate-100 dark:border-slate-800", {
-          "md:col-span-1": gridColumns === 1,
-          "md:col-span-2": gridColumns === 2,
-          "md:col-span-3": gridColumns === 3,
-          "md:col-span-4": gridColumns === 4,
-        })}>
+        <div className="pt-8">
           <Button 
             type="submit" 
             disabled={loading} 
-            className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase italic tracking-widest text-xs shadow-xl shadow-indigo-200 dark:shadow-none hover:translate-y-[-2px] active:translate-y-[0px] transition-all gap-2 group"
+            className="w-full h-16 rounded-[2rem] bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase italic tracking-widest text-sm shadow-[0_20px_50px_rgba(79,70,229,0.2)] dark:shadow-none hover:translate-y-[-4px] active:translate-y-[0px] transition-all gap-3 group"
           >
             {loading ? (
               <>
@@ -1211,10 +1514,10 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading }: Dyna
                 {t('common:saving')}
               </>
             ) : (
-                <>
-                   {t('common:save')}
-                   <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
-                </>
+              <>
+                {t('common:save')}
+                <ArrowRight size={20} className="group-hover:translate-x-2 transition-transform" />
+              </>
             )}
           </Button>
         </div>

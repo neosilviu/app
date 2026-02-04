@@ -41,12 +41,22 @@ export interface EntityDefinition {
   fields: FieldDefinition[];
   fieldsMap: Record<string, FieldDefinition>;
   uiConfig: {
-    list: { columns: string[] };
+    list: { 
+      columns: string[];
+      showActions?: boolean;
+      showAuditFields?: boolean;
+      itemsPerPage?: number;
+    };
     form: { 
       columns?: number;
       sections?: any[];
       showChildren?: boolean;
       hiddenChildren?: string[];
+      showActions?: boolean;
+      hiddenFields?: string[];
+      showTimestamps?: boolean;
+      showAuditFields?: boolean;
+      readOnlyFields?: string[];
     };
     [key: string]: any;
   };
@@ -91,6 +101,13 @@ export interface EntityDefinition {
   relationships: any[];
   validations: Record<string, any>;
   layout: Record<string, any>;
+  flowRules: Record<string, {
+    nextStates: string[];
+    label: any;
+    icon?: string;
+    requiresFields?: string[];
+    action?: string;
+  }>;
   dependencies?: string[];
   isSystem?: boolean | number;
   workspaceId?: string;
@@ -137,13 +154,58 @@ export function normalizeEntity(raw: any): EntityDefinition {
     }));
   }
 
-  // 2. uiConfig Normalization
+  // Enterprise Level 8: Build the Fields Map BEFORE usage in UI Logic
+  const fieldsMap = fields.reduce((acc: Record<string, FieldDefinition>, f) => ({ ...acc, [f.name]: f }), {});
+
+  // 2. uiConfig Normalization (Enterprise Level 8 Auto-Layout)
   const ui = safeParse(raw.uiConfig, {});
   const uiConfig = {
-    list: { columns: [], ...(ui.list || {}) },
-    form: { columns: 2, sections: [], showChildren: true, hiddenChildren: [], ...(ui.form || {}) },
-    ...ui
+    ...ui,
+    list: { 
+      columns: [], 
+      showActions: false, // Default to false for List view
+      ...(ui.list || {}) 
+    },
+    form: { 
+      columns: 2, 
+      sections: [], 
+      showChildren: false, 
+      hiddenChildren: [], 
+      showActions: false, // Keep for backward compat/other uses if needed
+      ...(ui.form || {}) 
+    }
   };
+
+  // Auto-generate list columns if empty
+  if (uiConfig.list.columns.length === 0 && fields.length > 0) {
+    // Pick relevant fields (exclude long text/json and ID)
+    const listEligible = fields.filter(f => !['richtext', 'json', 'relation-many'].includes(f.type) && f.name !== 'id');
+    uiConfig.list.columns = listEligible.slice(0, 5).map(f => f.name);
+    // Always ensure the displayField is in the list
+    let disp = raw.displayField || 'id';
+    // Validate if display field actually exists in current fields. If not, fallback to 'id'
+    if (disp !== 'id' && !fieldsMap[disp]) {
+      disp = 'id';
+    }
+
+    if (!uiConfig.list.columns.includes(disp)) {
+      uiConfig.list.columns.unshift(disp);
+    }
+  }
+
+  // Auto-generate form sections if empty
+  if (uiConfig.form.sections.length === 0 && fields.length > 0) {
+    uiConfig.form.sections = [
+      {
+        id: 'main',
+        title: { ro: 'Informații Generale', en: 'General Information' },
+        icon: 'Info',
+        fields: fields
+          .filter(f => !['id', 'workspaceId', 'createdAt', 'updatedAt', 'deletedAt', 'created_by'].includes(f.name))
+          .map(f => f.name)
+      }
+    ];
+  }
 
   // 3. Features Normalization
   const feat = safeParse(raw.features, {});
@@ -165,30 +227,43 @@ export function normalizeEntity(raw: any): EntityDefinition {
     ...perm
   };
 
+  const isContact = name.toLowerCase() === 'contact';
+  const isCrmCore = ['contact', 'deal', 'interaction', 'task', 'ticket', 'lead'].includes(name.toLowerCase());
+
   // 6. Metadata Normalization (Menu, Dashboard, Relationships)
   const menuConfig = {
     showInMainMenu: true,
-    showInNewMenu: true,
+    showInNewMenu: true, // Enterprise Level 8: Default to true for all entities so they show up in "+" menu
     priority: 50,
     ...safeParse(raw.menuConfig, {})
   };
 
   const dashboardConfig = {
+    enabled: isContact, // "Activare Widget" - Default false, except for contacts
     widgetType: 'table',
     summaryFields: [],
     showRecent: true,
-    // Enterprise Level 8: Defaults to false; must be explicit in DNA
-    showInDashboard: false, 
+    // Enterprise Level 8: Defaults to false (except for contact)
+    showInDashboard: isContact, 
     ...safeParse(raw.dashboardConfig || raw.dashboard, {})
   };
+
+  // Enterprise Level 8: Alignment Logic
+  // If the user explicitly enabled the widget in the Builder, make sure it's visible.
+  const rawDash = safeParse(raw.dashboardConfig || raw.dashboard, {});
+  if (rawDash.enabled === true && dashboardConfig.showInDashboard === false) {
+    dashboardConfig.showInDashboard = true;
+  }
+  // Conversely, if they explicitly disabled it, hide it.
+  if (rawDash.enabled === false) {
+    dashboardConfig.showInDashboard = false;
+  }
 
   const relationships = Array.isArray(raw.relationships) ? raw.relationships : safeParse(raw.relationships, []);
   const validations = safeParse(raw.validations, {});
   const layout = safeParse(raw.layout, {});
 
   // 7. Build Final Object
-  const fieldsMap = fields.reduce((acc: any, f) => ({ ...acc, [f.name]: f }), {});
-
   // Enterprise Level 8: Ensure we parse recursively for translations in top-level fields
   // Added protection against "[object Object]" corruption
   const parseStr = (val: any) => {
@@ -229,7 +304,7 @@ export function normalizeEntity(raw: any): EntityDefinition {
     icon: raw.icon || 'Box',
     colorTheme: raw.colorTheme || raw.color || 'blue',
     tableName: raw.tableName || name.toLowerCase(),
-    displayField: raw.displayField || (fieldsMap.name ? 'name' : (fieldsMap.label ? 'label' : (fieldsMap.title ? 'title' : 'id'))),
+    displayField: raw.displayField || '',
     fields, // This is the Array
     fieldsMap, // This is the Object/Map
     uiConfig,
@@ -241,6 +316,7 @@ export function normalizeEntity(raw: any): EntityDefinition {
     dependencies: Array.isArray(raw.dependencies) ? raw.dependencies : (Array.isArray(raw.requires) ? raw.requires : safeParse(raw.dependencies || raw.requires, [])),
     validations,
     layout,
+    flowRules: safeParse(raw.flowRules, {}),
     isSystem: !!raw.isSystem
   };
 }
@@ -374,18 +450,7 @@ export function normalizeFormData(rawData: any, fieldsList: FieldDefinition[]): 
   // First, normalize all fields defined in the config
   fieldsList.forEach((field) => {
     const fieldName = field.name;
-    let fieldValue = findValue(fieldName);
-    
-    // Enterprise Level 8: Handle plural/singular mapping (e.g. if registry says 'tag' but API returns 'tags')
-    if (fieldValue === undefined) {
-      if (fieldName.endsWith('y')) {
-        fieldValue = findValue(fieldName.slice(0, -1) + 'ies'); // category -> categories
-      } else if (!fieldName.endsWith('s')) {
-        fieldValue = findValue(fieldName + 's'); // tag -> tags
-      } else {
-        fieldValue = findValue(fieldName.slice(0, -1)); // tags -> tag
-      }
-    }
+    const fieldValue = findValue(fieldName);
 
     const fieldType = field.type;
     
@@ -431,9 +496,19 @@ export function normalizeFormData(rawData: any, fieldsList: FieldDefinition[]): 
           normalizedData[fieldName] = [];
         }
       } else {
-        // For single relations, extract the ID
+        // For single relations, extract the ID if it's a simple shell object,
+        // but PRESERVE it if it contains more metadata (like name/label for display).
         if (typeof fieldValue === 'object' && fieldValue !== null) {
-          normalizedData[fieldName] = fieldValue.id || fieldValue.ID || fieldValue.uuid || fieldValue.key || null;
+          const keys = Object.keys(fieldValue);
+          // Enterprise Level 8: A rich object is one that has displayable text (name, label, title, etc.)
+          const hasDisplayField = keys.some(k => ['name', 'label', 'Label', 'Name', 'title', 'Title'].includes(k));
+          const isRichObject = keys.length > 2 || hasDisplayField;
+          
+          if (isRichObject) {
+            normalizedData[fieldName] = fieldValue;
+          } else {
+            normalizedData[fieldName] = fieldValue.id || fieldValue.ID || fieldValue.uuid || fieldValue.key || null;
+          }
         } else {
           // Enterprise Level 8: Preserve null for DB foreign keys. Empty string in a relation also means null.
           normalizedData[fieldName] = (fieldValue === null || fieldValue === undefined || fieldValue === '') ? null : fieldValue;
@@ -509,15 +584,29 @@ export function formatDisplayValue(val: any, field: FieldDefinition): React.Reac
   if (typeof val === 'object' && val !== null) {
     // For relation fields, extract display value
     if ((fieldType === 'relation' || fieldType === 'entity_relation' || fieldType === 'relation-many' || fieldType === 'tag' || fieldType === 'multi-select' || field.multiple) && val) {
-      const displayKey = field.relation?.displayField || field.relation?.field || field.displayKey || 'name';
+      const displayKey = field.displayField || field.relation?.displayField || field.relation?.field || field.displayKey || 'name';
       
+      const getLabel = (item: any, preferred: string) => {
+          if (!item || typeof item !== 'object') return String(item);
+          
+          // Enterprise Level 8: Robust Label Resolution
+          // 1. Exact match
+          if (item[preferred]) return String(item[preferred]);
+          
+          // 2. Case-insensitive match
+          const foundKey = Object.keys(item).find(k => k.toLowerCase() === preferred.toLowerCase());
+          if (foundKey && item[foundKey]) return String(item[foundKey]);
+          
+          return String(item.id || item.ID || item.uuid || 'N/A');
+      };
+
       // Level 8: Handle arrays of objects for relation-many/tag/multi-select
       if (Array.isArray(val)) {
         if (val.length === 0) return '-';
         return (
           <div className="flex flex-wrap gap-1">
             {val.map((v, i) => {
-              const label = typeof v === 'object' && v ? (v[displayKey] || v.name || v.label || v.id || String(v)) : String(v);
+              const label = getLabel(v, displayKey);
               const color = typeof v === 'object' && v ? v.colorTheme || v.color : undefined;
               return (
                 <Badge 
@@ -538,7 +627,7 @@ export function formatDisplayValue(val: any, field: FieldDefinition): React.Reac
         );
       }
 
-      return <span className="font-medium text-primary">{String(val[displayKey] || val.id || 'N/A')}</span>;
+      return <span className="font-medium text-primary">{getLabel(val, displayKey)}</span>;
     }
     // For other objects, stringify safely
     return <code className="text-xs bg-muted px-1 py-0.5 rounded block max-w-[200px] truncate">

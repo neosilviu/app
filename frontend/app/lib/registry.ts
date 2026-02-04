@@ -98,6 +98,43 @@ export async function getRegistry(db?: any) {
                 merged[ns] = values;
             }
         }
+
+        // Level 8: AI Model Inventory Logic (SSOT Aggregation)
+        if (merged.SYSTEM_SETTING?.ai_inventory_overrides && merged.AI_CONFIG) {
+            const overrides = merged.SYSTEM_SETTING.ai_inventory_overrides;
+            let registryModels = Array.isArray(merged.AI_CONFIG.models) ? [...merged.AI_CONFIG.models] : [];
+
+            // 1. Process and filter existing registry models
+            registryModels = registryModels.map((m: any) => {
+                const ov = overrides[m.id];
+                if (ov) {
+                    return { 
+                        ...m, 
+                        enabled: ov.enabled !== undefined ? ov.enabled : true,
+                        name: ov.internalName || m.name 
+                    };
+                }
+                return { ...m, enabled: true };
+            });
+
+            // 2. Inject Dynamic Models that were enabled (Promotion)
+            Object.entries(overrides).forEach(([id, ov]: [string, any]) => {
+                if (ov.enabled && !registryModels.find(m => m.id === id)) {
+                    registryModels.push({
+                        id,
+                        name: ov.internalName || id,
+                        provider: ov.provider || 'unknown',
+                        capabilities: ov.capabilities || ['chat'],
+                        enabled: true,
+                        type: 'dynamic-promoted'
+                    });
+                }
+            });
+
+            // Update the registry with the final inventory
+            merged.AI_CONFIG.models = registryModels;
+        }
+
         return merged;
     }
     

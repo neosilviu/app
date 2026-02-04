@@ -214,6 +214,12 @@ export class D1Driver {
         }
         
         const duration = Date.now() - queryStart;
+        
+        // Level 9: Performance Instrumented Logging
+        if (duration > 30 && !sql.includes('system_performance_log') && !sql.includes('PRAGMA')) {
+            this._logPerformance(sql, duration).catch(() => {});
+        }
+
         if (duration > 500) {
             console.warn(`[D1][SLOW-QUERY] ${duration}ms: ${sql.substring(0, 100)}...`);
         }
@@ -419,6 +425,32 @@ export class D1Driver {
         if (filters.limit && !options.limit) options.limit = filters.limit;
         if (filters.offset && !options.offset) options.offset = filters.offset;
         if (filters.sortBy && !options.sortBy) options.sortBy = filters.sortBy;
+    } else if (filters.where && typeof filters.where === 'object') {
+        // Support MongoDB-style where object (Level 8 Polymorphic Support)
+        Object.entries(filters.where).forEach(([key, value]) => {
+            if (value === undefined) return;
+            const colIdx = validColsLower.indexOf(key.toLowerCase());
+            if (validColumns.length > 0 && colIdx === -1) return;
+            const colName = validColumns.length > 0 ? validColumns[colIdx] : key;
+
+            if (value && typeof value === 'object' && (value as any).$in) {
+                const inList = (value as any).$in;
+                if (Array.isArray(inList) && inList.length > 0) {
+                    sql += ` AND "${colName}" IN (${inList.map(() => '?').join(', ')})`;
+                    params.push(...inList);
+                }
+            } else if (value && typeof value === 'object' && (value as any).$like) {
+                sql += ` AND "${colName}" LIKE ?`;
+                params.push((value as any).$like);
+            } else if (value === null) {
+                sql += ` AND "${colName}" IS NULL`;
+            } else {
+                sql += ` AND "${colName}" = ?`;
+                params.push(value);
+            }
+        });
+        if (filters.limit && !options.limit) options.limit = filters.limit;
+        if (filters.offset && !options.offset) options.offset = filters.offset;
     } else {
         Object.entries(filters).forEach(([key, value]) => {
             if (value === undefined) return;
@@ -429,6 +461,14 @@ export class D1Driver {
 
             if (value === null) {
                 sql += ` AND "${colName}" IS NULL`;
+            } else if (value && typeof value === 'object' && (value as any).$in && Array.isArray((value as any).$in)) {
+                // Enterprise Level 8: Support $in operator (used for hydration)
+                const inPlaceholder = ((value as any).$in as any[]).map(() => '?').join(', ');
+                sql += ` AND "${colName}" IN (${inPlaceholder})`;
+                params.push(...(value as any).$in);
+            } else if (value && typeof value === 'object' && (value as any).$like) {
+                sql += ` AND "${colName}" LIKE ?`;
+                params.push((value as any).$like);
             } else {
                 sql += ` AND "${colName}" = ?`;
                 params.push(value);
@@ -558,6 +598,46 @@ export class D1Driver {
     const pk = this.getPk(resolved);
     await this.query(`DELETE FROM "${resolved}" WHERE "${pk}" = ?`, [id]);
     return true;
+  }
+
+  /**
+   * Level 9: Private logging to bypass instrumentation recursion
+   */
+  private async _logPerformance(sql: string, durationMs: number) {
+    try {
+      const isSelect = sql.trim().toUpperCase().startsWith('SELECT');
+      let explainPlan = '';
+      
+      // If it's a slow SELECT, try to get an EXPLAIN
+      if (isSelect && durationMs > 100) {
+        try {
+          const plan = await this.rawBinding.prepare(`EXPLAIN QUERY PLAN ${sql}`).all();
+          explainPlan = JSON.stringify(plan.results || plan);
+        } catch(e) {}
+      }
+
+      const affectedTable = sql.match(/FROM\s+"?([a-zA-Z0-9_]+)"?/i)?.[1] || 
+                           sql.match(/UPDATE\s+"?([a-zA-Z0-9_]+)"?/i)?.[1] || 
+                           sql.match(/INTO\s+"?([a-zA-Z0-9_]+)"?/i)?.[1] || '';
+
+      const status = durationMs > 100 ? 'slow' : (durationMs > 50 ? 'warning' : 'optimal');
+
+      // Use rawBinding to avoid recursion
+      await this.rawBinding.prepare(
+        `INSERT INTO system_performance_log (id, query, durationMs, affectedTable, explainPlan, status, created_at) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        Math.random().toString(36).substring(2) + Date.now().toString(36), // Simple enough for log ID
+        sql.substring(0, 500),
+        durationMs,
+        affectedTable,
+        explainPlan,
+        status,
+        new Date().toISOString()
+      ).run();
+    } catch (e) {
+      // Silent fail for logging errors
+    }
   }
 }
 

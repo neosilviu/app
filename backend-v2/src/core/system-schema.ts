@@ -431,6 +431,26 @@ export class SystemSchema {
             )
         `);
 
+        // 12. changelog (Git-Driven)
+        await db.run(`
+            CREATE TABLE IF NOT EXISTS changelog (
+                id TEXT PRIMARY KEY,
+                module TEXT DEFAULT 'System',
+                version TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                type TEXT DEFAULT 'improvement',
+                workspaceId TEXT DEFAULT 'system',
+                archived INTEGER DEFAULT 0,
+                archivedAt DATETIME,
+                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                deletedAt DATETIME,
+                createdBy TEXT,
+                updatedBy TEXT
+            )
+        `);
+
         logger.info('✅ System tables verified.');
     }
 }

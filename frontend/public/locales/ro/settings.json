@@ -475,6 +475,16 @@
   "use_local_agent": "Utilizează Agent Local",
   "confirm_enable_agent": "Ești sigur că vrei să pornești Agentul Local? Aceasta va activa comunicația cu hardware-ul tău local și serviciile de conexiune.",
   "confirm_disable_agent": "Ești sigur că vrei să oprești Agentul Local? Toate serviciile locale (WhatsApp, Gmail, Printare) și procesarea în fundal vor fi dezactivate.",
+  "changelog": {
+    "title": "Istoric Actualizări",
+    "description": "Vezi noutățile și îmbunătățirile aduse sistemului.",
+    "syncing": "Se sincronizează istoricul...",
+    "no_changes": "Nicio actualizare înregistrată.",
+    "ai_success": "Draft generat cu succes via AI!",
+    "publish_success": "Update-ul a fost publicat!",
+    "publish_error": "Eroare la publicarea update-ului.",
+    "generate_error": "Eroare la analiza AI a istoricului Git."
+  },
   "hardware_agent": "Agent Hardware Local",
   "hardware_agent_desc": "Gestionarea serviciilor de proximitate și hardware (Node.js)",
   "live_node": "Server Local Activ",

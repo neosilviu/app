@@ -1,4 +1,4 @@
-import { getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, clearRegistryCache, loadBaseline } from './core';
+import { getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, clearRegistryCache, loadBaseline, type EntityDefinition } from './core';
 
 // --- DB INIT STATE ---
 const global = globalThis as any;
@@ -30,17 +30,16 @@ export async function waitForDbReady(db: any, maxWaitMs = 15000, signal?: AbortS
             try {
                 await global.DB_INIT_PROMISE;
                 if (global.IS_DB_INITIALIZED) {
-                    console.log(`[DB-READY] Initialization complete after ${Date.now() - startTime}ms.`);
+                    // console.log(`[DB-READY] Initialization complete after ${Date.now() - startTime}ms.`);
                     break;
                 }
             } catch (e: any) { 
                 console.error(`[DB-READY] Initialization promise failed: ${e.message}`);
-                // If it failed, don't wait the full timeout, just break and let handlers fail naturally
                 break;
             }
         }
         
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 50));
     }
     
     if (!global.IS_DB_INITIALIZED) {
@@ -54,18 +53,28 @@ export async function waitForDbReady(db: any, maxWaitMs = 15000, signal?: AbortS
 export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any) {
     if (global.IS_DB_INITIALIZED) return;
     if (global.DB_INIT_PROMISE) {
-        console.log("[DB-INIT] Initialization already in progress, waiting for existing promise...");
         return global.DB_INIT_PROMISE;
     }
 
+    // Enterprise Level 8: Fast-Path for Warm Starts / Sync Detection
+    const SYNC_TOKEN = "v2_core_v1"; // Update this to force re-sync
+    const kv = ctx?.env?.KV;
+
     global.DB_INIT_PROMISE = (async () => {
         try {
-            // DEBUG: Logam startul initializarii cu PID si context
-            if (typeof process !== 'undefined') {
-                console.log(`[DB-INIT-DEBUG] PID=${process.pid}, Request=${requestUrl}`);
-            }
             const start = Date.now();
-            console.log(`[DB-INIT] Starting database initialization check (Request: ${requestUrl || 'internal'})...`);
+            
+            // 1. Check if already initialized in this isolate OR marked in KV
+            if (kv) {
+                const marker = await kv.get('db_sync_token');
+                if (marker === SYNC_TOKEN) {
+                    // console.log("[DB-INIT][FAST-PATH] Database already sync'd (KV Hit).");
+                    global.IS_DB_INITIALIZED = true;
+                    return;
+                }
+            }
+
+            // DEBUG: Logam startul initializarii
             
             // Step 1: Initialize System Registry Marker
             let migrationLevel = 0;
@@ -92,7 +101,7 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             // CORE TABLES: Must be ready before we mark DB as initialized
             // Better Auth depends on 'user' and 'session'
             // Setup-Admin depends on 'contact' for business profile sync
-            const coreSyncList = ['user', 'session', 'account', 'verification', 'contact', 'entity_definition', 'workspace', 'system_setting', 'system_error', '_ai_prompt'];
+            const coreSyncList = ['user', 'session', 'account', 'verification', 'contact', 'entity_definition', 'workspace', 'system_setting', 'system_error', '_ai_prompt', 'help_content', 'system_performance_log'];
             
             console.log(`[DB-INIT] Starting Core DNA Sync (${coreSyncList.join(', ')})...`);
             for (const entityName of coreSyncList) {
@@ -138,6 +147,20 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
 
             // Level 8: Set initialized AFTER core sync and critical data seed
             global.IS_DB_INITIALIZED = true;
+
+            // Enterprise Level 8: Mark setup complete and schema sync'd in KV
+            try {
+                if (kv) {
+                    // Marker that schema is ready to avoid expensive syncEntityTable loops
+                    await kv.put('db_sync_token', SYNC_TOKEN);
+                    
+                    // Marker that admin exists to avoid "Checking session..." delay
+                    const anyUserResult = await db.query("SELECT COUNT(*) as count FROM user");
+                    if (anyUserResult?.[0]?.count > 0) {
+                        await kv.put('admin_exists', 'true');
+                    }
+                }
+            } catch (e) {}
 
             // Run full baseline sync (ALWAYS in background to prevent AbortError from long-running ops)
             // Only start it once to avoid duplicate work
@@ -227,9 +250,10 @@ export async function ensureBaselineSync(db: any, registry: any) {
         for (const [name, config] of Object.entries(baselineEntities)) {
             try {
                 // syncEntityTable handles DDL (CREATE/ALTER) - keep individual as it's sensitive
-                const normalized = await syncEntityTable(db, { name, ...(config as any) }, registry);
+                const syncResult = await syncEntityTable(db, { name, ...(config as any) }, registry);
                 
-                if (normalized) {
+                if (syncResult && !Array.isArray(syncResult)) {
+                    const normalized = syncResult as EntityDefinition;
                     metaStatements.push(
                         db.prepare(`INSERT OR REPLACE INTO entity_definition (
                             id, name, label, labelPlural, tableName, icon, fields, 
@@ -431,7 +455,7 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
                 nameStr, 
                 p.content || p.systemPrompt || '', 
                 p.userPromptTemplate || '', 
-                p.model || 'gemini-1.5-pro', 
+                p.model || registry.AI_CONFIG?.model || '', 
                 p.inputContext || '', 
                 p.outputField || 'output', 
                 'system',
@@ -464,17 +488,16 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
     }
 }
 
-export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
+export async function syncEntityTable(db: any, rawDef: any, registry?: any, dryRun: boolean = false) {
     // Enterprise Level 8: Unified Normalization Lens
     const entityDef = normalizeEntity(rawDef);
-    if (!entityDef || !entityDef.name) return;
+    if (!entityDef || !entityDef.name) return dryRun ? [] : undefined;
 
     const tableName = resolveCollection(entityDef.tableName || entityDef.name);
     const pk = getPrimaryKey(tableName);
     const fields = entityDef.fields;
     
-    // Level 8: Reduced noise - only log if debugging or change needed
-    // console.log(`[DB-SCHEMA] Syncing table: "${tableName}"`);
+    const sqlStatements: string[] = [];
 
     try {
         const rows = await db.query(`PRAGMA table_info("${tableName}")`);
@@ -482,6 +505,13 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
             const colDefs = [`"${pk}" TEXT PRIMARY KEY`];
             fields.forEach((f: any) => {
                 const fname = f.name || f.id;
+                const ftype = (f.type || 'text').toLowerCase();
+
+                // Skip virtual fields
+                if (['relation-many', 'tag', 'calculation', 'formula', 'divider', 'group', 'section', 'tab', 'description', 'info-box'].includes(ftype)) {
+                    return;
+                }
+
                 if (fname && fname !== pk && fname !== 'id') {
                     let colDef = `"${fname}" ${mapFieldType(f.type)}`;
                     if (f.unique) colDef += ' UNIQUE';
@@ -508,11 +538,14 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
                 }
             });
 
-            const createStart = Date.now();
             const sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (${colDefs.join(', ')})`;
-            console.log(`[DB-SCHEMA-DDL] EXEC: ${sql}`);
-            await db.query(sql);
-            console.log(`[DB-SCHEMA] Created table "${tableName}" in ${Date.now() - createStart}ms`);
+            
+            if (dryRun) {
+                sqlStatements.push(sql);
+            } else {
+                console.log(`[DB-SCHEMA-DDL] EXEC: ${sql}`);
+                await db.query(sql);
+            }
         } else {
             const existingColsRaw = rows.map((r: any) => r.name);
             const existingColsLower = existingColsRaw.map((n: string) => n.toLowerCase());
@@ -523,6 +556,13 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
             // 1. Process fields from entity definition
             fields.forEach((f: any) => {
                 const fname = f.name || f.id;
+                const ftype = (f.type || 'text').toLowerCase();
+                
+                // Skip virtual fields that don't need a physical column
+                if (['relation-many', 'tag', 'calculation', 'formula', 'divider', 'group', 'section', 'tab', 'description', 'info-box'].includes(ftype)) {
+                    return;
+                }
+
                 if (fname && !existingColsLower.includes(fname.toLowerCase())) {
                     if (!processedMissing.has(fname.toLowerCase())) {
                         missing.push(f);
@@ -547,23 +587,33 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any) {
 
             if (missing.length > 0) {
                 for (const col of missing) {
-                    try {
-                        const fname = col.name || col.id;
-                        const sql = `ALTER TABLE "${tableName}" ADD COLUMN "${fname}" ${mapFieldType(col.type)}`;
-                        console.log(`[DB-SCHEMA-DDL] EXEC: ${sql}`);
-                        await db.exec(sql);
-                        
-                        // If it's unique, we need an index because ALTER TABLE doesn't support UNIQUE directly in some SQLite versions/D1
+                    const fname = col.name || col.id;
+                    const sql = `ALTER TABLE "${tableName}" ADD COLUMN "${fname}" ${mapFieldType(col.type)}`;
+                    
+                    if (dryRun) {
+                        sqlStatements.push(sql);
                         if (col.unique) {
-                            console.log(`[DB-SCHEMA] Creating unique index for "${tableName}.${fname}"`);
-                            await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_unique_${tableName}_${fname}" ON "${tableName}"("${fname}")`);
+                            sqlStatements.push(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_unique_${tableName}_${fname}" ON "${tableName}"("${fname}")`);
                         }
-                    } catch (e: any) {
-                        console.warn(`[DB-SCHEMA] Failed to alter "${tableName}": ${e.message}`);
+                    } else {
+                        try {
+                            console.log(`[DB-SCHEMA-DDL] EXEC: ${sql}`);
+                            await db.exec(sql);
+                            
+                            // If it's unique, we need an index because ALTER TABLE doesn't support UNIQUE directly in some SQLite versions/D1
+                            if (col.unique) {
+                                console.log(`[DB-SCHEMA] Creating unique index for "${tableName}.${fname}"`);
+                                await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_unique_${tableName}_${fname}" ON "${tableName}"("${fname}")`);
+                            }
+                        } catch (e: any) {
+                            console.warn(`[DB-SCHEMA] Failed to alter "${tableName}": ${e.message}`);
+                        }
                     }
                 }
             }
         }
+        
+        if (dryRun) return sqlStatements;
         return entityDef;
     } catch (e: any) {
         console.error(`[DB-SCHEMA] Fatal error syncing "${tableName}":`, e.message);

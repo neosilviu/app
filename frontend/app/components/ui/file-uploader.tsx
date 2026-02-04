@@ -59,8 +59,15 @@ export function FileUploader({ value, onChange, multiple, storage, accept, varia
       const file = selectedFiles[i];
       const formData = new FormData();
       formData.append("file", file);
+      
+      // Dacă suntem în local dev (detectat prin hostname de rețea sau localhost), 
+      // folosim R2 (miniflare) ca fallback dacă agentul local nu e pornit.
+      // În registry, parametrul storage controlează destinația.
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.168.');
       if (storage) {
         formData.append("storage", storage);
+      } else if (isLocal) {
+        formData.append("storage", "r2"); // Fast-path pentru dev folosind wrangler state
       }
 
       try {

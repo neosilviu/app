@@ -4,7 +4,7 @@ import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '~/components/ui/card';
 import { IconMap } from '~/lib/icons';
-import { Plus, Trash, Save, Sparkles, Settings as SettingsIcon, Database, Shield, Layout, ChevronRight, Menu as MenuIcon, User, Users, Briefcase, CheckCircle2, PlusCircle, RefreshCw, Activity, Search, Box, Eye, ExternalLink, Layers, ArrowDownUp, HelpCircle, Type, Zap, Trash2, Image as ImageIcon, Cloud, HardDrive, File, DollarSign, Percent, List, Tag, AlignLeft, Clock, Calendar, ToggleRight, Mail, Phone, Music, Palette, Star, FileCode, Code2, MapPin, Calculator, Handshake, Edit3, QrCode, Rocket, ShieldAlert } from 'lucide-react';
+import { Plus, Trash, Save, Sparkles, Settings as SettingsIcon, Database, Shield, Layout, ChevronRight, Menu as MenuIcon, User, Users, Briefcase, CheckCircle2, PlusCircle, RefreshCw, Activity, Search, Box, Eye, ExternalLink, Layers, ArrowDownUp, HelpCircle, Type, Zap, Trash2, Image as ImageIcon, Cloud, HardDrive, File, DollarSign, Percent, List, Tag, AlignLeft, Clock, Calendar, ToggleRight, Mail, Phone, Music, Palette, Star, FileCode, Code2, MapPin, Calculator, Handshake, Edit3, QrCode, Rocket, ShieldAlert, Bug } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Badge } from '~/components/ui/badge';
 import { GlassCard } from '~/components/ui/GlassCard';
@@ -43,6 +43,7 @@ import { AiSettingsPanel } from '~/components/AiSettingsPanel';
 import { RegistrySettingsPanel } from '~/components/RegistrySettingsPanel';
 import { EntityDefinitionsPanel } from '~/components/EntityDefinitionsPanel';
 import { AiArchitectSandbox } from '~/components/AiArchitectSandbox';
+import { EntityDevTools } from '~/components/EntityDevTools';
 import { useAuth } from '~/hooks/useAuth';
 import { useSmartBack } from '~/hooks/useSmartBack';
 
@@ -62,16 +63,23 @@ export default function SuperadminPage() {
     const { user, switchWorkspace, hasPageAccess } = useAuth();
     const goBack = useSmartBack();
 
-    // Security check: Only superadmins
-    useEffect(() => {
-        if (user && !hasPageAccess('superadmin')) {
-            goBack();
-        }
-    }, [user, hasPageAccess, goBack]);
-    
     // Tab Sync Logic
     const currentTab = searchParams.get('tab') || 'ai-architect';
     const [activeTab, setActiveTab ] = useState(currentTab);
+
+    // Security check: Only superadmins, but allow blueprint-architect for authorized users
+    useEffect(() => {
+        if (!user) return;
+        
+        const isArchitectTab = currentTab === 'ai-architect';
+        const canAccessArchitect = hasPageAccess('blueprint-architect');
+        const canAccessSuperadmin = hasPageAccess('superadmin');
+
+        if (isArchitectTab && canAccessArchitect) return;
+        if (canAccessSuperadmin) return;
+
+        goBack();
+    }, [user, hasPageAccess, goBack, currentTab]);
 
     useEffect(() => {
         if (currentTab !== activeTab) {
@@ -106,9 +114,7 @@ export default function SuperadminPage() {
                 action: 'architect',
                 prompt: aiPrompt,
                 provider: constants.AI_CONFIG?.active_provider,
-                model: constants.AI_CONFIG?.model,
-                geminiApiKey: constants.AI_CONFIG?.providers?.gemini?.apiKey,
-                claudeApiKey: constants.AI_CONFIG?.providers?.claude?.apiKey
+                model: constants.AI_CONFIG?.model
             });
 
             if (res.success) {
@@ -198,8 +204,8 @@ export default function SuperadminPage() {
     return (
         <div className="flex flex-col gap-6 p-4 md:p-8 animate-in fade-in duration-500 text-slate-900 dark:text-white">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <div className="sticky top-0 z-20 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/50 p-2 backdrop-blur-xl dark:bg-slate-900/50">
-                    <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 bg-transparent">
+                <div className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/50 p-2 backdrop-blur-xl dark:bg-slate-900/50">
+                    <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 bg-transparent">
                         <TabsTrigger value="ai-architect" className="rounded-xl font-black italic uppercase text-[10px] tracking-widest data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
                             <Sparkles className="mr-2 h-4 w-4" />
                             {renderString(t('superadmin:tabs.ai_architect'), lang)}
@@ -220,11 +226,19 @@ export default function SuperadminPage() {
                             <Box className="mr-2 h-4 w-4" />
                             Entity Builder
                         </TabsTrigger>
+                        <TabsTrigger value="inspector" className="rounded-xl font-black italic uppercase text-[10px] tracking-widest data-[state=active]:bg-rose-600 data-[state=active]:text-white">
+                            <Bug className="mr-2 h-4 w-4" />
+                            Inspector
+                        </TabsTrigger>
                     </TabsList>
                 </div>
 
                 <TabsContent value="ai-architect" className="mt-0 focus-visible:outline-none">
                     <AiArchitectSandbox />
+                </TabsContent>
+
+                <TabsContent value="inspector" className="mt-0 focus-visible:outline-none">
+                    <EntityDevTools />
                 </TabsContent>
 
                 <TabsContent value="marketplace" className="mt-0 focus-visible:outline-none space-y-6">

@@ -273,44 +273,18 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                     
                     const dynamicNav = mergedConstants.NAV;
 
-                    // --- DYNAMIC NAVIGATION FOR ENTITIES (CACHED) ---
-                    const entityNavItems: NavItem[] = Object.entries(mergedEntities)
-                        .filter(([_, config]: [string, any]) => {
-                            const menuConfig = config.menuConfig || {};
-                            // Level 8 Rule: Default to true unless explicitly hidden in menuConfig
-                            return menuConfig.showInMainMenu !== false;
-                        })
-                        .map(([id, config]: [string, any]) => {
-                            const menuConfig = config.menuConfig || {};
-                            return {
-                                id,
-                                label: config.labelPlural || config.label,
-                                path: `/${id}`,
-                                icon: config.icon || 'box', 
-                                priority: menuConfig.priority ?? 50,
-                                badge: menuConfig.badge,
-                                hidden: config.archived === 1
-                            };
+                    if (dynamicNav) {
+                        setNavigation({
+                            main: applyNavOverrides(dynamicNav.main || [], ui.navOverrides?.main),
+                            worker: applyNavOverrides(dynamicNav.worker || [], ui.navOverrides?.worker),
+                            entity: applyNavOverrides(dynamicNav.entity || [], ui.navOverrides?.entity),
+                            admin: applyNavOverrides(dynamicNav.admin || [], ui.navOverrides?.admin),
+                            user: applyNavOverrides(dynamicNav.user || [], ui.navOverrides?.user),
+                            shortcuts: applyNavOverrides(dynamicNav.shortcuts || [], ui.navOverrides?.shortcuts)
                         });
-
-                    const baseMain = dynamicNav?.main || initial.navigation.main;
-                    const baseWorker = dynamicNav?.worker || initial.navigation.worker;
-                    const baseAdmin = dynamicNav?.admin || initial.navigation.admin;
-                    const existingIds = new Set([
-                        ...baseMain.map((i: any) => i.id),
-                        ...baseWorker.map((i: any) => i.id),
-                        ...baseAdmin.map((i: any) => i.id)
-                    ]);
-                    const filteredEntities = entityNavItems.filter(item => !existingIds.has(item.id));
-
-                    setNavigation({
-                        main: applyNavOverrides(baseMain, ui.navOverrides?.main),
-                        worker: applyNavOverrides(baseWorker, ui.navOverrides?.worker),
-                        entity: applyNavOverrides(filteredEntities, ui.navOverrides?.entity).map(i => ({ ...i, path: `/${i.id}` })),
-                        admin: applyNavOverrides(baseAdmin, ui.navOverrides?.admin),
-                        user: applyNavOverrides(dynamicNav?.user || initial.navigation.user, ui.navOverrides?.user),
-                        shortcuts: applyNavOverrides(dynamicNav?.shortcuts || initial.navigation.shortcuts, ui.navOverrides?.shortcuts)
-                    });
+                    } else {
+                        setNavigation(initial.navigation);
+                    }
                 }
             } catch (e) {
                 console.warn("[CONFIG] Failed to load from IndexedDB:", e);
@@ -367,7 +341,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                         label: `Navigare ${config.labelPlural || config.label}`
                     }));
 
-                const baseShortcuts = result.constants?.SHORTCUT || mergedConstants.SHORTCUT || [];
+                const baseShortcuts = result.constants?.shortcuts || mergedConstants.shortcuts || [];
                 ui.shortcuts = [...baseShortcuts, ...entityShortcuts];
 
                 setEntity(mergedEntities);
@@ -377,65 +351,21 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 setMarketplace(mergedConstants.MARKETPLACE_TEMPLATE || []);
                 setUiConfig(ui);
 
-                const dynamicNav = result.constants?.NAV || mergedConstants.NAV;
+                const dynamicNav = result.constants?.NAV || result.constants?.navigation || mergedConstants.NAV;
                 
-                // --- DYNAMIC NAVIGATION FOR ENTITIES ---
-                const entityNavItems: NavItem[] = Object.entries(mergedEntities)
-                    .filter(([_, config]: [string, any]) => {
-                        const menuConfig = config.menuConfig || {};
-                        return menuConfig.showInMainMenu !== false;
-                    })
-                    .map(([id, config]: [string, any]) => {
-                        const menuConfig = config.menuConfig || {};
-                        return {
-                            id,
-                            label: config.labelPlural || config.label,
-                            path: `/${id}`,
-                            icon: config.icon || 'box', 
-                            priority: menuConfig.priority ?? 50,
-                            badge: menuConfig.badge,
-                            hidden: config.archived === 1
-                        };
-                    });
-
                 if (dynamicNav) {
-                    const baseMain = dynamicNav.main || initial.navigation.main;
-                    const baseWorker = dynamicNav.worker || initial.navigation.worker;
-                    const baseAdmin = dynamicNav.admin || initial.navigation.admin;
-                    const existingIds = new Set([
-                        ...(baseMain || []).map((i: any) => i.id),
-                        ...(baseWorker || []).map((i: any) => i.id),
-                        ...(baseAdmin || []).map((i: any) => i.id)
-                    ]);
-                    const filteredEntities = entityNavItems.filter(item => !existingIds.has(item.id));
-
+                    const navShortcuts = dynamicNav.shortcuts || [];
                     setNavigation({
-                        main: applyNavOverrides(baseMain, ui.navOverrides?.main),
-                        worker: applyNavOverrides(baseWorker, ui.navOverrides?.worker),
-                        entity: applyNavOverrides(filteredEntities, ui.navOverrides?.entity).map(i => ({ ...i, path: `/${i.id}` })),
-                        admin: applyNavOverrides(baseAdmin, ui.navOverrides?.admin),
-                        user: applyNavOverrides(dynamicNav.user || initial.navigation.user, ui.navOverrides?.user),
-                        shortcuts: applyNavOverrides(dynamicNav.shortcuts || initial.navigation.shortcuts, ui.navOverrides?.shortcuts)
+                        main: applyNavOverrides(dynamicNav.main || [], ui.navOverrides?.main),
+                        worker: applyNavOverrides(dynamicNav.worker || [], ui.navOverrides?.worker),
+                        entity: applyNavOverrides(dynamicNav.entity || [], ui.navOverrides?.entity),
+                        admin: applyNavOverrides(dynamicNav.admin || [], ui.navOverrides?.admin),
+                        user: applyNavOverrides(dynamicNav.user || [], ui.navOverrides?.user),
+                        shortcuts: applyNavOverrides(navShortcuts, ui.navOverrides?.shortcuts)
                     });
                 } else {
-                    const baseMain = initial.navigation.main;
-                    const baseWorker = initial.navigation.worker;
-                    const baseAdmin = initial.navigation.admin;
-                    const existingIds = new Set([
-                        ...baseMain.map((i: any) => i.id),
-                        ...baseWorker.map((i: any) => i.id),
-                        ...baseAdmin.map((i: any) => i.id)
-                    ]);
-                    const filteredEntities = entityNavItems.filter(item => !existingIds.has(item.id));
-
-                    setNavigation({
-                        main: applyNavOverrides(baseMain, ui.navOverrides?.main),
-                        worker: applyNavOverrides(baseWorker, ui.navOverrides?.worker),
-                        entity: applyNavOverrides(filteredEntities, ui.navOverrides?.entity).map(i => ({ ...i, path: `/${i.id}` })),
-                        admin: applyNavOverrides(baseAdmin, ui.navOverrides?.admin),
-                        user: applyNavOverrides(initial.navigation.user, ui.navOverrides?.user),
-                        shortcuts: applyNavOverrides(initial.navigation.shortcuts, ui.navOverrides?.shortcuts)
-                    });
+                    // Fallback to initial navigation if nothing in registry
+                    setNavigation(initial.navigation);
                 }
 
                 // Cache to IndexedDB
@@ -460,43 +390,16 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         
         const dynamicNav = constants.NAV;
         
-        // --- Rebuild Navigation with Entities Sync ---
-        const entityNavItems: NavItem[] = Object.entries(entity)
-            .filter(([_, config]: [string, any]) => {
-                const menuConfig = config.menuConfig || {};
-                return menuConfig.showInMainMenu !== false;
-            })
-            .map(([id, config]: [string, any]) => {
-                const menuConfig = config.menuConfig || {};
-                return {
-                    id,
-                    label: config.labelPlural || config.label || id,
-                    path: `/${id}`,
-                    icon: config.icon || 'box', 
-                    priority: menuConfig.priority ?? 50,
-                    badge: menuConfig.badge,
-                    hidden: config.archived === 1
-                };
+        if (dynamicNav) {
+            setNavigation({
+                main: applyNavOverrides(dynamicNav.main || [], updated.navOverrides?.main),
+                worker: applyNavOverrides(dynamicNav.worker || [], updated.navOverrides?.worker),
+                entity: applyNavOverrides(dynamicNav.entity || [], updated.navOverrides?.entity),
+                admin: applyNavOverrides(dynamicNav.admin || [], updated.navOverrides?.admin),
+                user: applyNavOverrides(dynamicNav.user || [], updated.navOverrides?.user),
+                shortcuts: applyNavOverrides(dynamicNav.shortcuts || [], updated.navOverrides?.shortcuts)
             });
-
-        const baseMain = dynamicNav?.main || initial.navigation.main;
-        const baseWorker = dynamicNav?.worker || initial.navigation.worker;
-        const baseAdmin = dynamicNav?.admin || initial.navigation.admin;
-        const existingIds = new Set([
-            ...baseMain.map((i: any) => i.id),
-            ...baseWorker.map((i: any) => i.id),
-            ...baseAdmin.map((i: any) => i.id)
-        ]);
-        const filteredEntities = entityNavItems.filter(item => !existingIds.has(item.id));
-
-        setNavigation({
-            main: applyNavOverrides(baseMain, updated.navOverrides?.main),
-            worker: applyNavOverrides(baseWorker, updated.navOverrides?.worker),
-            entity: applyNavOverrides(filteredEntities, updated.navOverrides?.entity),
-            admin: applyNavOverrides(baseAdmin, updated.navOverrides?.admin),
-            user: applyNavOverrides(dynamicNav?.user || initial.navigation.user, updated.navOverrides?.user),
-            shortcuts: applyNavOverrides(dynamicNav?.shortcuts || initial.navigation.shortcuts, updated.navOverrides?.shortcuts)
-        });
+        }
 
         // 1. Save to Cloud (The Brain Registry - Enterprise Level 8)
         try {

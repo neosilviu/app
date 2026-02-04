@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useConfig } from '~/hooks/useConfig';
 import { useTranslation } from 'react-i18next';
 import { api, cn, socket, renderString, normalizeEntity, getThemeClasses } from '~/lib/core';
 import { toast } from 'sonner';
-import { Search, Plus, Save, Trash2, X, Box, Columns, Code, RefreshCw, HelpCircle, Menu, LayoutGrid, Eye, EyeOff, LayoutDashboard, Zap, Shield, Link, Sparkles, CircleDollarSign, Info, ArrowUp, ArrowDown, Copy } from 'lucide-react';
+import { Search, Plus, Save, Trash2, X, Box, Columns, Code, RefreshCw, HelpCircle, Menu, LayoutGrid, Eye, EyeOff, LayoutDashboard, Zap, Shield, Link, Sparkles, CircleDollarSign, Info, ArrowUp, ArrowDown, Copy, Activity } from 'lucide-react';
 import { GlassCard } from './ui/GlassCard';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -28,11 +28,35 @@ export function EntityDefinitionsPanel() {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<'all' | 'system' | 'custom'>('all');
 
+    // Blueprint state
+    const [blueprintDialog, setBlueprintDialog] = useState(false);
+
+    // Dry Run state
+    const [dryRunDialog, setDryRunDialog] = useState<{ open: boolean, results: Record<string, string[]> | null }>({ open: false, results: null });
+    const [dryRunning, setDryRunning] = useState(false);
+
+    // Garbage Collector state
+    const [garbageDialog, setGarbageDialog] = useState<{ open: boolean, orphans: any[] }>({ open: false, orphans: [] });
+    const [cleaning, setCleaning] = useState(false);
+
+    // Self-Healing (Level 9) state
+    const [healing, setHealing] = useState(false);
+    const [healingDialog, setHealingDialog] = useState<{ open: boolean, report: any[] | null }>({ open: false, report: null });
+
     // Delete confirmation state
     const [deleteDialog, setDeleteDialog] = useState<{ open: boolean, entity: any | null }>({ open: false, entity: null });
     const [confirmName, setConfirmName] = useState('');
     const [dropDatabase, setDropDatabase] = useState(false);
     const [forceDelete, setForceDelete] = useState(false);
+
+    const editorScrollRef = useRef<HTMLDivElement>(null);
+
+    // Scroll to top when entity selection changes
+    useEffect(() => {
+        if (editingEntity && editorScrollRef.current) {
+            editorScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, [editingEntity?.id, editingEntity?.name]);
 
     const fetchEntities = async () => {
         setLoading(true);
@@ -94,6 +118,88 @@ export function EntityDefinitionsPanel() {
             toast.error(`Eroare critică: ${e.message}`);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleDryRun = async () => {
+        if (!editingEntity.name) return toast.error("Înregistrarea are nevoie de un Nume de Sistem (Identifier)");
+        
+        setDryRunning(true);
+        try {
+            const res = await api.brain.post('entity/save', { 
+                entity: [editingEntity],
+                dryRun: true 
+            });
+
+            if (res.success && res.data?.dryRun) {
+                setDryRunDialog({ open: true, results: res.data.dryRun });
+            } else {
+                toast.error(res.error || "Eroare la simulare");
+            }
+        } catch (e: any) {
+            console.error("[ENTITY-BUILDER] Dry run error:", e);
+            toast.error(`Eroare critică: ${e.message}`);
+        } finally {
+            setDryRunning(false);
+        }
+    };
+
+    const fetchOrphans = async () => {
+        setCleaning(true);
+        try {
+            const res = await api.brain.get('entity/garbage-collect');
+            if (res.success && res.data?.orphans) {
+                setGarbageDialog({ open: true, orphans: res.data.orphans });
+            } else {
+                toast.error("Nu am putut analiza tabelele orfane");
+            }
+        } catch (e: any) {
+            toast.error(`Eroare: ${e.message}`);
+        } finally {
+            setCleaning(false);
+        }
+    };
+
+    const runSelfHealing = async () => {
+        setHealing(true);
+        try {
+            const res = await api.brain.post('system/self-healing', {});
+            if (res.success) {
+                // The data is already formatted in handleSelfHealing
+                setHealingDialog({ open: true, report: res.data?.report || [] });
+                toast.success("AI Analysis Complete");
+            } else {
+                toast.error(res.error || "Analysis failed");
+            }
+        } catch (e: any) {
+            toast.error("Network error during AI analysis");
+        } finally {
+            setHealing(false);
+        }
+    };
+
+    const deleteOrphanTable = async (tableName: string) => {
+        if (!confirm(`Ești sigur că vrei să ștergi tabelul "${tableName}"? Datele vor fi pierdute definitiv.`)) return;
+        
+        try {
+            // Re-using delete endpoint but purely for DB drop
+            // We need a way to just drop a table. Let's see if 'delete' can do it without a definition ID.
+            // Actually, I should probably add a dedicated drop-table action or use delete with specific params.
+            // For now, I'll update brain.server.ts to support 'action: drop-orphan'.
+            const res = await api.brain.post('entity/delete', { 
+                tableName, 
+                dropDatabase: true,
+                force: true 
+            });
+            
+            if (res.success) {
+                toast.success(`Tabelul ${tableName} a fost șters.`);
+                setGarbageDialog(prev => ({ ...prev, orphans: prev.orphans.filter(o => o.name !== tableName) }));
+            } else {
+                toast.error(res.error || "Ștergere eșuată");
+            }
+        } catch (e: any) {
+            toast.error(e.message);
         }
     };
 
@@ -190,8 +296,8 @@ export function EntityDefinitionsPanel() {
         toast.success(`Field duplicated: ${clone.name}`);
     };
 
-    const startNew = () => {
-        setEditingEntity({
+    const startNew = (blueprint?: any) => {
+        const base = blueprint || {
             name: '',
             label: '',
             description: '',
@@ -205,7 +311,10 @@ export function EntityDefinitionsPanel() {
             dashboardConfig: { enabled: false, widgetType: 'stats' },
             permission: { role: {} },
             features: { auditable: true, creatable: true, editable: true, deletable: true }
-        });
+        };
+
+        setEditingEntity(normalizeEntity(base));
+        setBlueprintDialog(false);
     };
 
     const filteredEntities = entities.filter(entity => {
@@ -232,18 +341,36 @@ export function EntityDefinitionsPanel() {
                     <p className="text-xs text-slate-500 font-medium">{entities.length} {entities.length === 1 ? 'entity' : 'entity'} available</p>
                 </div>
                 <Button 
-                    onClick={startNew}
+                    onClick={() => setBlueprintDialog(true)}
                     className="rounded-xl font-black uppercase italic text-xs px-6"
                 >
                     <Plus className="mr-2 h-4 w-4" />
                     New Entity
                 </Button>
+                <Button 
+                    variant="ghost"
+                    onClick={fetchOrphans}
+                    className="rounded-xl font-black uppercase italic text-[10px] px-4 text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                    disabled={cleaning}
+                >
+                    {cleaning ? <RefreshCw className="mr-2 h-3 w-3 animate-spin" /> : <Trash2 className="mr-2 h-3 w-3" />}
+                    DB Cleanup
+                </Button>
+                <Button 
+                    variant="ghost"
+                    onClick={runSelfHealing}
+                    className="rounded-xl font-black uppercase italic text-[10px] px-4 text-slate-400 hover:text-primary hover:bg-primary/5 border border-slate-100/50"
+                    disabled={healing}
+                >
+                    {healing ? <Zap className="mr-2 h-3 w-3 animate-spin text-primary" /> : <Sparkles className="mr-2 h-3 w-3 text-primary" />}
+                    Level 9 AI
+                </Button>
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 overflow-hidden flex gap-6 p-6">
+            <div className="flex-1 overflow-hidden flex gap-4 p-4">
                 {/* Left Sidebar - Entity List */}
-                <div className="w-80 flex flex-col border-r border-slate-200/50 pr-6 gap-4">
+                <div className="w-72 flex flex-col border-r border-slate-200/50 pr-4 gap-3">
                     {/* Search Bar */}
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -303,50 +430,46 @@ export function EntityDefinitionsPanel() {
                                 <div
                                     key={entity.id || entity.name}
                                     className={cn(
-                                        "w-full p-3 text-left rounded-2xl border-2 transition-all group relative",
+                                        "w-full p-2 text-left rounded-xl border transition-all group relative",
                                         editingEntity?.id === entity.id 
-                                            ? `border-indigo-500 bg-indigo-50` 
-                                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                                            ? `border-indigo-500 bg-indigo-50 shadow-sm` 
+                                            : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50"
                                     )}
                                 >
                                     <div 
-                                        className="flex items-start gap-2 cursor-pointer"
+                                        className="flex items-center gap-2 cursor-pointer"
                                         onClick={() => setEditingEntity(normalizeEntity(entity))}
                                     >
                                         <div className={cn(
-                                            "p-2 rounded-lg text-white mt-0.5 shadow-sm",
+                                            "p-1.5 rounded-lg text-white shadow-sm shrink-0",
                                             theme.bg
                                         )}>
-                                            <Box size={14} />
+                                            <Box size={12} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-sm text-slate-900 truncate">{renderString(entity.label, lang)}</p>
-                                            <p className="text-[10px] text-slate-500 font-mono uppercase">{renderString(entity.name, lang)}</p>
-                                            <div className="flex items-center gap-1.5 mt-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="font-black text-[11px] text-slate-900 truncate uppercase tracking-tighter">{renderString(entity.label, lang)}</p>
                                                 {entity.isSystem && (
-                                                    <Badge variant="outline" className="px-1 py-0 h-3.5 text-[7px] font-black uppercase tracking-tighter bg-slate-50 text-slate-500 border-slate-200">
+                                                    <Badge variant="outline" className="px-1 py-0 h-3 text-[6px] font-black uppercase tracking-tighter bg-slate-50 text-slate-400 border-slate-200">
                                                         SYSTEM
                                                     </Badge>
                                                 )}
-                                                <p className="text-[9px] text-slate-400 line-clamp-1">{renderString(entity.description, lang)}</p>
                                             </div>
+                                            <p className="text-[9px] text-slate-400 font-mono uppercase tracking-widest truncate opacity-70">{renderString(entity.name, lang)}</p>
                                         </div>
                                     </div>
-                                    <button 
-                                        onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            if (!entity.isSystem) handleDelete(entity); 
-                                        }}
-                                        className={cn(
-                                            "absolute right-3 top-3 p-1.5 opacity-0 group-hover:opacity-100 transition-all rounded-lg",
-                                            entity.isSystem 
-                                                ? "text-slate-300 cursor-not-allowed" 
-                                                : "text-slate-400 hover:text-red-500 hover:bg-red-50"
-                                        )}
-                                        title={entity.isSystem ? "System Entity Locked" : "Delete Entity"}
-                                    >
-                                        {entity.isSystem ? <Shield size={12} /> : <Trash2 size={12} />}
-                                    </button>
+                                    {!entity.isSystem && (
+                                        <button 
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                handleDelete(entity); 
+                                            }}
+                                            className="absolute -right-1 -top-1 p-1 opacity-0 group-hover:opacity-100 transition-all rounded-full bg-white border border-slate-100 text-slate-400 hover:text-red-500 shadow-sm z-10"
+                                            title="Delete Entity"
+                                        >
+                                            <Trash2 size={10} />
+                                        </button>
+                                    )}
                                 </div>
                                 );
                             })
@@ -355,7 +478,7 @@ export function EntityDefinitionsPanel() {
                 </div>
 
                 {/* Right Content - Edit Form */}
-                <div className="flex-1 overflow-y-auto">
+                <div ref={editorScrollRef} className="flex-1 overflow-y-auto">
                     {editingEntity ? (
                         <GlassCard className="p-8 space-y-8">
                             <div className="flex items-center justify-between border-b border-slate-100 pb-6">
@@ -390,18 +513,27 @@ export function EntityDefinitionsPanel() {
                                         </Button>
                                     )}
                                     <Button 
+                                        variant="outline"
+                                        className="rounded-xl font-black uppercase italic text-xs px-4 border-primary/20 text-primary hover:bg-primary/5"
+                                        disabled={dryRunning || saving}
+                                        onClick={handleDryRun}
+                                    >
+                                        {dryRunning ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Eye size={16} className="mr-2" />}
+                                        Inspect SQL
+                                    </Button>
+                                    <Button 
                                         className="rounded-xl font-black uppercase italic text-xs px-6" 
-                                        disabled={saving}
+                                        disabled={saving || dryRunning}
                                         onClick={handleSave}
                                     >
                                         {saving ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                        Save
+                                        Save & Sync
                                     </Button>
                                 </div>
                             </div>
 
                             <Tabs defaultValue="basic" className="w-full">
-                                <TabsList className="grid w-full grid-cols-7 bg-slate-100/50 p-2 rounded-2xl">
+                                <TabsList className="grid w-full grid-cols-8 bg-slate-100/50 p-2 rounded-2xl">
                                     <TabsTrigger value="basic" className="text-[9px] font-bold uppercase">Basic</TabsTrigger>
                                     <TabsTrigger value="fields" className="text-[9px] font-bold uppercase">Fields</TabsTrigger>
                                     <TabsTrigger value="display" className="text-[9px] font-bold uppercase"><Eye size={11} /></TabsTrigger>
@@ -409,6 +541,7 @@ export function EntityDefinitionsPanel() {
                                     <TabsTrigger value="dashboard" className="text-[9px] font-bold uppercase"><LayoutDashboard size={11} /></TabsTrigger>
                                     <TabsTrigger value="permission" className="text-[9px] font-bold uppercase"><Shield size={11} /></TabsTrigger>
                                     <TabsTrigger value="features" className="text-[9px] font-bold uppercase"><Zap size={11} /></TabsTrigger>
+                                    <TabsTrigger value="flow" className="text-[9px] font-bold uppercase"><Activity size={11} /></TabsTrigger>
                                 </TabsList>
 
                         {/* BASIC TAB */}
@@ -432,10 +565,54 @@ export function EntityDefinitionsPanel() {
                                         <Input 
                                             placeholder="e.g. Inventory Products" 
                                             value={renderString(editingEntity.label, lang)}
-                                            onChange={(e) => setEditingEntity({ ...editingEntity, label: e.target.value })}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const currentLabel = editingEntity.label;
+                                                const currentPlural = editingEntity.labelPlural;
+                                                
+                                                let newLabel: any;
+                                                let newPlural: any = currentPlural;
+
+                                                if (typeof currentLabel === 'object' && currentLabel !== null) {
+                                                    newLabel = { ...currentLabel, [lang]: val };
+                                                } else {
+                                                    newLabel = { ro: lang === 'ro' ? val : currentLabel, en: lang === 'en' ? val : currentLabel };
+                                                }
+
+                                                // Level 8 Optimization: Auto-Pluralize if plural is missing or seems auto-generated
+                                                const currentPluralStr = renderString(currentPlural, lang);
+                                                if (!currentPlural || currentPluralStr === '' || currentPluralStr === renderString(currentLabel, lang)) {
+                                                    const autoPlural = val + (lang === 'ro' ? 'e' : 's');
+                                                    if (typeof currentPlural === 'object' && currentPlural !== null) {
+                                                        newPlural = { ...currentPlural, [lang]: autoPlural };
+                                                    } else {
+                                                        newPlural = { ro: lang === 'ro' ? autoPlural : (currentPlural || ''), en: lang === 'en' ? autoPlural : (currentPlural || '') };
+                                                    }
+                                                }
+
+                                                setEditingEntity({ ...editingEntity, label: newLabel, labelPlural: newPlural });
+                                            }}
                                             className="h-12 rounded-2xl border-slate-200 font-medium focus:ring-primary/20"
                                         />
                                         <p className="text-[8px] text-slate-400 italic">Human-readable label shown in UI</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Plural Label</Label>
+                                        <Input 
+                                            placeholder="e.g. Products" 
+                                            value={renderString(editingEntity.labelPlural, lang)}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const current = editingEntity.labelPlural;
+                                                if (typeof current === 'object' && current !== null) {
+                                                    setEditingEntity({ ...editingEntity, labelPlural: { ...current, [lang]: val } });
+                                                } else {
+                                                    setEditingEntity({ ...editingEntity, labelPlural: { ro: lang === 'ro' ? val : current, en: lang === 'en' ? val : current } });
+                                                }
+                                            }}
+                                            className="h-10 rounded-xl border-slate-200 font-medium focus:ring-primary/20"
+                                        />
+                                        <p className="text-[8px] text-slate-400 italic">Used for navigation menus and headers</p>
                                     </div>
                                     <div className="space-y-2">
                                         <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Database Table Name</Label>
@@ -457,7 +634,15 @@ export function EntityDefinitionsPanel() {
                                         <textarea 
                                             placeholder="Describe what this entity represents..." 
                                             value={renderString(editingEntity.description, lang)}
-                                            onChange={(e) => setEditingEntity({ ...editingEntity, description: e.target.value })}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const current = editingEntity.description;
+                                                if (typeof current === 'object' && current !== null) {
+                                                    setEditingEntity({ ...editingEntity, description: { ...current, [lang]: val } });
+                                                } else {
+                                                    setEditingEntity({ ...editingEntity, description: { ro: lang === 'ro' ? val : current, en: lang === 'en' ? val : current } });
+                                                }
+                                            }}
                                             className="w-full h-32 rounded-2xl border border-slate-200 p-4 text-xs font-medium focus:ring-2 focus:ring-primary/20 outline-none resize-none"
                                         />
                                     </div>
@@ -465,10 +650,16 @@ export function EntityDefinitionsPanel() {
                                         <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Visual Identity (Icon)</Label>
                                         <IconPicker 
                                             value={editingEntity.icon}
-                                            onChange={(val) => setEditingEntity({ ...editingEntity, icon: val })}
+                                            onChange={(val) => {
+                                                setEditingEntity({ ...editingEntity, icon: val });
+                                                // Enterprise Level 8: Propagate icon to Menu if not explicitly overridden
+                                                if (!editingEntity.menuConfig?.icon) {
+                                                    // This ensures immediate visual feedback in sidebar previews if any
+                                                }
+                                            }}
                                             placeholder="Choose an icon..."
                                         />
-                                        <p className="text-[8px] text-slate-400 italic">Icon used in navigation and lists</p>
+                                        <p className="text-[8px] text-slate-400 italic">Icon principal afișat în liste, breadcrumbs și tabele.</p>
                                     </div>
 
                                     <div className="space-y-2">
@@ -560,22 +751,22 @@ export function EntityDefinitionsPanel() {
                         </TabsContent>
 
                         {/* FIELDS TAB */}
-                        <TabsContent value="fields" className="space-y-6 mt-6">
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between mb-4 px-2">
+                        <TabsContent value="fields" className="space-y-4 mt-4">
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between mb-2 px-1">
                                     <div className="space-y-0.5">
-                                        <h5 className="text-[11px] font-black uppercase italic tracking-widest text-slate-900 flex items-center gap-2">
-                                            <Columns className="h-4 w-4 text-primary" />
+                                        <h5 className="text-[10px] font-black uppercase italic tracking-widest text-slate-900 flex items-center gap-1.5">
+                                            <Columns className="h-3 w-3 text-primary" />
                                             Structural Architecture
                                         </h5>
-                                        <p className="text-[9px] text-slate-400 font-medium whitespace-nowrap overflow-hidden text-ellipsis">Define the schema, validation and visibility logic for this entity</p>
+                                        <p className="text-[8px] text-slate-400 font-medium whitespace-nowrap overflow-hidden text-ellipsis italic">Define the schema, validation and visibility logic for this entity</p>
                                     </div>
                                     <Button 
                                         variant="outline" 
                                         size="sm" 
                                         disabled={editingEntity.isSystem}
                                         className={cn(
-                                            "h-9 rounded-xl font-black uppercase italic text-[10px] border-primary/20 text-primary transition-all shadow-sm flex-shrink-0",
+                                            "h-7 rounded-xl font-black uppercase italic text-[9px] border-primary/20 text-primary transition-all shadow-sm flex-shrink-0 px-3",
                                             editingEntity.isSystem ? "opacity-50 cursor-not-allowed" : "hover:bg-primary hover:text-white"
                                         )}
                                         onClick={() => {
@@ -593,54 +784,56 @@ export function EntityDefinitionsPanel() {
                                             setEditingEntity({ ...editingEntity, fields });
                                         }}
                                     >
-                                        <Plus className="mr-2 h-4 w-4" /> Add Logic Field
+                                        <Plus className="mr-1 h-3 w-3" /> Add Logic Field
                                     </Button>
                                 </div>
 
-                                <div className="space-y-4">
-                                    <Accordion type="single" collapsible className="space-y-4">
+                                <div className="space-y-2">
+                                    <Accordion type="single" collapsible className="space-y-2">
                                         {Array.isArray(editingEntity.fields) && editingEntity.fields.map((field: any, idx: number) => (
-                                            <AccordionItem key={field.name || `field-${idx}`} value={`field-${idx}`} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all border-none">
+                                            <AccordionItem key={`field-row-${idx}`} value={`field-${idx}`} className="bg-white border border-slate-100 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all">
                                                 <div className="relative group/item">
                                                     <AccordionTrigger className="hover:no-underline w-full p-0">
                                                         {/* Header Area */}
-                                                        <div className="bg-slate-50/50 border-b border-slate-100 p-4 flex items-center justify-between gap-4 w-full">
-                                                            <div className="flex-1 flex items-center gap-4">
-                                                                <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 font-mono text-[10px]">
-                                                                    #{idx + 1}
+                                                        <div className="bg-slate-50/30 border-b border-slate-50 p-2 flex items-center justify-between gap-3 w-full">
+                                                            <div className="flex-1 flex items-center gap-3">
+                                                                <div className="w-8 h-8 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-300 font-mono text-[9px] font-black">
+                                                                    {idx + 1}
                                                                 </div>
-                                                                <div className="flex items-center gap-3">
-                                                                    <span className="text-xs font-black uppercase italic text-slate-700">{renderString(field.label || field.name || 'New Field', lang)}</span>
-                                                                    <Badge variant="outline" className="text-[8px] font-bold uppercase py-0 px-2 bg-indigo-50 text-indigo-600 border-indigo-100">{field.type || 'text'}</Badge>
-                                                                    {field.required && <Badge variant="outline" className="text-[8px] font-bold uppercase py-0 px-2 bg-red-50 text-red-600 border-red-100">Required</Badge>}
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[11px] font-black uppercase italic text-slate-700 tracking-tighter">{renderString(field.label || field.name || 'New Field', lang)}</span>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <Badge variant="outline" className="text-[7px] font-bold uppercase py-0 px-1 bg-indigo-50/50 text-indigo-500 border-indigo-100/50">{field.type || 'text'}</Badge>
+                                                                        {field.required && <Badge variant="outline" className="text-[7px] font-black uppercase py-0 px-1 bg-red-50/50 text-red-500 border-red-100/50">REQ</Badge>}
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                             
                                                             {/* Spacer for actions overlay */}
-                                                            <div className="w-32" />
+                                                            <div className="w-24" />
                                                         </div>
                                                     </AccordionTrigger>
 
                                                     {/* Actions Overlay (Outside of Trigger button to avoid nested buttons) */}
-                                                    <div className="absolute right-10 top-4 flex items-center gap-1 z-20">
-                                                        <div className="flex items-center gap-0.5 mr-2">
+                                                    <div className="absolute right-8 top-2 flex items-center gap-0.5 z-20">
+                                                        <div className="flex items-center gap-0.5 mr-1">
                                                             <Button 
                                                                 variant="ghost" 
                                                                 size="icon" 
                                                                 disabled={editingEntity.isSystem}
-                                                                className="h-8 w-8 text-slate-300 rounded-lg hover:text-indigo-600 disabled:opacity-20 translate-y-[2px]"
+                                                                className="h-7 w-7 text-slate-200 rounded-lg hover:text-indigo-600 disabled:opacity-20"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     duplicateField(idx);
                                                                 }}
                                                             >
-                                                                <Copy size={12} />
+                                                                <Copy size={11} />
                                                             </Button>
                                                             <Button 
                                                                 variant="ghost" 
                                                                 size="icon" 
                                                                 disabled={editingEntity.isSystem || idx === 0}
-                                                                className="h-8 w-8 text-slate-300 rounded-lg hover:text-indigo-600 disabled:opacity-20 translate-y-[2px]"
+                                                                className="h-7 w-7 text-slate-200 rounded-lg hover:text-indigo-600 disabled:opacity-20"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     moveField(idx, -1);
@@ -675,14 +868,34 @@ export function EntityDefinitionsPanel() {
                                                                 const fieldName = editingEntity.fields[idx].name;
                                                                 const fields = editingEntity.fields.filter((_: any, i: number) => i !== idx);
 
-                                                                // Reset visibility logic for fields that depended on the deleted field
+                                                                // Enterprise Level 8: Cascade delete from all references
+                                                                const uiConfig = { ...editingEntity.uiConfig };
+                                                                
+                                                                // 1. Remove from List Columns
+                                                                if (uiConfig.list?.columns) {
+                                                                    uiConfig.list.columns = uiConfig.list.columns.filter((c: string) => c !== fieldName);
+                                                                }
+
+                                                                // 2. Remove from Form Sections
+                                                                if (uiConfig.form?.sections) {
+                                                                    uiConfig.form.sections = uiConfig.form.sections.map((s: any) => ({
+                                                                        ...s,
+                                                                        fields: s.fields?.filter((f: string) => f !== fieldName)
+                                                                    }));
+                                                                }
+
+                                                                // 3. Update Display Field (fallback to 'id' if removed)
+                                                                let displayField = editingEntity.displayField;
+                                                                if (displayField === fieldName) displayField = 'id';
+
+                                                                // 4. Reset visibility logic for fields that depended on the deleted field
                                                                 fields.forEach((f: any, fIdx: number) => {
                                                                     if (f.visibility?.dependsOn === fieldName) {
                                                                         fields[fIdx].visibility = { type: 'always' };
                                                                     }
                                                                 });
 
-                                                                setEditingEntity({ ...editingEntity, fields });
+                                                                setEditingEntity({ ...editingEntity, fields, uiConfig, displayField });
                                                             }}
                                                         >
                                                             <Trash2 size={14} />
@@ -705,14 +918,34 @@ export function EntityDefinitionsPanel() {
                                                                         const newName = e.target.value.toLowerCase().replace(/\s+/g, '_');
                                                                         fields[idx].name = newName;
 
-                                                                        // Update visibility dependencies
+                                                                        // Enterprise Level 8: Cascade rename to all references
+                                                                        const uiConfig = { ...editingEntity.uiConfig };
+                                                                        
+                                                                        // 1. Update List Columns
+                                                                        if (uiConfig.list?.columns) {
+                                                                            uiConfig.list.columns = uiConfig.list.columns.map((c: string) => c === oldName ? newName : c);
+                                                                        }
+
+                                                                        // 2. Update Form Sections
+                                                                        if (uiConfig.form?.sections) {
+                                                                            uiConfig.form.sections = uiConfig.form.sections.map((s: any) => ({
+                                                                                ...s,
+                                                                                fields: s.fields?.map((f: string) => f === oldName ? newName : f)
+                                                                            }));
+                                                                        }
+
+                                                                        // 3. Update Display Field
+                                                                        let displayField = editingEntity.displayField;
+                                                                        if (displayField === oldName) displayField = newName;
+
+                                                                        // 4. Update visibility transitions
                                                                         fields.forEach((f, fIdx) => {
                                                                             if (f.visibility?.dependsOn === oldName) {
                                                                                 fields[fIdx].visibility = { ...f.visibility, dependsOn: newName };
                                                                             }
                                                                         });
 
-                                                                        setEditingEntity({ ...editingEntity, fields });
+                                                                        setEditingEntity({ ...editingEntity, fields, uiConfig, displayField });
                                                                     }}
                                                                     disabled={editingEntity.isSystem}
                                                                     className="h-8 rounded-lg text-xs font-mono uppercase bg-white"
@@ -724,8 +957,16 @@ export function EntityDefinitionsPanel() {
                                                                     placeholder="Field Label" 
                                                                     value={renderString(field.label, lang)}
                                                                     onChange={(e) => {
+                                                                        const val = e.target.value;
                                                                         const fields = [...editingEntity.fields];
-                                                                        fields[idx].label = e.target.value;
+                                                                        const current = fields[idx].label;
+
+                                                                        if (typeof current === 'object' && current !== null) {
+                                                                            fields[idx].label = { ...current, [lang]: val };
+                                                                        } else {
+                                                                            fields[idx].label = { ro: lang === 'ro' ? val : current, en: lang === 'en' ? val : current };
+                                                                        }
+                                                                        
                                                                         setEditingEntity({ ...editingEntity, fields });
                                                                     }}
                                                                     className="h-8 rounded-lg text-xs font-bold bg-white"
@@ -1041,7 +1282,7 @@ export function EntityDefinitionsPanel() {
                                                                         const label = isObj ? opt.label : opt;
                                                                         
                                                                         return (
-                                                                            <div key={`${val}-${optIdx}`} className="flex items-center gap-2 bg-white border border-slate-200 pl-1.5 pr-2 py-1 rounded-lg shadow-sm group/opt transition-all hover:border-indigo-200">
+                                                                            <div key={`option-row-${optIdx}`} className="flex items-center gap-2 bg-white border border-slate-200 pl-1.5 pr-2 py-1 rounded-lg shadow-sm group/opt transition-all hover:border-indigo-200">
                                                                                 <input 
                                                                                     type="color"
                                                                                     value={isObj ? (opt.color || '#6366f1') : '#6366f1'}
@@ -1456,11 +1697,19 @@ export function EntityDefinitionsPanel() {
                                                                 <Label className="text-[9px] font-bold">Placeholder</Label>
                                                                 <Input 
                                                                     placeholder="e.g. Enter name..." 
-                                                                    value={field.ui?.placeholder || ''}
+                                                                    value={renderString(field.ui?.placeholder, lang)}
                                                                     onChange={(e) => {
+                                                                        const val = e.target.value;
                                                                         const fields = [...editingEntity.fields];
                                                                         if (!fields[idx].ui) fields[idx].ui = {};
-                                                                        fields[idx].ui.placeholder = e.target.value;
+                                                                        const current = fields[idx].ui.placeholder;
+
+                                                                        if (typeof current === 'object' && current !== null) {
+                                                                            fields[idx].ui.placeholder = { ...current, [lang]: val };
+                                                                        } else {
+                                                                            fields[idx].ui.placeholder = { ro: lang === 'ro' ? val : current, en: lang === 'en' ? val : current };
+                                                                        }
+
                                                                         setEditingEntity({ ...editingEntity, fields });
                                                                     }}
                                                                     className="h-8 rounded-lg text-xs"
@@ -1470,11 +1719,19 @@ export function EntityDefinitionsPanel() {
                                                                 <Label className="text-[9px] font-bold">Help Text (Tooltip)</Label>
                                                                 <Input 
                                                                     placeholder="More info..." 
-                                                                    value={field.ui?.helpText || ''}
+                                                                    value={renderString(field.ui?.helpText, lang)}
                                                                     onChange={(e) => {
+                                                                        const val = e.target.value;
                                                                         const fields = [...editingEntity.fields];
                                                                         if (!fields[idx].ui) fields[idx].ui = {};
-                                                                        fields[idx].ui.helpText = e.target.value;
+                                                                        const current = fields[idx].ui.helpText;
+
+                                                                        if (typeof current === 'object' && current !== null) {
+                                                                            fields[idx].ui.helpText = { ...current, [lang]: val };
+                                                                        } else {
+                                                                            fields[idx].ui.helpText = { ro: lang === 'ro' ? val : current, en: lang === 'en' ? val : current };
+                                                                        }
+
                                                                         setEditingEntity({ ...editingEntity, fields });
                                                                     }}
                                                                     className="h-8 rounded-lg text-xs"
@@ -1697,7 +1954,7 @@ export function EntityDefinitionsPanel() {
                                                 <Input 
                                                     type="number" 
                                                     placeholder="50" 
-                                                    defaultValue={editingEntity.uiConfig?.list?.pageSize || 50}
+                                                    value={editingEntity.uiConfig?.list?.pageSize || 50}
                                                     onChange={(e) => {
                                                         const config = { ...editingEntity.uiConfig, list: { ...editingEntity.uiConfig?.list, pageSize: Number(e.target.value) } };
                                                         setEditingEntity({ ...editingEntity, uiConfig: config });
@@ -1719,7 +1976,7 @@ export function EntityDefinitionsPanel() {
                                                     Form Column Layout
                                                 </label>
                                                 <select 
-                                                    defaultValue={editingEntity.uiConfig?.form?.columns || '2'}
+                                                    value={editingEntity.uiConfig?.form?.columns || '2'}
                                                     onChange={(e) => {
                                                         const config = { ...editingEntity.uiConfig, form: { ...editingEntity.uiConfig?.form, columns: e.target.value } };
                                                         setEditingEntity({ ...editingEntity, uiConfig: config });
@@ -1729,12 +1986,31 @@ export function EntityDefinitionsPanel() {
                                                     <option value="1">1 Column</option>
                                                     <option value="2">2 Columns</option>
                                                     <option value="3">3 Columns</option>
+                                                    <option value="4">4 Columns</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-bold uppercase text-slate-600 flex items-center gap-2">
+                                                    <LayoutGrid size={12} className="text-indigo-500" />
+                                                    Modal Column Layout
+                                                </label>
+                                                <select 
+                                                    value={editingEntity.uiConfig?.form?.modalColumns || editingEntity.uiConfig?.form?.columns || '1'}
+                                                    onChange={(e) => {
+                                                        const config = { ...editingEntity.uiConfig, form: { ...editingEntity.uiConfig?.form, modalColumns: e.target.value } };
+                                                        setEditingEntity({ ...editingEntity, uiConfig: config });
+                                                    }}
+                                                    className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold bg-white px-3"
+                                                >
+                                                    <option value="1">1 Column (Default)</option>
+                                                    <option value="2">2 Columns</option>
+                                                    <option value="3">3 Columns</option>
                                                 </select>
                                             </div>
                                             <div className="flex items-center justify-between">
                                                 <label className="text-[9px] font-bold uppercase text-slate-600">Show Timestamps</label>
                                                 <Switch 
-                                                    defaultChecked={editingEntity.uiConfig?.form?.showTimestamps !== false}
+                                                    checked={editingEntity.uiConfig?.form?.showTimestamps !== false}
                                                     onCheckedChange={(checked) => {
                                                         const config = { ...editingEntity.uiConfig, form: { ...editingEntity.uiConfig?.form, showTimestamps: checked } };
                                                         setEditingEntity({ ...editingEntity, uiConfig: config });
@@ -1744,7 +2020,7 @@ export function EntityDefinitionsPanel() {
                                             <div className="flex items-center justify-between">
                                                 <label className="text-[9px] font-bold uppercase text-slate-600">Show Inbound Relations</label>
                                                 <Switch 
-                                                    defaultChecked={editingEntity.uiConfig?.form?.showChildren !== false}
+                                                    checked={editingEntity.uiConfig?.form?.showChildren !== false}
                                                     onCheckedChange={(checked) => {
                                                         const config = { ...editingEntity.uiConfig, form: { ...editingEntity.uiConfig?.form, showChildren: checked } };
                                                         setEditingEntity({ ...editingEntity, uiConfig: config });
@@ -1752,11 +2028,15 @@ export function EntityDefinitionsPanel() {
                                                 />
                                             </div>
                                             <div className="flex items-center justify-between">
-                                                <label className="text-[9px] font-bold uppercase text-slate-600">Show Archive/Delete</label>
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">Show Actions</label>
                                                 <Switch 
-                                                    defaultChecked={editingEntity.uiConfig?.form?.showActions !== false}
+                                                    checked={editingEntity.uiConfig?.list?.showActions === true}
                                                     onCheckedChange={(checked) => {
-                                                        const config = { ...editingEntity.uiConfig, form: { ...editingEntity.uiConfig?.form, showActions: checked } };
+                                                        const config = { 
+                                                            ...editingEntity.uiConfig, 
+                                                            form: { ...editingEntity.uiConfig?.form, showActions: checked },
+                                                            list: { ...editingEntity.uiConfig?.list, showActions: checked }
+                                                        };
                                                         setEditingEntity({ ...editingEntity, uiConfig: config });
                                                     }}
                                                 />
@@ -1878,6 +2158,30 @@ export function EntityDefinitionsPanel() {
                                             />
                                         </div>
 
+                                        <div className="space-y-2 pt-2 border-t border-slate-200/50">
+                                            <Label className="text-[8px] font-black uppercase tracking-widest text-slate-400">Menu Label Override</Label>
+                                            <Input 
+                                                placeholder={renderString(editingEntity.labelPlural || editingEntity.label, lang)}
+                                                value={renderString(editingEntity.menuConfig?.label, lang)}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    const current = editingEntity.menuConfig?.label;
+                                                    let newLabel: any;
+                                                    if (typeof current === 'object' && current !== null) {
+                                                        newLabel = { ...current, [lang]: val };
+                                                    } else {
+                                                        newLabel = { ro: lang === 'ro' ? val : (current || ''), en: lang === 'en' ? val : (current || '') };
+                                                    }
+                                                    setEditingEntity({ 
+                                                        ...editingEntity, 
+                                                        menuConfig: { ...editingEntity.menuConfig, label: newLabel } 
+                                                    });
+                                                }}
+                                                className="h-9 rounded-xl border-slate-200 text-xs font-medium"
+                                            />
+                                            <p className="text-[7px] text-slate-400 italic">If empty, defaults to Plural Label</p>
+                                        </div>
+
                                         <div className="flex items-center justify-between">
                                             <div className="space-y-0.5">
                                                 <label className="text-[9px] font-black uppercase text-slate-600">Vizibil în meniul "Adaugă Nou"</label>
@@ -1886,7 +2190,8 @@ export function EntityDefinitionsPanel() {
                                             <Switch 
                                                 checked={!!editingEntity.menuConfig?.showInNewMenu}
                                                 onCheckedChange={(checked) => {
-                                                    const config = { ...editingEntity.menuConfig, showInNewMenu: checked };
+                                                    const currentConfig = editingEntity.menuConfig || {};
+                                                    const config = { ...currentConfig, showInNewMenu: checked };
                                                     setEditingEntity({ ...editingEntity, menuConfig: config });
                                                 }}
                                             />
@@ -1910,7 +2215,21 @@ export function EntityDefinitionsPanel() {
                                                 </select>
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-[9px] font-black uppercase text-slate-600">Pictogramă (Lucide)</label>
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[9px] font-black uppercase text-slate-600">Pictogramă (Lucide)</label>
+                                                    {editingEntity.menuConfig?.icon && (
+                                                        <button 
+                                                            onClick={() => {
+                                                                const config = { ...editingEntity.menuConfig };
+                                                                delete config.icon;
+                                                                setEditingEntity({ ...editingEntity, menuConfig: config });
+                                                            }}
+                                                            className="text-[7px] font-bold text-primary hover:underline uppercase"
+                                                        >
+                                                            Reset la Default
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 <IconPicker 
                                                     value={editingEntity.menuConfig?.icon || editingEntity.icon || 'Box'}
                                                     onChange={(val) => {
@@ -1918,6 +2237,9 @@ export function EntityDefinitionsPanel() {
                                                         setEditingEntity({ ...editingEntity, menuConfig: config });
                                                     }}
                                                 />
+                                                <p className="text-[7px] text-slate-400 italic">
+                                                    {editingEntity.menuConfig?.icon ? "Folosește icon specific pentru meniu" : "Urmărește icon-ul de bază (Basic Tab)"}
+                                                </p>
                                             </div>
                                         </div>
 
@@ -1927,7 +2249,7 @@ export function EntityDefinitionsPanel() {
                                                 <Input 
                                                     type="number" 
                                                     placeholder="100" 
-                                                    defaultValue={editingEntity.menuConfig?.priority || 100}
+                                                    value={editingEntity.menuConfig?.priority || 100}
                                                     onChange={(e) => {
                                                         const config = { ...editingEntity.menuConfig, priority: Number(e.target.value) };
                                                         setEditingEntity({ ...editingEntity, menuConfig: config });
@@ -1936,10 +2258,10 @@ export function EntityDefinitionsPanel() {
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-[9px] font-black uppercase text-slate-600">Badge Text</label>
+                                                <Label className="text-[9px] font-black uppercase text-slate-600">Badge Text</Label>
                                                 <Input 
                                                     placeholder="e.g. NOU, BETA" 
-                                                    defaultValue={editingEntity.menuConfig?.badge || ''}
+                                                    value={editingEntity.menuConfig?.badge || ''}
                                                     onChange={(e) => {
                                                         const config = { ...editingEntity.menuConfig, badge: e.target.value };
                                                         setEditingEntity({ ...editingEntity, menuConfig: config });
@@ -2013,7 +2335,7 @@ export function EntityDefinitionsPanel() {
                                                 <label className="text-[9px] font-black uppercase text-slate-600">Nr. Elemente</label>
                                                 <Input 
                                                     type="number" 
-                                                    defaultValue={editingEntity.dashboardConfig?.itemsToShow || 5}
+                                                    value={editingEntity.dashboardConfig?.itemsToShow || 5}
                                                     onChange={(e) => {
                                                         const config = { ...editingEntity.dashboardConfig, itemsToShow: Number(e.target.value) };
                                                         setEditingEntity({ ...editingEntity, dashboardConfig: config });
@@ -2221,6 +2543,136 @@ export function EntityDefinitionsPanel() {
                                 </div>
                             </div>
                         </TabsContent>
+
+                        {/* FLOW TAB */}
+                        <TabsContent value="flow" className="space-y-6 mt-6">
+                            <div className="grid grid-cols-1 gap-8">
+                                <div className="space-y-5">
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Autonomous Workflow Triggers</Label>
+                                            <p className="text-[9px] text-slate-400 italic">Define what happens when an entity changes its status.</p>
+                                        </div>
+                                        <Button 
+                                            size="sm" 
+                                            variant="outline" 
+                                            className="h-7 text-[9px] font-bold uppercase"
+                                            onClick={() => {
+                                                const flowRules = { ...(editingEntity.flowRules || {}) };
+                                                const newStatus = prompt("Nume status (ex: pending, approved):");
+                                                if (newStatus && !flowRules[newStatus]) {
+                                                    flowRules[newStatus] = { nextStates: [], action: "", icon: "Circle", requiresFields: [] };
+                                                    setEditingEntity({ ...editingEntity, flowRules });
+                                                }
+                                            }}
+                                        >
+                                            <Plus size={12} className="mr-1" /> Add Rule
+                                        </Button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {Object.entries(editingEntity.flowRules || {}).map(([status, rule]: [string, any]) => (
+                                            <div key={status} className="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm space-y-4 group hover:border-primary/20 transition-all">
+                                                <div className="flex items-center justify-between">
+                                                    <Badge className="bg-primary/10 text-primary border-none text-[10px] uppercase font-black px-3 py-1">
+                                                        {status}
+                                                    </Badge>
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="icon" 
+                                                        className="h-6 w-6 text-slate-300 hover:text-destructive"
+                                                        onClick={() => {
+                                                            const flowRules = { ...editingEntity.flowRules };
+                                                            delete flowRules[status];
+                                                            setEditingEntity({ ...editingEntity, flowRules });
+                                                        }}
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </Button>
+                                                </div>
+
+                                                <div className="space-y-3">
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[8px] font-bold uppercase text-slate-400">Action Type</Label>
+                                                        <select 
+                                                            className="w-full h-8 rounded-xl border border-slate-100 text-[10px] font-bold bg-slate-50 px-2"
+                                                            value={rule.action || ''}
+                                                            onChange={(e) => {
+                                                                const flowRules = { ...editingEntity.flowRules };
+                                                                flowRules[status] = { ...rule, action: e.target.value };
+                                                                setEditingEntity({ ...editingEntity, flowRules });
+                                                            }}
+                                                        >
+                                                            <option value="">No Auto-Trigger</option>
+                                                            <option value="email_admin">Email Admin</option>
+                                                            <option value="slack_notify">Slack Notification</option>
+                                                            <option value="whatsapp_client">WhatsApp Client</option>
+                                                            <option value="generate_pdf">Generate PDF</option>
+                                                            <option value="webhook">External Webhook</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[8px] font-bold uppercase text-slate-400">Buttons Icon</Label>
+                                                        <div className="flex items-center gap-2">
+                                                            <IconPicker 
+                                                                value={rule.icon || 'Circle'} 
+                                                                onChange={(icon) => {
+                                                                    const flowRules = { ...editingEntity.flowRules };
+                                                                    flowRules[status] = { ...rule, icon };
+                                                                    setEditingEntity({ ...editingEntity, flowRules });
+                                                                }}
+                                                            />
+                                                            <span className="text-[10px] font-mono text-slate-400">{rule.icon || 'Circle'}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[8px] font-bold uppercase text-slate-400">Validation (Required Fields)</Label>
+                                                        <div className="flex flex-wrap gap-1 border border-slate-100 rounded-xl p-2 bg-slate-50 min-h-[40px]">
+                                                            {editingEntity.fields.map((f: any) => (
+                                                                <div 
+                                                                    key={f.name}
+                                                                    className={cn(
+                                                                        "text-[8px] px-2 py-0.5 rounded-full cursor-pointer transition-all border",
+                                                                        rule.requiresFields?.includes(f.name) 
+                                                                            ? "bg-primary text-white border-primary" 
+                                                                            : "bg-white text-slate-400 border-slate-200 hover:border-primary/30"
+                                                                    )}
+                                                                    onClick={() => {
+                                                                        const flowRules = { ...editingEntity.flowRules };
+                                                                        const fields = rule.requiresFields || [];
+                                                                        const newFields = fields.includes(f.name) 
+                                                                            ? fields.filter((fn: string) => fn !== f.name)
+                                                                            : [...fields, f.name];
+                                                                        flowRules[status] = { ...rule, requiresFields: newFields };
+                                                                        setEditingEntity({ ...editingEntity, flowRules });
+                                                                    }}
+                                                                >
+                                                                    {renderString(f.label || f.name, lang)}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    
+                                    {Object.keys(editingEntity.flowRules || {}).length === 0 && (
+                                        <div className="p-12 border-2 border-dashed border-slate-100 rounded-[40px] flex flex-col items-center justify-center text-center space-y-2">
+                                            <div className="h-12 w-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300">
+                                                <Activity size={24} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <h4 className="text-xs font-bold text-slate-500 uppercase">No Workflow Rules</h4>
+                                                <p className="text-[10px] text-slate-400 max-w-[200px]">Define actions that trigger automatically when status changes.</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </TabsContent>
                     </Tabs>
 
                     <div className="pt-4">
@@ -2247,6 +2699,227 @@ export function EntityDefinitionsPanel() {
                 </div>
             </div>
 
+            {/* Blueprint Gallery Dialog */}
+            <Dialog open={blueprintDialog} onOpenChange={setBlueprintDialog}>
+                <DialogContent className="max-w-4xl bg-white/95 backdrop-blur-xl border-slate-200 rounded-[2rem] shadow-2xl p-0 overflow-hidden">
+                    <DialogHeader className="p-8 pb-4 border-b border-slate-100 bg-primary/5">
+                        <DialogTitle className="text-xl font-black uppercase italic tracking-tight flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 rounded-xl text-primary">
+                                <Sparkles size={20} />
+                            </div>
+                            Module Blueprints
+                        </DialogTitle>
+                        <DialogDescription className="text-xs font-medium text-slate-500">
+                            Alege un punct de plecare pentru noua ta entitate sau începe de la zero.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto">
+                        {/* Start from Scratch */}
+                        <div 
+                            onClick={() => startNew()}
+                            className="p-6 border-2 border-dashed border-slate-200 rounded-[2rem] hover:border-primary hover:bg-primary/5 cursor-pointer transition-all group flex flex-col items-center justify-center text-center gap-3"
+                        >
+                            <div className="p-3 bg-slate-100 rounded-2xl text-slate-400 group-hover:bg-primary/10 group-hover:text-primary transition-all">
+                                <Plus size={24} />
+                            </div>
+                            <div>
+                                <h5 className="font-black uppercase italic text-sm text-slate-700 group-hover:text-primary">Blank Slate</h5>
+                                <p className="text-[10px] text-slate-400 font-medium">Începe o entitate fără câmpuri predefinite</p>
+                            </div>
+                        </div>
+
+                        {/* Blueprints from Registry */}
+                        {constants?.BLUEPRINT && Object.entries(constants.BLUEPRINT).map(([id, bp]: [string, any]) => (
+                            <div 
+                                key={id}
+                                onClick={() => startNew({ ...bp, name: id })}
+                                className="p-6 border-2 border-slate-100 rounded-[2rem] hover:border-primary hover:bg-primary/5 cursor-pointer transition-all group space-y-4"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={cn(
+                                        "p-3 rounded-2xl text-white shadow-lg shadow-primary/20",
+                                        getThemeClasses(bp.colorTheme || 'blue').bg
+                                    )}>
+                                        <Box size={20} />
+                                    </div>
+                                    <h5 className="font-black uppercase italic text-sm text-slate-700 group-hover:text-primary">{renderString(bp.label, lang)}</h5>
+                                </div>
+                                <p className="text-[10px] text-slate-400 font-medium line-clamp-2">
+                                    {renderString(bp.description || `Template pentru ${renderString(bp.label, lang)} cu ${bp.fields?.length || 0} câmpuri standard.`, lang)}
+                                </p>
+                                <div className="flex flex-wrap gap-1">
+                                    {bp.fields?.slice(0, 3).map((f: any) => (
+                                        <Badge key={f.id} variant="outline" className="text-[8px] font-bold py-0 h-4 border-slate-200 bg-white">
+                                            {f.id}
+                                        </Badge>
+                                    ))}
+                                    {(bp.fields?.length || 0) > 3 && <span className="text-[8px] text-slate-400">+{bp.fields.length - 3}</span>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <DialogFooter className="p-6 border-t border-slate-100 bg-slate-50/50">
+                        <Button 
+                            variant="ghost"
+                            onClick={() => setBlueprintDialog(false)}
+                            className="w-full rounded-2xl font-black uppercase italic tracking-tight"
+                        >
+                            Anulează
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Dry Run Results Dialog */}
+            <Dialog open={dryRunDialog.open} onOpenChange={(open) => !open && setDryRunDialog({ ...dryRunDialog, open })}>
+                <DialogContent className="max-w-2xl bg-white/95 backdrop-blur-xl border-slate-200 rounded-[2rem] shadow-2xl p-0 overflow-hidden">
+                    <DialogHeader className="p-8 pb-4 border-b border-slate-100 bg-slate-50/50">
+                        <DialogTitle className="text-xl font-black uppercase italic tracking-tight flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 rounded-xl text-primary">
+                                <Code size={20} />
+                            </div>
+                            SQL Preview (Dry Run)
+                        </DialogTitle>
+                        <DialogDescription className="text-xs font-medium text-slate-500">
+                            Aceste comenzi DDL vor fi executate pe baza de date dacă salvezi modificările.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="p-8 max-h-[60vh] overflow-y-auto">
+                        {dryRunDialog.results && Object.keys(dryRunDialog.results).length > 0 ? (
+                            <div className="space-y-6">
+                                {Object.entries(dryRunDialog.results).map(([entityName, sqls]) => (
+                                    <div key={entityName} className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <Badge className="bg-slate-900 text-white font-mono uppercase text-[9px] px-2">
+                                                {entityName}
+                                            </Badge>
+                                            <div className="h-px flex-1 bg-slate-100" />
+                                        </div>
+                                        {sqls.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {sqls.map((sql, idx) => (
+                                                    <div key={idx} className="group relative">
+                                                        <pre className="p-4 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[11px] text-slate-700 overflow-x-auto">
+                                                            {sql};
+                                                        </pre>
+                                                        <button 
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(sql);
+                                                                toast.success("Copied to clipboard");
+                                                            }}
+                                                            className="absolute right-2 top-2 p-1.5 opacity-0 group-hover:opacity-100 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-primary transition-all shadow-sm"
+                                                        >
+                                                            <Copy size={12} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-3">
+                                                <div className="p-1.5 bg-emerald-500 rounded-full text-white">
+                                                    <Zap size={10} />
+                                                </div>
+                                                <p className="text-[11px] font-bold text-emerald-700 uppercase italic">
+                                                    Nicio modificare necesară (Schema deja sincronizată)
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                <Sparkles className="h-12 w-12 text-slate-200 mb-4" />
+                                <p className="text-sm font-black text-slate-400 uppercase italic">
+                                    Nicio modificare de structură detectată
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter className="p-6 border-t border-slate-100 bg-slate-50/50">
+                        <Button 
+                            onClick={() => setDryRunDialog({ ...dryRunDialog, open: false })}
+                            className="w-full rounded-2xl font-black uppercase italic tracking-tight"
+                        >
+                            Am înțeles
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Garbage Collector Dialog */}
+            <Dialog open={garbageDialog.open} onOpenChange={(open) => !open && setGarbageDialog({ ...garbageDialog, open })}>
+                <DialogContent className="max-w-xl bg-white/95 backdrop-blur-xl border-slate-200 rounded-[2rem] shadow-2xl p-0 overflow-hidden">
+                    <DialogHeader className="p-8 pb-4 border-b border-slate-100 bg-amber-50/30">
+                        <DialogTitle className="text-xl font-black uppercase italic tracking-tight flex items-center gap-3">
+                            <div className="p-2 bg-amber-100 rounded-xl text-amber-600">
+                                <Trash2 size={20} />
+                            </div>
+                            Database Garbage Collector
+                        </DialogTitle>
+                        <DialogDescription className="text-xs font-medium text-slate-500">
+                            Tabele găsite în baza de date care nu mai au o definiție activă în sistem.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="p-8 max-h-[50vh] overflow-y-auto">
+                        {garbageDialog.orphans.length > 0 ? (
+                            <div className="space-y-3">
+                                {garbageDialog.orphans.map((orphan) => (
+                                    <div key={orphan.name} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl group transition-all hover:bg-white hover:shadow-sm">
+                                        <div className="space-y-1">
+                                            <p className="font-mono text-xs font-bold text-slate-700">{orphan.name}</p>
+                                            <div className="flex items-center gap-2">
+                                                <Badge variant="outline" className="text-[8px] font-black uppercase bg-white">
+                                                    {orphan.rowCount} Rows
+                                                </Badge>
+                                                {orphan.rowCount === 0 && (
+                                                    <span className="text-[9px] text-emerald-600 font-bold uppercase italic flex items-center gap-1">
+                                                        <Zap size={8} /> Safe to remove
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <Button 
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => deleteOrphanTable(orphan.name)}
+                                            className="rounded-xl h-8 w-8 p-0 text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                                        >
+                                            <Trash2 size={14} />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                <Shield className="h-12 w-12 text-emerald-100 mb-4" />
+                                <p className="text-sm font-black text-emerald-600 uppercase italic">
+                                    Baza de date este curată
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-medium mt-1">
+                                    Niciun tabel orfan detectat.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter className="p-6 border-t border-slate-100 bg-slate-50/50">
+                        <Button 
+                            variant="outline"
+                            onClick={() => setGarbageDialog({ ...garbageDialog, open: false })}
+                            className="w-full rounded-2xl font-black uppercase italic tracking-tight"
+                        >
+                            Închide
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            
             {/* Delete Confirmation Dialog */}
             <Dialog open={deleteDialog.open} onOpenChange={(open) => !open && setDeleteDialog({ ...deleteDialog, open })}>
                 <DialogContent className="sm:max-w-[425px]">
@@ -2328,6 +3001,69 @@ export function EntityDefinitionsPanel() {
                             className="rounded-xl font-black uppercase italic text-[10px] px-6"
                         >
                             Confirmă Ștergerea
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Level 9 Self-Healing Dialog */}
+            <Dialog open={healingDialog.open} onOpenChange={(open) => setHealingDialog({ ...healingDialog, open })}>
+                <DialogContent className="max-w-2xl rounded-3xl border-slate-200/50">
+                    <DialogHeader>
+                        <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                            <Sparkles className="h-6 w-6 text-primary" />
+                        </div>
+                        <DialogTitle className="text-xl font-black italic uppercase tracking-tighter">Autonomous Intelligence Hub (Level 9)</DialogTitle>
+                        <DialogDescription className="text-xs font-medium text-slate-500">
+                            Analiza de performanță în timp real și optimizarea automată a bazei de date.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                        {(!healingDialog.report || healingDialog.report.length === 0) ? (
+                            <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                                <Activity className="h-8 w-8 text-slate-300 mx-auto mb-3" />
+                                <p className="text-sm font-bold text-slate-500 italic uppercase">Nu au fost detectate interogări lente.</p>
+                                <p className="text-[10px] text-slate-400 font-medium">Sistemul funcționează la parametri optimi.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {healingDialog.report.map((item, idx) => (
+                                    <div key={idx} className="p-4 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-start gap-4">
+                                        <div className={cn("mt-1", item.action === 'INDEX_CREATED' ? "text-emerald-500" : "text-amber-500")}>
+                                            {item.action === 'INDEX_CREATED' ? <Zap className="h-5 w-5" /> : <Info className="h-5 w-5" />}
+                                        </div>
+                                        <div className="flex-1 space-y-1">
+                                            <div className="flex items-center justify-between">
+                                                <Badge variant="outline" className="text-[9px] font-black uppercase tracking-tighter px-2 border-slate-200 text-slate-400">
+                                                    {item.table}
+                                                </Badge>
+                                                <span className="text-[9px] font-black uppercase italic text-slate-300">{item.action}</span>
+                                            </div>
+                                            <p className="text-[10px] font-mono bg-slate-50 p-2 rounded-lg text-slate-600 line-clamp-1">{(item as any).pattern}</p>
+                                            <p className="text-[11px] font-bold text-slate-700">
+                                                {item.action === 'INDEX_CREATED' ? 'Indice creat automat pentru optimizare scanare.' : 
+                                                 item.action === 'AI_ERROR' ? `Eroare AI: ${item.error || 'Nu s-a putut contacta LLM'}` :
+                                                 item.reason || 'Optimizare planificată.'}
+                                            </p>
+                                            {item.sql && (
+                                                <div className="mt-2 bg-slate-900 p-2 rounded-xl text-[9px] font-mono text-emerald-400 leading-tight">
+                                                    {item.sql}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button 
+                            onClick={() => setHealingDialog({ open: false, report: null })}
+                            className="rounded-xl font-black uppercase italic text-xs w-full"
+                        >
+                            Închide Raportul
                         </Button>
                     </DialogFooter>
                 </DialogContent>

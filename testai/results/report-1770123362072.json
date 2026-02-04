@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-02-03T12:56:02.072Z",
+  "total": 8,
+  "passed": 2,
+  "failed": 6,
+  "results": [
+    {
+      "type": "single-turn",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "success": true,
+      "duration": 1363,
+      "text": "Hello Test Passed."
+    },
+    {
+      "type": "single-turn",
+      "provider": "gemini",
+      "model": "gemini-1.5-flash",
+      "success": false,
+      "error": "{\"error\":{\"code\":401,\"message\":\"Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.\",\"status\":\"UNAUTHENTICATED\",\"details\":[{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"ACCESS_TOKEN_TYPE_UNSUPPORTED\",\"metadata\":{\"service\":\"generativelanguage.googleapis.com\",\"method\":\"google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent\"}}]}}"
+    },
+    {
+      "type": "single-turn",
+      "provider": "cloudflare",
+      "model": "@cf/meta/llama-3.1-8b-instruct",
+      "success": false,
+      "error": "{\"result\":null,\"success\":false,\"errors\":[{\"code\":10000,\"message\":\"Authentication error\"}],\"messages\":[]}"
+    },
+    {
+      "type": "single-turn",
+      "provider": "github",
+      "model": "Meta-Llama-3.1-70B-Instruct",
+      "success": false,
+      "error": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Invalid Github auth token\",\"details\":\"Invalid Github auth token\"}}"
+    },
+    {
+      "type": "single-turn",
+      "provider": "groq",
+      "model": "llama-3.1-8b-instant",
+      "success": false,
+      "error": "{\"error\":{\"message\":\"Invalid API Key\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}"
+    },
+    {
+      "type": "multi-turn",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "success": true,
+      "duration": 1151,
+      "text": "42"
+    },
+    {
+      "type": "multi-turn",
+      "provider": "gemini",
+      "model": "gemini-1.5-flash",
+      "success": false,
+      "error": "{\"error\":{\"code\":401,\"message\":\"Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.\",\"status\":\"UNAUTHENTICATED\",\"details\":[{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"ACCESS_TOKEN_TYPE_UNSUPPORTED\",\"metadata\":{\"service\":\"generativelanguage.googleapis.com\",\"method\":\"google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent\"}}]}}"
+    },
+    {
+      "type": "multi-turn",
+      "provider": "github",
+      "model": "Meta-Llama-3.1-70B-Instruct",
+      "success": false,
+      "error": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Invalid Github auth token\",\"details\":\"Invalid Github auth token\"}}"
+    }
+  ]
+}

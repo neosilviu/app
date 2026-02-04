@@ -117,10 +117,12 @@ export function HelpDialog({ id, trigger, onOpen }: HelpDialogProps) {
               <p className="text-sm font-medium animate-pulse text-muted-foreground">{renderString(t('help:ai_thinking'), lang)}</p>
             </div>
           ) : help ? (
-            <div className="prose prose-sm dark:prose-invert max-w-none 
+            <div 
+              key={`${id}-${help.title}`}
+              className="prose prose-sm dark:prose-invert max-w-none 
               prose-headings:font-bold prose-headings:text-primary prose-a:text-primary 
               prose-code:bg-muted prose-code:p-1 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
-              prose-ul:list-disc prose-ol:list-decimal">
+              prose-ul:list-disc prose-ol:list-decimal animate-in fade-in duration-500">
               <ReactMarkdown>{help.content}</ReactMarkdown>
             </div>
           ) : (
@@ -162,7 +164,7 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDraft, setGeneratedDraft] = useState<Partial<ChangelogEntry> | null>(null);
   const { user, hasPermission } = useAuth();
-  const { t } = useTranslation();
+  const { t } = useTranslation(['settings', 'common', 'changelog']);
 
   useEffect(() => {
     if (isOpen) {
@@ -226,8 +228,8 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
               <History size={20} />
             </div>
             <div className="text-left">
-              <DialogTitle className="text-lg font-black text-slate-900 dark:text-white uppercase italic tracking-tight">{renderString(t('settings:changelog.title'), lang)}</DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">{renderString(t('settings:changelog.description'), lang)}</DialogDescription>
+              <DialogTitle className="text-lg font-black text-slate-900 dark:text-white uppercase italic tracking-tight">{renderString(t('changelog:title'), lang)}</DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">{renderString(t('changelog:description'), lang)}</DialogDescription>
             </div>
           </div>
           <div className="flex items-center gap-2 mr-8">
@@ -240,7 +242,7 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
                 className="h-8 gap-2 bg-indigo-600 text-white border-none hover:bg-indigo-700 font-bold"
               >
                 <Sparkles size={14} className={isGenerating ? 'animate-pulse' : ''} />
-                {isGenerating ? 'Analiză AI...' : 'Generează'}
+                {isGenerating ? t('changelog:analyzing') : t('common:generate')}
               </Button>
             )}
           </div>
@@ -252,12 +254,12 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <Sparkles size={16} className="text-indigo-600" />
-                  <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-400 lg:uppercase tracking-widest">{t('common:ai_draft')}</span>
+                  <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-400 lg:uppercase tracking-widest">{t('changelog:ai_draft')}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="sm" className="h-7 text-[10px] text-slate-500" onClick={() => setGeneratedDraft(null)}>{t('common:cancel')}</Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] text-slate-500" onClick={() => setGeneratedDraft(null)}>{t('changelog:cancel')}</Button>
                   <Button size="sm" className="h-7 gap-1 bg-indigo-600 text-white text-[10px] font-bold" onClick={handlePublish}>
-                    <Send size={10} /> {t('common:publish')}
+                    <Send size={10} /> {t('changelog:publish')}
                   </Button>
                 </div>
               </div>
@@ -275,12 +277,12 @@ export function Changelog({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 space-y-4">
               <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">{t('settings:changelog.syncing')}</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">{t('changelog:syncing')}</p>
             </div>
           ) : Object.keys(logs).length === 0 ? (
             <div className="text-center py-20 text-slate-400">
               <History className="w-16 h-16 mx-auto mb-4 opacity-10" />
-              <p className="font-bold uppercase tracking-widest text-[10px]">{t('settings:changelog.no_changes')}</p>
+              <p className="font-bold uppercase tracking-widest text-[10px]">{t('changelog:no_changes')}</p>
             </div>
           ) : (
             Object.entries(logs).map(([module, entries]) => (

@@ -90,13 +90,16 @@ CREATE TABLE IF NOT EXISTS contact (
     name TEXT NOT NULL,
     email TEXT,
     phone TEXT,
+    company TEXT,
+    position TEXT,
     type TEXT DEFAULT 'personal', -- personal, business, etc.
     role TEXT DEFAULT 'member', -- Individual role within context
     permission TEXT, -- Granular individual permissions
     avatarUrl TEXT,
     tag TEXT DEFAULT '[]', -- JSON array of tag IDs
     metadata TEXT DEFAULT '{}',
-    status TEXT DEFAULT 'active',
+    status TEXT DEFAULT 'lead',
+    last_interaction DATETIME,
     archived INTEGER DEFAULT 0,
     archivedAt DATETIME,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -292,6 +295,22 @@ CREATE TABLE IF NOT EXISTS entity_attachment (
     category TEXT,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Level 8: Polimorphic Notes & Comments
+CREATE TABLE IF NOT EXISTS entity_note (
+    id TEXT PRIMARY KEY,
+    workspaceId TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+    entityType TEXT NOT NULL,
+    entityId TEXT NOT NULL,
+    content TEXT NOT NULL,
+    authorId TEXT REFERENCES contact(id) ON DELETE SET NULL,
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deletedAt DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_entity_note_target ON entity_note(entityType, entityId);
+CREATE INDEX IF NOT EXISTS idx_entity_note_workspace ON entity_note(workspaceId);
 
 CREATE INDEX IF NOT EXISTS idx_tag_assignment_lookup ON tag_assignment(entityId, entityType);
 CREATE INDEX IF NOT EXISTS idx_tag_assignment_tag ON tag_assignment(tagId);

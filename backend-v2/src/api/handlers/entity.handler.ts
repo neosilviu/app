@@ -62,8 +62,15 @@ const populateRelations = async (name: string, rows: any[], registry: any) => {
             
             if (def.type === 'relation-many') {
                 // 1. Get assignments from tag_assignment table
-                const placeholder = recordIds.map(() => '?').join(',');
-                const assignments = await db.query(`SELECT entityId, tagId FROM tag_assignment WHERE entityType = ? AND entityId IN (${placeholder})`, [name, ...recordIds]);
+                // Enterprise Level 8: Chunking to avoid D1 "too many SQL variables" limit
+                const assignments: any[] = [];
+                const CHUNK_SIZE = 80;
+                for (let i = 0; i < recordIds.length; i += CHUNK_SIZE) {
+                    const chunk = recordIds.slice(i, i + CHUNK_SIZE);
+                    const chunkPlaceholder = chunk.map(() => '?').join(',');
+                    const chunkAssignments = await db.query(`SELECT entityId, tagId FROM tag_assignment WHERE entityType = ? AND entityId IN (${chunkPlaceholder})`, [name, ...chunk]);
+                    assignments.push(...chunkAssignments);
+                }
                 
                 // 2. Also check if the column itself contains IDs (JSON/CSV)
                 const columnIds: string[] = [];
@@ -80,8 +87,15 @@ const populateRelations = async (name: string, rows: any[], registry: any) => {
                 const allRelatedIds = [...new Set([...assignments.map((a: any) => a.tagId), ...columnIds])].filter(Boolean);
 
                 if (allRelatedIds.length > 0) {
-                    const targetPlaceholder = allRelatedIds.map(() => '?').join(',');
-                    const relatedObjects = await db.query(`SELECT * FROM ${targetEntity} WHERE id IN (${targetPlaceholder})`, allRelatedIds);
+                    // Enterprise Level 8: Chunking to avoid D1 "too many SQL variables" limit
+                    const relatedObjects: any[] = [];
+                    const CHUNK_SIZE = 80;
+                    for (let i = 0; i < allRelatedIds.length; i += CHUNK_SIZE) {
+                        const chunk = allRelatedIds.slice(i, i + CHUNK_SIZE);
+                        const chunkPlaceholder = chunk.map(() => '?').join(',');
+                        const chunkResults = await db.query(`SELECT * FROM ${targetEntity} WHERE id IN (${chunkPlaceholder})`, chunk);
+                        relatedObjects.push(...chunkResults);
+                    }
                     const objectMap = new Map(relatedObjects.map((obj: any) => [obj.id, obj]));
 
                     for (const row of rows) {
@@ -105,8 +119,15 @@ const populateRelations = async (name: string, rows: any[], registry: any) => {
                 // Direct Relation
                 const allRelatedIds = [...new Set(rows.map(r => r[fieldName]))].filter(Boolean);
                 if (allRelatedIds.length > 0) {
-                    const targetPlaceholder = allRelatedIds.map(() => '?').join(',');
-                    const relatedObjects = await db.query(`SELECT * FROM ${targetEntity} WHERE id IN (${targetPlaceholder})`, allRelatedIds);
+                    // Enterprise Level 8: Chunking to avoid D1 "too many SQL variables" limit
+                    const relatedObjects: any[] = [];
+                    const CHUNK_SIZE = 80;
+                    for (let i = 0; i < allRelatedIds.length; i += CHUNK_SIZE) {
+                        const chunk = allRelatedIds.slice(i, i + CHUNK_SIZE);
+                        const chunkPlaceholder = chunk.map(() => '?').join(',');
+                        const chunkResults = await db.query(`SELECT * FROM ${targetEntity} WHERE id IN (${chunkPlaceholder})`, chunk);
+                        relatedObjects.push(...chunkResults);
+                    }
                     const objectMap = new Map(relatedObjects.map((obj: any) => [obj.id, obj]));
 
                     for (const row of rows) {

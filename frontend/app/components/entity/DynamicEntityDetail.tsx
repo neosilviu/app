@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, useParams, useOutletContext } from 'react-router';
-import { Save, ArrowLeft, Trash2, Shield, Clock, History, CheckCircle2, X, Plus, PlusCircle, ExternalLink, RefreshCw, MessageCircle, Phone, Send, Brain, Sparkles, Mail, HelpCircle, RotateCcw } from 'lucide-react';
+import { Save, ArrowLeft, Trash2, Shield, Clock, History, CheckCircle2, X, Plus, PlusCircle, ExternalLink, RefreshCw, MessageCircle, Phone, Send, Brain, Sparkles, Mail, HelpCircle, RotateCcw, Archive } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
@@ -49,14 +49,13 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         refreshConfig(true);
     }, [entityId, refreshConfig]);
     
-    // Normalize fields (Enterprise Level 8) - use the central Lens
-    const fieldsList = React.useMemo(() => {
-        const normalized = normalizeEntity(config);
-        return normalized.fields;
-    }, [config]);
+    // Normalize entity configuration (Enterprise Level 8)
+    const normalizedConfig = React.useMemo(() => normalizeEntity(config), [config]);
+    const fieldsList = normalizedConfig.fields;
+    const finalConfig = normalizedConfig; // Use normalized version for UI logic
 
     const isNew = recordId === 'new';
-    const features = config.features || {};
+    const features = finalConfig.features || {};
     
     // RBAC Permissions (Level 8)
     const canCreate = hasPermission(`${entityId}:create`) || hasPermission(`${entityId}:*`) || hasPermission('workspace:manage');
@@ -83,14 +82,14 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         if (!setDynamicTitle) return;
 
         const getDisplayName = () => {
-             const df = config.displayField || 'name';
+             const df = finalConfig.displayField || 'name';
              const val = formData[df] || formData.name || formData.Name || formData.label || formData.title || formData.displayName;
              if (!val || String(val) === 'undefined') return null;
              return val;
         };
 
         if (isNew) {
-            setDynamicTitle(renderString(t('common:new_record', { label: renderString(config.label, lang) }), lang));
+            setDynamicTitle(renderString(t('common:new_record', { label: renderString(finalConfig.label, lang) }), lang));
         } else {
             const displayName = getDisplayName();
             if (displayName) {
@@ -100,7 +99,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 setDynamicTitle(null);
             }
         }
-    }, [formData, isNew, config.displayField, config.label, setDynamicTitle, lang, t]);
+    }, [formData, isNew, finalConfig.displayField, finalConfig.label, setDynamicTitle, lang, t]);
 
     const handleAiExtraction = async () => {
         setIsAiExtracting(true);
@@ -180,20 +179,23 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             (f.relationEntity || f.relation?.target || (f.type === 'tag' ? 'tag' : null))
         );
 
-        for (const rel of relations) {
+        // Enterprise Level 8: Always pass current workspace as context if not global
+        const workspaceBus = user?.workspaceId || 'system';
+
+        // Enterprise Level 8: Fetch Relations and Children in independent parallel tracks
+        // This prevents waterfalls and makes the UI feel much faster
+        
+        // 1. Relations Track
+        relations.forEach(async (rel) => {
             const target = rel.relationEntity || rel.relation?.target || (rel.type === 'tag' ? 'tag' : null);
-            if (!target) continue;
+            if (!target) return;
 
             try {
-                // Enterprise Level 8: Always pass current workspace as context if not global
-                const workspaceBus = user?.workspaceId || 'system';
                 const res = await api.brain.get(`db/${target}?workspaceId=${workspaceBus}`);
                 if (res.success) {
-                    // Normalize related data to prevent React rendering errors
                     const targetEntityDef = entity[target];
                     const normalizedData = (res.data || []).map((item: any) => {
                         if (targetEntityDef) return normalizeFormData(item, targetEntityDef.fields);
-                        // Level 8 Fallback: Manual normalization for known identity fields
                         return {
                             ...item,
                             id: item.id || item.ID || item.uuid,
@@ -202,58 +204,59 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                     });
                     setRelatedData(prev => ({ ...prev, [target]: normalizedData }));
                 }
-            } catch (e) {}
-        }
-
-        // Enterprise Level 8: Fetch Children Records (Inbound Relations)
-        if (!isNew && recordId) {
-            const allEntitiesRes = await api.brain.get('entity');
-            if (allEntitiesRes.success) {
-                const potentialChildren = allEntitiesRes.data.filter((e: any) => {
-                    const normalized = normalizeEntity(e);
-                    return normalized.fields.some((f: any) => (f.relationEntity === entityId || f.relation?.target === entityId));
-                });
-
-                for (const childEntity of potentialChildren) {
-                    const normalized = normalizeEntity(childEntity);
-                    const relField: any = normalized.fields.find((f: any) => (f.relationEntity === entityId || f.relation?.target === entityId));
-                    const fieldName = relField.name || relField.id;
-
-                    // Enterprise Level 8: Specialized Fetching
-                    // When listing contact for a workspace, we usually mean "Members" (Users with roles)
-                    // Regular contact (customers) are handled via separate modules or specialized filters
-                    let endpoint = `db/${normalized.name}?${fieldName}=${recordId}`;
-                    if (normalized.name === 'contact' && entityId === 'workspace') {
-                        // Use the optimized 'users' endpoint which handles role filtering and hierarchy sorting
-                        endpoint = `workspace/member?workspaceId=${recordId}`;
-                        
-                        // Global cache check to prevent infinite API calls
-                        const cacheKey = `workspace-member-${recordId}`;
-                        const now = Date.now();
-                        const lastFetch = globalWorkspaceMemberCache.get(cacheKey);
-                        if (lastFetch && (now - lastFetch) < 300000) { // 5 minutes cache
-                            continue; // Skip this fetch, already cached recently
-                        }
-                        globalWorkspaceMemberCache.set(cacheKey, now);
-                    }
-
-                    try {
-                        const res = await api.brain.get(endpoint);
-                        if (res.success && res.data.length > 0) {
-                            // Normalize children data to prevent React rendering errors
-                            const normalizedChildren = res.data.map((item: any) => normalizeFormData(item, normalized.fields));
-                            setChildrenRecords(prev => ({ ...prev, [normalized.name]: normalizedChildren }));
-                            setChildDefinitions(prev => ({ ...prev, [normalized.name]: normalized }));
-                        }
-                    } catch (e) {}
-                }
+            } catch (e) {
+                console.error(`[RELATION-FETCH-ERROR] ${target}:`, e);
             }
+        });
+
+        // 2. Children Records Track (Inbound Relations)
+        if (!isNew && recordId) {
+            const entitiesList = Object.values(entity || {});
+            const potentialChildren = entitiesList.filter((e: any) => {
+                const normalized = normalizeEntity(e);
+                return normalized.fields.some((f: any) => (f.relationEntity === entityId || f.relation?.target === entityId));
+            });
+
+            potentialChildren.forEach(async (childEntity) => {
+                const normalized = normalizeEntity(childEntity);
+                const relField: any = normalized.fields.find((f: any) => (f.relationEntity === entityId || f.relation?.target === entityId));
+                const fieldName = relField.name || relField.id;
+
+                let endpoint = `db/${normalized.name || normalized.id}?${fieldName}=${recordId}`;
+                
+                if ((normalized.name === 'contact' || normalized.id === 'contact') && entityId === 'workspace') {
+                    endpoint = `workspace/member?workspaceId=${recordId}`;
+                    
+                    const cacheKey = `workspace-member-${recordId}`;
+                    const now = Date.now();
+                    const lastFetch = globalWorkspaceMemberCache.get(cacheKey);
+                    if (lastFetch && (now - lastFetch) < 300000) return; 
+                    globalWorkspaceMemberCache.set(cacheKey, now);
+                }
+
+                try {
+                    const res = await api.brain.get(endpoint);
+                    if (res.success && res.data && res.data.length > 0) {
+                        const normalizedChildren = res.data.map((item: any) => normalizeFormData(item, normalized.fields));
+                        // Enterprise Level 8: Type casting to ensure computed property safety
+                        const childKey = String(normalized.name || normalized.id);
+                        setChildrenRecords(prev => ({ ...prev, [childKey]: normalizedChildren }));
+                        setChildDefinitions(prev => ({ ...prev, [childKey]: normalized }));
+                    }
+                } catch (e) {
+                    console.error(`[CHILDREN-FETCH-ERROR] ${normalized.name}:`, e);
+                }
+            });
         }
         
         fetchedRelatedDataRef.current = cacheKey; // Mark as fetched
     }, [fieldsList, isNew, recordId, entityId]);
 
     const shouldShowField = (field: any) => {
+        const name = field.name || field.id;
+        const hiddenFields = finalConfig.uiConfig?.form?.hiddenFields || [];
+        if (hiddenFields.includes(name)) return false;
+
         if (!field.ui?.showIf && !field.showIf) return true;
         const condition = field.ui?.showIf || field.showIf;
         
@@ -348,16 +351,25 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             return;
         }
 
-        fetchRelatedData();
+        // Enterprise Level 8: Concurrent Fetching
+        // We fetch the main record AND audit logs in parallel
+        // We do NOT await fetchRelatedData here to avoid blocking the UI flow (feel-fast optimization)
         setLoading(true);
         try {
-            const res = await api.brain.get(`db/${entityId}/item/${recordId}`);
-            if (res.success) {
+            // Start fetching relations and children async
+            fetchRelatedData();
+
+            const [recordRes, auditRes] = await Promise.all([
+                api.brain.get(`db/${entityId}/item/${recordId}`),
+                api.brain.get(`db/audit_log?entityType=${entityId}&entityId=${recordId}`).catch(() => ({ success: false })),
+            ]);
+
+            if (recordRes.success) {
                 // Normalize data to extract primitive values from relation objects (fix React rendering error)
-                const normalizedData = normalizeFormData(res.data || {}, fieldsList);
+                const normalizedData = normalizeFormData(recordRes.data || {}, fieldsList);
                 setFormData(normalizedData);
-                // Fetch audit logs for this specific record (Enterprise Level 8 feature)
-                const auditRes = await api.brain.get(`db/audit_log?entityType=${entityId}&entityId=${recordId}`);
+                
+                // Set audit logs if available
                 if (auditRes.success) setAuditLogs(auditRes.data || []);
             } else {
                 toast.error("Record not found");
@@ -376,7 +388,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     }, [entityId, recordId, authLoading, fetchRecord]);
 
     const savingRef = useRef(false);
-    const handleSave = (e?: React.MouseEvent) => {
+    const handleSave = async (e?: React.MouseEvent) => {
         // 🔒 IMMEDIATE LOCK - prevent ANY duplicate execution
         if (e) {
             e.preventDefault();
@@ -398,60 +410,63 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         setSaving(true);
         // console.log('[SAVE-START]', { entityId, recordId, isNew, method: isNew ? 'POST' : 'PATCH' });
         
-        // Async work starts here, but LOCK is already set
-        (async () => {
-            try {
-                const method = isNew ? api.brain.post : api.brain.patch;
-                const endpoint = isNew ? `db/${entityId}` : `db/${entityId}/${recordId}`;
-                
-                // Filter out generated fields for new records (they should be handled by DB)
-                const dataToSend = { ...formData };
-                if (isNew) {
-                    fieldsList.forEach((f: any) => {
-                        if (f.generated) {
-                            delete dataToSend[f.name];
-                        }
-                    });
+        try {
+            const method = isNew ? api.brain.post : api.brain.patch;
+            const endpoint = isNew ? `db/${entityId}` : `db/${entityId}/${recordId}`;
+            
+            // Filter out generated fields for new records (they should be handled by DB)
+            const dataToSend = { ...formData };
+            if (isNew) {
+                fieldsList.forEach((f: any) => {
+                    if (f.generated) {
+                        delete dataToSend[f.name];
+                    }
+                });
+            }
+
+            // Enterprise Level 8: Flatten rich objects (relations) to IDs before sending to Brain
+            // This prevents "FOREIGN KEY constraint failed" from stringified JSON objects.
+            Object.keys(dataToSend).forEach(key => {
+                const field = fieldsList.find(f => (f.name === key || f.id === key));
+                if (field) {
+                    dataToSend[key] = formatFormValue(dataToSend[key], field.type);
                 }
-                
-                // console.log('[SAVE-SEND]', { endpoint, dataKeys: Object.keys(dataToSend) });
-                
-                const res = await method(endpoint, dataToSend);
-                // console.log('[SAVE-RESPONSE]', { success: res.success, resId: res.data?.id });
-                
-                if (res.success) {
-                    toast.success(isNew ? "Creat cu succes" : "Actualizat cu succes");
-                    if (isNew) {
-                        // Enterprise Level 8: Resilient ID Resolution
-                        const newId = res.data?.id || res.data?.ID || res.data?.uuid || res.data?.key || 
-                                     (config.displayField ? res.data[config.displayField] : '');
-                        
-                        // console.log('[SAVE-NAVIGATE]', { newId, entityId, lang });
-                        
-                        if (newId) {
-                            // Use absolute path to prevent relative navigation ambiguity
-                            navigate(`/${lang}/${entityId}/${newId}`, { replace: true });
-                        } else {
-                            console.warn('[SAVE-NAVIGATE] No ID found in response, falling back to list');
-                            navigate(`/${lang}/${entityId}`, { replace: true });
-                        }
+            });
+            
+            // console.log('[SAVE-SEND]', { endpoint, dataKeys: Object.keys(dataToSend) });
+            
+            const res = await method(endpoint, dataToSend);
+            // console.log('[SAVE-RESPONSE]', { success: res.success, resId: res.data?.id });
+            
+            if (res.success) {
+                toast.success(isNew ? "Creat cu succes" : "Actualizat cu succes");
+                if (isNew) {
+                    // Enterprise Level 8: Resilient ID Resolution
+                    const newId = res.data?.id || res.data?.ID || res.data?.uuid || res.data?.key || 
+                                     (finalConfig.displayField ? res.data[finalConfig.displayField] : '');
+                    
+                    if (newId) {
+                        navigate(`/${lang}/${entityId}/${newId}`, { replace: true });
                     } else {
-                        // console.log('[SAVE-REFRESH]', 'Fetching updated record');
-                        fetchRecord();
+                        console.warn('[SAVE-NAVIGATE] No ID found in response, falling back to list');
+                        navigate(`/${lang}/${entityId}`, { replace: true });
                     }
                 } else {
-                    toast.error("Salvare eșuată: " + res.error);
-                    if (res.validationErrors) setErrors(res.validationErrors);
+                    // console.log('[SAVE-REFRESH]', 'Fetching updated record');
+                    fetchRecord();
                 }
-            } catch (e: any) {
-                console.error('[SAVE-ERROR]', e.message);
-                toast.error("Eroare la salvare: " + e.message);
-            } finally {
-                // console.log('[SAVE-FINALLY] Unlocking save button');
-                savingRef.current = false;
-                setSaving(false);
+            } else {
+                toast.error("Salvare eșuată: " + res.error);
+                if (res.validationErrors) setErrors(res.validationErrors);
             }
-        })();
+        } catch (e: any) {
+            console.error('[SAVE-ERROR]', e.message);
+            toast.error("Eroare la salvare: " + e.message);
+        } finally {
+            // console.log('[SAVE-FINALLY] Unlocking save button');
+            savingRef.current = false;
+            setSaving(false);
+        }
     }; 
 
     const handleDelete = async () => {
@@ -490,6 +505,143 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         } catch (e: any) {
             console.error('[DELETE] Delete error:', e);
             toast.error("Delete failed: " + e.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleArchive = async () => {
+        const isCurrentlyArchived = formData.archived === 1 || formData.archived === true || formData.status === 'archived';
+        const confirmMsg = isCurrentlyArchived 
+            ? { ro: "Sigur doriți să dezarhivați această înregistrare?", en: "Are you sure you want to unarchive this record?" }
+            : { ro: "Sigur doriți să arhivați această înregistrare?", en: "Are you sure you want to archive this record?" };
+
+        if (!confirm(renderString(confirmMsg, lang))) return;
+
+        setSaving(true);
+        try {
+            // Enterprise Level 8: Efficient partial update for status change
+            // We support both a dedicated 'archived' flag and a 'status' field
+            const updatePayload: any = {
+                archived: isCurrentlyArchived ? 0 : 1,
+                archivedAt: isCurrentlyArchived ? null : new Date().toISOString()
+            };
+
+            // If entity has status field, also update it
+            if (formData.status !== undefined) {
+                updatePayload.status = isCurrentlyArchived ? 'active' : 'archived';
+            }
+
+            const res = await api.brain.post(`db/collection/${entityId}/item/${recordId}`, updatePayload);
+
+            if (res.success) {
+                toast.success(renderString(isCurrentlyArchived ? { ro: "Dezarhivat!", en: "Unarchived!" } : { ro: "Arhivat!", en: "Archived!" }, lang));
+                fetchRecord(); // Refresh to show changes
+            } else {
+                toast.error(res.error || "Action failed");
+            }
+        } catch (e: any) {
+            toast.error("Action failed: " + e.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleQuickCreate = async (targetEntity: string, fieldName: string, type: string) => {
+        const entityLabel = renderString(entity[targetEntity]?.label || targetEntity, lang);
+        
+        // Enterprise Level 8: Context-aware prompt labels
+        const promptLabel = targetEntity === 'entity_note'
+            ? { ro: 'Introdu conținutul notei', en: 'Enter note content' }
+            : { ro: `Introdu numele pentru nou(a) ${entityLabel}`, en: `Enter name for the new ${entityLabel}` };
+
+        const name = prompt(renderString(promptLabel, lang));
+        
+        if (!name) return;
+
+        setSaving(true);
+        try {
+            // Enterprise Level 8: Global Quick Create Service
+            const workspaceId = user?.workspaceId || 'system';
+
+            // Enterprise Level 8: Entity-specific requirement resolving
+            // We automatically inject parent link (entityType/entityId) for polymorphic entities
+            const additionalData: any = {};
+            const targetDef = entity[targetEntity] ? normalizeEntity(entity[targetEntity]) : null;
+            
+            if (targetDef) {
+                const isPolymorphic = targetDef.fields.some((f: any) => f.name === 'entityType' && (f.required || f.req)) && 
+                                     targetDef.fields.some((f: any) => f.name === 'entityId' && (f.required || f.req));
+                
+                if (isPolymorphic) {
+                    if (isNew) {
+                         toast.error(renderString({
+                            ro: `Trebuie să salvezi înregistrarea înainte de a adăuga ${entityLabel}!`,
+                            en: `You must save the record before adding ${entityLabel}!`
+                        }, lang));
+                        setSaving(false);
+                        return;
+                    }
+                    additionalData.entityType = entityId;
+                    additionalData.entityId = recordId;
+                    
+                    // Remap name to specialized content fields if applicable
+                    if (targetEntity === 'entity_note') {
+                        additionalData.content = name;
+                        additionalData.authorId = user?.id;
+                    }
+                }
+            }
+
+            const res = await api.brain.quickCreate(targetEntity, name, additionalData, workspaceId);
+
+            if (res.success && res.data) {
+                toast.success(renderString({ ro: "Creat cu succes!", en: "Created successfully!" }, lang));
+                
+                // Refresh ONLY the related data for this target
+                const refreshRes = await api.brain.get(`db/${targetEntity}?workspaceId=${workspaceId}`);
+                if (refreshRes.success) {
+                    const targetEntityDef = entity[targetEntity];
+                    const normalizedData = (refreshRes.data || []).map((item: any) => {
+                        if (targetEntityDef) return normalizeFormData(item, targetEntityDef.fields);
+                        return {
+                            ...item,
+                            id: item.id || item.ID || item.uuid,
+                            name: item.name || item.Name || item.label || item.Label
+                        };
+                    });
+                    setRelatedData(prev => ({ ...prev, [targetEntity]: normalizedData }));
+                }
+
+                // Update formData to include the newly created ID
+                const newId = String(res.data.id);
+                const isMany = type === 'relation-many' || type === 'tag' || type === 'multi-select';
+                
+                setFormData((prev: any) => {
+                    const currentVal = prev[fieldName];
+                    if (isMany) {
+                        const currentArr = Array.isArray(currentVal) 
+                            ? currentVal 
+                            : (typeof currentVal === 'string' && currentVal ? currentVal.split(',').filter(Boolean) : []);
+                        
+                        // Check if already in array (prevent duplicates)
+                        const exists = currentArr.some((v: any) => {
+                            const vId = (typeof v === 'object' && v !== null) ? (v.id || v.ID) : String(v);
+                            return String(vId) === String(newId);
+                        });
+                        
+                        if (exists) return prev;
+                        
+                        return { ...prev, [fieldName]: [...currentArr, newId] };
+                    } else {
+                        return { ...prev, [fieldName]: newId };
+                    }
+                });
+            } else {
+                toast.error(res.error || "Creation failed");
+            }
+        } catch (e: any) {
+            toast.error("Creation failed: " + e.message);
         } finally {
             setSaving(false);
         }
@@ -542,19 +694,21 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         }
     };
 
-    const renderField = (field: any) => {
-        if (!shouldShowField(field)) return null;
+    const renderField = (field: any, forceCols?: number) => {
+        if (!field || !shouldShowField(field)) return null;
         
-        // Respect Hidden Fields from Registry & Audit Field Protection (Enterprise Level 8)
-        const AUDIT_FIELDS = ['id', 'ID', 'workspaceId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt', 'archived', 'archivedAt', 'deletedAt', 'password', 'secret'];
-        const isHidden = config.uiConfig?.form?.hiddenFields?.includes(field.name);
-        if (isHidden) return null;
-
         const { name, type, label, description, registryKey, relationEntity, req, required, ui } = field;
-        
+
+        // Respect Hidden Fields from Registry & Audit Field Protection (Enterprise Level 8)
+        const AUDIT_FIELDS = ['id', 'ID', 'workspaceId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt', 'archived', 'archivedAt', 'deletedAt', 'password', 'secret', 'deletedBy'];
         const isAuditField = AUDIT_FIELDS.includes(name);
-        // Hide audit fields by default unless specifically allowed in uiConfig
-        if (isAuditField && !config.uiConfig?.form?.showAuditFields) return null;
+        
+        // Respect Global Hidden flag from Registry (Except for Audit Fields which have their own toggle)
+        if (field.hidden && !isAuditField) return null;
+
+        // Hide audit fields by default unless specifically allowed in uiConfig (showTimestamps or showAuditFields)
+        const showAudit = finalConfig.uiConfig?.form?.showTimestamps === true || finalConfig.uiConfig?.form?.showAuditFields === true;
+        if (isAuditField && !showAudit) return null;
 
         const rawValue = formData[name] || '';
         const error = errors[name];
@@ -564,27 +718,35 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         const value = formatFormValue(rawValue, type);
 
         // Protection Logic (Enterprise Level 8)
-        const isReadOnly = field.readonly || field.readOnly || isGlobalReadOnly || isAuditField || config.uiConfig?.form?.readOnlyFields?.includes(name) || (name === 'id' && !isNew);
+        const isReadOnly = field.readonly || field.readOnly || isGlobalReadOnly || isAuditField || finalConfig.uiConfig?.form?.readOnlyFields?.includes(name) || (name === 'id' && !isNew);
 
         // Dynamic Grid Span (Enterprise Level 8)
-        const totalCols = Number(config.uiConfig?.form?.columns || 2);
+        const totalCols = Number(forceCols || finalConfig.uiConfig?.form?.columns || 2);
         
         let width = ui?.width || field.width || (type === 'textarea' || type === 'richtext' || type === 'ai-text' ? 12 : 6);
         // Normalize "1/1", "1/2" format from builder
         if (width === '1/1') width = 12;
         if (width === '1/2') width = 6;
+        if (width === '1/3') width = 4;
         if (width === '1/4') width = 3;
         
-        let colClass = "col-span-1";
+        let colSpan = 1;
         if (width >= 12) {
-            colClass = "col-span-full";
-        } else if (totalCols === 4) {
-            if (width >= 9) colClass = "md:col-span-4";
-            else if (width >= 6) colClass = "md:col-span-2";
-            else if (width >= 3) colClass = "md:col-span-1";
-        } else if (totalCols === 2) {
-            if (width >= 6) colClass = "md:col-span-2";
+            colSpan = totalCols;
+        } else {
+            // Enterprise Level 8: Precision Grid Calculation (Consistent with EntitySystem)
+            const ratio = (typeof width === 'number' ? width : parseInt(String(width))) / 12;
+            colSpan = Math.max(1, Math.floor(ratio * totalCols + 0.05)); 
         }
+
+        // Cap to total columns
+        if (colSpan > totalCols) colSpan = totalCols;
+
+        const colClass = colSpan === totalCols 
+            ? "col-span-full" 
+            : totalCols === 3 
+                ? "col-span-1" // If 3 cols, we almost always want 1 span for ratio 0.5
+                : `sm:col-span-${colSpan}`;
 
         const handleChange = (val: any) => {
             // Use centralized form value formatting to prevent object storage
@@ -671,138 +833,162 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         </Select>
                     ) : (type === 'entity_relation' || type === 'relation' || type === 'relation-many' || type === 'tag' || type === 'multi-select') && (targetEntity || type === 'tag') ? (
                         ((field.type === 'relation-many' || field.type === 'tag' || field.type === 'multi-select' || field.multiple === true)) ? (
-                            <div className="space-y-3">
-                                <div className="flex flex-wrap gap-1.5 p-3 min-h-[52px] rounded-xl bg-slate-50 border border-slate-200">
-                                    {(() => {
-                                        // Enterprise Level 8: Robust relation-many parsing in Detail view
-                                        if (Array.isArray(value)) return value;
-                                        if (typeof value === 'string' && value) {
-                                            const clean = value.trim();
-                                            if (clean.startsWith('[') && clean.endsWith(']')) {
-                                                try {
-                                                    const parsed = JSON.parse(clean);
-                                                    return Array.isArray(parsed) ? parsed : [parsed];
-                                                } catch {
-                                                    return clean.split(',').filter(Boolean);
-                                                }
+                            <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-2xl bg-slate-50/50 border border-slate-200 min-h-[44px] transition-all hover:border-indigo-200 focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-50/50">
+                                {(() => {
+                                    // Enterprise Level 8: Robust relation-many parsing in Detail view
+                                    if (Array.isArray(value)) return value;
+                                    if (typeof value === 'string' && value) {
+                                        const clean = value.trim();
+                                        if (clean.startsWith('[') && clean.endsWith(']')) {
+                                            try {
+                                                const parsed = JSON.parse(clean);
+                                                return Array.isArray(parsed) ? parsed : [parsed];
+                                            } catch {
+                                                return clean.split(',').filter(Boolean);
                                             }
-                                            return clean.split(',').filter(Boolean);
                                         }
-                                        return [];
-                                    })().map((id: any) => {
-                                        // Level 8: if id is object, extract id string
-                                        const itemId = (typeof id === 'object' && id !== null) ? (id.id || id.ID || id.uuid) : String(id);
-                                        const resolvedTarget = type === 'tag' ? 'tag' : targetEntity;
-                                        const item = (Array.isArray(relatedData[resolvedTarget]) ? relatedData[resolvedTarget] : []).find(i => String(i.id || i.ID) === String(itemId)) || (typeof id === 'object' ? id : null);
-                                        
-                                        // Improved Display Field Selection
-                                        const targetDef = resolvedTarget ? (entity as any)?.[resolvedTarget] : null;
-                                        const displayFieldName = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
-                                        const label = item ? (item[displayFieldName] || item.name || item.id || item.ID || itemId) : itemId;
+                                        return clean.split(',').filter(Boolean);
+                                    }
+                                    return [];
+                                })().map((id: any) => {
+                                    // Level 8: if id is object, extract id string
+                                    const itemId = (typeof id === 'object' && id !== null) ? (id.id || id.ID || id.uuid) : String(id);
+                                    const resolvedTarget = type === 'tag' ? 'tag' : targetEntity;
+                                    const item = (Array.isArray(relatedData[resolvedTarget]) ? relatedData[resolvedTarget] : []).find(i => String(i.id || i.ID) === String(itemId)) || (typeof id === 'object' ? id : null);
+                                    
+                                    // Improved Display Field Selection
+                                    const targetDef = resolvedTarget ? (entity as any)?.[resolvedTarget] : null;
+                                    const displayFieldName = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
+                                    const label = item ? (item[displayFieldName] || item.name || item.id || item.ID || itemId) : itemId;
 
-                                        return (
-                                            <Badge 
-                                                key={itemId} 
-                                                variant="outline" 
-                                                style={{ 
-                                                    backgroundColor: (item?.color || item?.colorTheme) ? `${item.color || item.colorTheme}15` : undefined,
-                                                    borderColor: (item?.color || item?.colorTheme) ? `${item.color || item.colorTheme}40` : undefined,
-                                                    color: (item?.color || item?.colorTheme) || undefined
-                                                }}
-                                                className="px-3 py-1 rounded-lg flex items-center gap-2 group/badge transition-all hover:brightness-95"
-                                            >
-                                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: (item?.color || item?.colorTheme) || '#818cf8' }} />
-                                                <span className="font-bold text-[10px] uppercase tracking-wider">
-                                                    {renderString(label, lang)}
-                                                </span>
-                                                {!isReadOnly && (
-                                                    <X 
-                                                        size={12} 
-                                                        className="cursor-pointer opacity-50 hover:opacity-100" 
-                                                        onClick={() => {
-                                                            const current = Array.isArray(value) ? value : (value ? String(value).split(',').filter(Boolean) : []);
-                                                            const next = current.filter(v => ((typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v)) !== String(itemId));
-                                                            handleChange(next);
-                                                        }}
-                                                    />
-                                                )}
-                                            </Badge>
-                                        );
-                                    })}
-                                    {(!value || (Array.isArray(value) && value.length === 0)) && (
-                                        <div className="flex items-center gap-2 text-slate-400 italic text-[10px] ml-1 mt-1">
-                                            <Plus size={12} /> {renderString(t('common:click_to_add', { label: renderString(label || 'tag', lang) }), lang)}
-                                        </div>
-                                    )}
-                                </div>
+                                    return (
+                                        <Badge 
+                                            key={itemId} 
+                                            variant="outline" 
+                                            style={{ 
+                                                backgroundColor: (item?.color || item?.colorTheme) ? `${item.color || item.colorTheme}15` : undefined,
+                                                borderColor: (item?.color || item?.colorTheme) ? `${item.color || item.colorTheme}40` : undefined,
+                                                color: (item?.color || item?.colorTheme) || undefined
+                                            }}
+                                            className="px-2.5 py-1 rounded-xl flex items-center gap-1.5 group/badge transition-all hover:brightness-95 border-none shadow-sm"
+                                        >
+                                            <div className="w-1 h-1 rounded-full" style={{ backgroundColor: (item?.color || item?.colorTheme) || '#818cf8' }} />
+                                            <span className="font-bold text-[9px] uppercase tracking-wider">
+                                                {renderString(label, lang)}
+                                            </span>
+                                            {!isReadOnly && (
+                                                <X 
+                                                    size={10} 
+                                                    className="cursor-pointer opacity-50 hover:opacity-100" 
+                                                    onClick={() => {
+                                                        const current = Array.isArray(value) ? value : (value ? String(value).split(',').filter(Boolean) : []);
+                                                        const next = current.filter(v => ((typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v)) !== String(itemId));
+                                                        handleChange(next);
+                                                    }}
+                                                />
+                                            )}
+                                        </Badge>
+                                    );
+                                })}
+
                                 {!isReadOnly && (
-                                    <Select 
-                                        onValueChange={(val) => {
-                                            const current = Array.isArray(value) ? value : (value ? String(value).split(',').filter(Boolean) : []);
-                                            const currentIds = current.map(v => (typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v));
-                                            
-                                            if (!currentIds.includes(String(val))) {
-                                                const next = [...current, val];
-                                                handleChange(next);
-                                            }
-                                        }}
-                                        disabled={isReadOnly}
-                                    >
-                                        <SelectTrigger className="h-10 rounded-xl bg-white border-slate-200 font-bold text-xs ring-offset-indigo-500 shadow-sm hover:border-indigo-300 transition-all">
-                                            <SelectValue placeholder={`${renderString(t('common:add'), lang)} ${renderString(label || name, lang)}...`} />
-                                        </SelectTrigger>
-                                        <SelectContent className="rounded-2xl border-none shadow-2xl">
-                                            {(Array.isArray(relatedData[type === 'tag' ? 'tag' : (targetEntity || '')]) ? relatedData[type === 'tag' ? 'tag' : (targetEntity || '')] : [])
-                                                .filter(item => {
-                                                    const current = Array.isArray(value) ? value : (value ? String(value).split(',') : []);
-                                                    const currentIds = current.map(v => (typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v));
-                                                    return !currentIds.includes(String(item.id || item.ID));
-                                                })
-                                                .map((item: any, idx) => {
-                                                    const resolvedT = type === 'tag' ? 'tag' : targetEntity;
-                                                    const targetDef = resolvedT ? (entity as any)?.[resolvedT] : null;
-                                                    const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
-                                                    const displayLabel = item[dispField] || item.name || item.id || item.ID;
-                                                    
-                                                    return (
-                                                        <SelectItem key={`${item.id || item.ID}-${idx}`} value={String(item.id || item.ID)} className="rounded-xl font-bold py-3">
-                                                            <div className="flex items-center gap-2">
-                                                                {(item.color || item.colorTheme) && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color || item.colorTheme }} />}
-                                                                <span>{renderString(displayLabel, lang)}</span>
-                                                            </div>
-                                                        </SelectItem>
-                                                    );
-                                                })
-                                            }
-                                        </SelectContent>
-                                    </Select>
+                                    <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                                        <Select 
+                                            onValueChange={(val) => {
+                                                const current = Array.isArray(value) ? value : (value ? String(value).split(',').filter(Boolean) : []);
+                                                const currentIds = current.map(v => (typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v));
+                                                
+                                                if (!currentIds.includes(String(val))) {
+                                                    const next = [...current, val];
+                                                    handleChange(next);
+                                                }
+                                            }}
+                                            disabled={isReadOnly}
+                                        >
+                                            <SelectTrigger className="h-8 rounded-xl bg-white/80 border-none font-bold text-[9px] uppercase italic tracking-wider ring-offset-indigo-500 shadow-sm hover:bg-white transition-all flex-1">
+                                                <SelectValue placeholder={`${renderString(t('common:add'), lang)}...`} />
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-2xl border-none shadow-2xl">
+                                                {(Array.isArray(relatedData[type === 'tag' ? 'tag' : (targetEntity || '')]) ? relatedData[type === 'tag' ? 'tag' : (targetEntity || '')] : [])
+                                                    .filter(item => {
+                                                        const current = Array.isArray(value) ? value : (value ? String(value).split(',') : []);
+                                                        const currentIds = current.map(v => (typeof v === 'object' && v !== null) ? String(v.id || v.ID) : String(v));
+                                                        return !currentIds.includes(String(item.id || item.ID));
+                                                    })
+                                                    .map((item: any, idx) => {
+                                                        const resolvedT = type === 'tag' ? 'tag' : targetEntity;
+                                                        const targetDef = resolvedT ? (entity as any)?.[resolvedT] : null;
+                                                        const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
+                                                        const displayLabel = item[dispField] || item.name || item.id || item.ID;
+                                                        
+                                                        return (
+                                                            <SelectItem key={`${item.id || item.ID}-${idx}`} value={String(item.id || item.ID)} className="rounded-xl font-bold py-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    {(item.color || item.colorTheme) && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color || item.colorTheme }} />}
+                                                                    <span>{renderString(displayLabel, lang)}</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                        );
+                                                    })
+                                                }
+                                            </SelectContent>
+                                        </Select>
+                                        <Button 
+                                            type="button"
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 shrink-0"
+                                            onClick={() => handleQuickCreate(type === 'tag' ? 'tag' : targetEntity, name, type)}
+                                            title={renderString(constants?.I18N?.actions?.addNew, lang)}
+                                        >
+                                            <Plus size={16} />
+                                        </Button>
+                                    </div>
                                 )}
                             </div>
                         ) : (
-                                <Select value={String(value ?? '')} onValueChange={handleChange} disabled={isReadOnly}>
-                                    <SelectTrigger className={cn("h-12 rounded-xl bg-slate-50 border-slate-200 font-bold", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 opacity-60")}>
-                                        <SelectValue placeholder={`${renderString(t('common:choose'), lang)} ${renderString(label || name, lang)}`} />
-                                    </SelectTrigger>
-                                    <SelectContent className="rounded-2xl border-none shadow-2xl">
-                                        {(relatedData[targetEntity] || []).map((item: any, idx) => {
-                                            const targetDef = entity[targetEntity];
-                                            const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
-                                            const displayLabel = item[dispField] || item.name || item.id;
-                                            
-                                            return (
-                                                <SelectItem key={`${item.id}-${idx}`} value={String(item.id)} className="rounded-xl font-bold py-3">
-                                                    <div className="flex items-center gap-2">
-                                                        {(item.color || item.colorTheme) && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color || item.colorTheme }} />}
-                                                        <span>{renderString(displayLabel, lang)}</span>
-                                                    </div>
-                                                </SelectItem>
-                                            );
-                                        })}
-                                        {(relatedData[targetEntity] || []).length === 0 && (
-                                            <div className="p-4 text-center text-xs text-slate-400 italic">{renderString(t('common:no_records_in', { label: targetEntity }), lang)}</div>
-                                        )}
-                                    </SelectContent>
-                                </Select>
+                                <div className="flex gap-2">
+                                    <Select 
+                                        value={String((typeof value === 'object' && value !== null) ? (value.id || value.ID || '') : (value ?? ''))} 
+                                        onValueChange={handleChange} 
+                                        disabled={isReadOnly}
+                                    >
+                                        <SelectTrigger className={cn("h-12 rounded-xl bg-slate-50 border-slate-200 font-bold flex-1", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 opacity-60")}>
+                                            <SelectValue placeholder={`${renderString(t('common:choose'), lang)} ${renderString(label || name, lang)}`} />
+                                        </SelectTrigger>
+                                        <SelectContent className="rounded-2xl border-none shadow-2xl">
+                                            {(relatedData[targetEntity] || []).map((item: any, idx) => {
+                                                const targetDef = entity[targetEntity];
+                                                const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
+                                                const displayLabel = item[dispField] || item.name || item.id;
+                                                
+                                                return (
+                                                    <SelectItem key={`${item.id}-${idx}`} value={String(item.id)} className="rounded-xl font-bold py-3">
+                                                        <div className="flex items-center gap-2">
+                                                            {(item.color || item.colorTheme) && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color || item.colorTheme }} />}
+                                                            <span>{renderString(displayLabel, lang)}</span>
+                                                        </div>
+                                                    </SelectItem>
+                                                );
+                                            })}
+                                            {(relatedData[targetEntity] || []).length === 0 && (
+                                                <div className="p-4 text-center text-xs text-slate-400 italic">{renderString(t('common:no_records_in', { label: targetEntity }), lang)}</div>
+                                            )}
+                                        </SelectContent>
+                                    </Select>
+                                    {!isReadOnly && (
+                                        <Button 
+                                            type="button"
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-12 w-12 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 shrink-0"
+                                            onClick={() => handleQuickCreate(targetEntity, name, type)}
+                                            title={renderString(constants?.I18N?.actions?.addNew, lang)}
+                                        >
+                                            <Plus size={18} />
+                                        </Button>
+                                    )}
+                                </div>
                         )
                     ) : (type === 'enum' || type === 'selection') ? (
                         (() => {
@@ -1007,7 +1193,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     if (loading) return <div className="p-8 animate-pulse text-slate-400 font-black italic uppercase">Synchronizing with Brain...</div>;
 
     return (
-        <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 pb-32">
+        <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 pb-48">
             {/* Navigation Header */}
             <div className="flex items-center justify-between">
                 <Button 
@@ -1021,14 +1207,38 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
 
                 <div className="flex items-center gap-2">
                     {!isNew && isDeletable && (
-                        <Button 
-                            variant="ghost" 
-                            onClick={handleDelete}
-                            className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-2xl h-12 px-6"
-                        >
-                            <Trash2 size={20} className="mr-2" />
-                            <span className="text-[10px] font-black uppercase italic tracking-widest">{renderString(t('common:delete'), lang)}</span>
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button 
+                                variant="ghost" 
+                                onClick={handleArchive}
+                                className="text-amber-500 hover:text-amber-600 hover:bg-amber-50 rounded-2xl h-12 px-6"
+                            >
+                                {(formData.archived === 1 || formData.archived === true || formData.status === 'archived') ? (
+                                    <>
+                                        <RotateCcw size={20} className="mr-2" />
+                                        <span className="text-[10px] font-black uppercase italic tracking-widest">
+                                            {renderString(constants?.I18N?.actions?.unarchive, lang)}
+                                        </span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Archive size={20} className="mr-2" />
+                                        <span className="text-[10px] font-black uppercase italic tracking-widest">
+                                            {renderString(constants?.I18N?.actions?.archive, lang)}
+                                        </span>
+                                    </>
+                                )}
+                            </Button>
+                            
+                            <Button 
+                                variant="ghost" 
+                                onClick={handleDelete}
+                                className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-2xl h-12 px-6"
+                            >
+                                <Trash2 size={20} className="mr-2" />
+                                <span className="text-[10px] font-black uppercase italic tracking-widest">{renderString(t('common:delete'), lang)}</span>
+                            </Button>
+                        </div>
                     )}
                 </div>
             </div>
@@ -1041,19 +1251,19 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 
                 <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-indigo-600 flex items-center justify-center text-white text-xl md:text-2xl font-black shadow-lg shadow-indigo-100 dark:shadow-none shrink-0 border-2 border-white dark:border-slate-950 ring-1 ring-indigo-100 dark:ring-slate-800 z-10 transition-transform duration-500 group-hover:scale-105">
                     {(() => {
-                        const displayField = config.displayField || 'name';
+                        const displayField = finalConfig.displayField || 'name';
                         const name = formData[displayField] || formData.name || formData.label || formData.title;
                         
                         // Try to get icon first
-                        if (config.icon) {
+                        if (finalConfig.icon) {
                             try {
-                                const IconComp = resolveIcon(config.icon);
+                                const IconComp = resolveIcon(finalConfig.icon);
                                 return <IconComp size={20} className="md:w-6 md:h-6" />;
                             } catch (e) {}
                         }
                         
                         // Fallback to initial
-                        const char = name && typeof name === 'string' ? name.charAt(0).toUpperCase() : (config.label ? renderString(config.label, lang).charAt(0) : 'E');
+                        const char = name && typeof name === 'string' ? name.charAt(0).toUpperCase() : (finalConfig.label ? renderString(finalConfig.label, lang).charAt(0) : 'E');
                         return char;
                     })()}
                 </div>
@@ -1062,7 +1272,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                     <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-2">
                              <Badge variant="outline" className="bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50 font-black uppercase tracking-[0.2em] text-[8px] px-2 py-0.5 rounded-full whitespace-nowrap">
-                                {renderString(config.label, lang)}
+                                {renderString(finalConfig.label, lang)}
                             </Badge>
                             {!isNew && (
                                 <span className="text-[9px] font-bold text-slate-400 font-mono bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
@@ -1073,12 +1283,12 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         
                         <h1 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-slate-900 dark:text-white leading-tight py-0.5">
                             {(() => {
-                                const displayField = config.displayField || 'name';
+                                const displayField = finalConfig.displayField || 'name';
                                 const name = formData[displayField] || formData.name || formData.Name || formData.label || formData.title;
                                 if (name && String(name) !== 'undefined') return renderString(name, lang);
                                 
                                 if (isNew) {
-                                    return renderString(t('common:new_record', { label: renderString(config.label, lang) }), lang);
+                                    return renderString(t('common:new_record', { label: renderString(finalConfig.label, lang) }), lang);
                                 }
                                 
                                 return renderString(t('common:untitled_record'), lang);
@@ -1151,9 +1361,9 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 <div className="lg:col-span-2 space-y-8">
                     <GlassCard className="overflow-hidden border-indigo-100/30">
                         <div className="p-8 space-y-8">
-                            {config.layout?.sections && config.layout.sections.length > 0 ? (
+                            {finalConfig.layout?.sections && finalConfig.layout.sections.length > 0 ? (
                                 <div className="space-y-8">
-                                    {config.layout.sections.map((section: any, idx: number) => (
+                                    {finalConfig.layout.sections.map((section: any, idx: number) => (
                                         <div key={section.id || section.title || idx} className="space-y-6 pt-6 border-t border-slate-100 first:border-0 first:pt-0">
                                             {(section.title || section.description) && (
                                                 <div className="space-y-1">
@@ -1161,32 +1371,43 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                                     {section.description && <p className="text-[10px] text-slate-400 font-medium">{renderString(section.description, lang)}</p>}
                                                 </div>
                                             )}
-                                            <div className={cn(
-                                                "grid gap-x-6 gap-y-8",
-                                                section.columns === 1 ? 'grid-cols-1' :
-                                                section.columns === 2 ? 'grid-cols-1 md:grid-cols-2' :
-                                                section.columns === 3 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 
-                                                section.columns === 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2'
-                                            )}>
-                                                {(section.fields || []).map((fieldName: string) => {
-                                                    const field = fieldsList.find((f: any) => f.name === fieldName);
-                                                    return field ? renderField(field) : null;
-                                                })}
-                                            </div>
+                                            {(() => {
+                                                const globalCols = Number(finalConfig.uiConfig?.form?.columns || 2);
+                                                const sCols = Number(section.columns || globalCols);
+
+                                                return (
+                                                    <div className={cn(
+                                                        "grid gap-x-6 gap-y-8",
+                                                        sCols === 1 ? 'grid-cols-1' :
+                                                        sCols === 2 ? 'grid-cols-1 sm:grid-cols-2' :
+                                                        sCols === 3 ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3' :
+                                                        sCols === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' :
+                                                        'grid-cols-1 sm:grid-cols-2'
+                                                    )}>
+                                                        {(section.fields || []).map((fieldName: string) => {
+                                                            const field = fieldsList.find((f: any) => f.name === fieldName);
+                                                            return field ? renderField(field, sCols) : null;
+                                                        })}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     ))}
 
                                     {/* Level 8: Catch-all for fields not assigned to any section */}
                                     {(() => {
                                         const AUDIT_FIELDS = ['id', 'ID', 'workspaceId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt', 'archived', 'archivedAt', 'deletedAt', 'password', 'secret', '__v', '_id'];
-                                        const sectionFields = new Set(config.layout.sections.flatMap((s: any) => s.fields || []));
+                                        const showAudit = finalConfig.uiConfig?.form?.showTimestamps === true || finalConfig.uiConfig?.form?.showAuditFields === true;
+                                        
+                                        const sectionFields = new Set(finalConfig.layout.sections.flatMap((s: any) => s.fields || []));
                                         const unsectionedFields = fieldsList.filter(f => 
                                             !sectionFields.has(f.name) && 
-                                            !AUDIT_FIELDS.includes(f.name) &&
-                                            !config.uiConfig?.form?.hiddenFields?.includes(f.name)
+                                            (!AUDIT_FIELDS.includes(f.name) || showAudit) &&
+                                            !finalConfig.uiConfig?.form?.hiddenFields?.includes(f.name)
                                         );
 
                                         if (unsectionedFields.length > 0) {
+                                            const cols = Number(finalConfig.uiConfig?.form?.columns || 2);
                                             return (
                                                 <div className="space-y-6 pt-8 border-t-2 border-dashed border-slate-100">
                                                     <div className="space-y-1">
@@ -1201,8 +1422,15 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                                             }, lang)}
                                                         </p>
                                                     </div>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
-                                                        {unsectionedFields.map(renderField)}
+                                                    <div className={cn(
+                                                        "grid gap-x-6 gap-y-8",
+                                                        cols === 1 ? 'grid-cols-1' :
+                                                        cols === 2 ? 'grid-cols-1 sm:grid-cols-2' :
+                                                        cols === 3 ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3' :
+                                                        cols === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' :
+                                                        'grid-cols-1 sm:grid-cols-2'
+                                                    )}>
+                                                        {unsectionedFields.map((f: any) => renderField(f, cols))}
                                                     </div>
                                                 </div>
                                             );
@@ -1211,24 +1439,32 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                     })()}
                                 </div>
                             ) : (
-                                <div className={cn(
-                                    "grid gap-x-6 gap-y-8",
-                                    (config.uiConfig?.form?.columns || 2) == 1 ? 'grid-cols-1' :
-                                    (config.uiConfig?.form?.columns || 2) == 2 ? 'grid-cols-1 md:grid-cols-2' :
-                                    (config.uiConfig?.form?.columns || 2) == 3 ? 'grid-cols-1 md:grid-cols-3' :
-                                    (config.uiConfig?.form?.columns || 2) == 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-2'
-                                )}>
-                                    {fieldsList.map(renderField)}
+                                <div className="space-y-8">
+                                    {(() => {
+                                        const cols = Number(finalConfig.uiConfig?.form?.columns || 2);
+                                        return (
+                                            <div className={cn(
+                                                "grid gap-x-6 gap-y-8",
+                                                cols === 1 ? 'grid-cols-1' :
+                                                cols === 2 ? 'grid-cols-1 sm:grid-cols-2' :
+                                                cols === 3 ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3' :
+                                                cols === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' :
+                                                'grid-cols-1 sm:grid-cols-2'
+                                            )}>
+                                                {fieldsList.map((f: any) => renderField(f, cols))}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             )}
                         </div>
                     </GlassCard>
 
                     {/* Related Children Entities (Level 8 Inbound Relations) */}
-                    {!isNew && config.uiConfig?.form?.showChildren !== false && Object.keys(childrenRecords).length > 0 && (
+                    {!isNew && finalConfig.uiConfig?.form?.showChildren !== false && Object.keys(childrenRecords).length > 0 && (
                         <div className="space-y-6">
                             {Object.entries(childrenRecords)
-                                .filter(([childEntityName]) => !(config.uiConfig?.form?.hiddenChildren || []).includes(childEntityName))
+                                .filter(([childEntityName]) => !(finalConfig.uiConfig?.form?.hiddenChildren || []).includes(childEntityName))
                                 .map(([childEntityName, records]) => {
                                     const childDef = childDefinitions[childEntityName];
                                     const childLabel = renderString(childDef?.label || childDef?.labelPlural || childEntityName, lang);
@@ -1247,7 +1483,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                                     <Shield size={14} className="text-indigo-400" />
                                                     {childEntityName === 'contact' && entityId === 'workspace' 
                                                         ? renderString(t('common:associated_members'), lang) 
-                                                        : `${childLabel} ${renderString(t('common:in_this'), lang)} ${renderString(config.label || entityId, lang)}`}
+                                                        : `${childLabel} ${renderString(t('common:in_this'), lang)} ${renderString(finalConfig.label || entityId, lang)}`}
                                                 </h3>
                                         <div className="flex items-center gap-2">
                                             {childCreatable && (
@@ -1413,13 +1649,13 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                     <span className="text-slate-400 uppercase tracking-widest">ID</span>
                                     <span className="font-mono text-slate-600 truncate max-w-[120px]">{recordId}</span>
                                 </div>
-                                {config.features?.authorTracking !== false && (
+                                {finalConfig.features?.authorTracking !== false && (
                                     <div className="flex justify-between">
                                         <span className="text-slate-400 uppercase tracking-widest">{renderString(t('common:creator'), lang)}</span>
                                         <span className="text-slate-600">{renderString(formData.created_by || formData.createdBy || t('common:administrator'), lang)}</span>
                                     </div>
                                 )}
-                                {config.features?.timestamps !== false && (
+                                {finalConfig.features?.timestamps !== false && (
                                     <div className="flex justify-between">
                                         <span className="text-slate-400 uppercase tracking-widest">{renderString(t('common:updated'), lang)}</span>
                                         <span className="text-slate-600">
@@ -1490,10 +1726,10 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                             </div>
                             <div>
                                 <DialogTitle className="text-2xl font-black italic uppercase tracking-tighter text-slate-900 leading-none">
-                                    {renderString(t('common:ai_extraction_title', 'Smart Extractor'), lang)}
+                                    {renderString(t('common:ai_extraction_title'), lang)}
                                 </DialogTitle>
                                 <DialogDescription className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">
-                                    {renderString(t('common:ai_extraction_desc', 'Extract data from any source automatically'), lang)}
+                                    {renderString(t('common:ai_extraction_desc'), lang)}
                                 </DialogDescription>
                             </div>
                         </div>
@@ -1593,25 +1829,29 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 </DialogContent>
             </Dialog>
 
-            {/* FIXED BOTTOM ACTION BAR */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 p-4 px-6 md:px-12 z-50 flex items-center justify-end gap-4 animate-in slide-in-from-bottom duration-500">
-                <div className="flex-1 flex items-center gap-2">
-                    {!isNew && (
-                        <Badge className="bg-indigo-50 text-indigo-600 border-none font-black italic uppercase tracking-widest text-[10px] px-3 py-1">
-                            {renderString(config.label || entityId, lang)} #{String(recordId).slice(-6)}
-                        </Badge>
-                    )}
+            {/* FLOATING BOTTOM ACTION BAR - Enterprise Level 8 (Compact Style) */}
+            <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 w-auto min-w-[300px] px-6 z-50 animate-in slide-in-from-bottom duration-500">
+                <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-800 p-2 md:p-3 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-between gap-4">
+                    <div className="flex-1 hidden md:flex items-center gap-2 ml-4">
+                        {!isNew && (
+                            <Badge className="bg-indigo-50 text-indigo-600 border-none font-black italic uppercase tracking-widest text-[9px] px-3 py-1">
+                                {String(recordId).slice(-6)}
+                            </Badge>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2 mr-1">
+                        {!isGlobalReadOnly && (
+                            <Button 
+                                onClick={handleSave}
+                                disabled={saving}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full h-10 px-6 shadow-lg shadow-indigo-200 dark:shadow-none transition-all hover:-translate-y-1 active:scale-95"
+                            >
+                                {saving ? <RefreshCw className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
+                                <span className="text-xs font-black uppercase italic tracking-widest">{isNew ? renderString(t('common:create'), lang) : renderString(t('common:save'), lang)}</span>
+                            </Button>
+                        )}
+                    </div>
                 </div>
-                {!isGlobalReadOnly && (
-                    <Button 
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl h-14 px-12 shadow-2xl shadow-indigo-200 dark:shadow-none transition-all hover:-translate-y-1 active:scale-95"
-                    >
-                        {saving ? <RefreshCw className="animate-spin mr-2 h-5 w-5" /> : <Save className="mr-2 h-5 w-5" />}
-                        <span className="text-sm font-black uppercase italic tracking-widest">{isNew ? renderString(t('common:create'), lang) : renderString(t('common:save'), lang)}</span>
-                    </Button>
-                )}
             </div>
         </div>
     );

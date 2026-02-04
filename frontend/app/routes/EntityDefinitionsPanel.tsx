@@ -46,21 +46,21 @@ export function EntityDefinitionsPanel() {
 
     const handleSave = async () => {
         if (savingRef.current) return;
-        if (!editingEntity.name) return toast.error("Entity name is required");
+        if (!editingEntity.name) return toast.error(t('superadmin:entity_builder:errors:name_required'));
 
         savingRef.current = true;
         setSaving(true);
         try {
             const res = await api.brain.post('entity/save', editingEntity);
             if (res.success) {
-                toast.success(`Entity ${editingEntity.name} saved!`);
+                toast.success(t('superadmin:entity_builder:save_success', { name: editingEntity.name }));
                 setEditingEntity(null);
                 await refreshConfig(true);
             } else {
-                toast.error(getErrorMessage(res.error, "Save failed"));
+                toast.error(getErrorMessage(res.error, t('common:error_saving')));
             }
         } catch (e: any) {
-            toast.error(getErrorMessage(e, 'Save failed'));
+            toast.error(getErrorMessage(e, t('common:error_saving')));
         } finally {
             savingRef.current = false;
             setSaving(false);
@@ -68,16 +68,16 @@ export function EntityDefinitionsPanel() {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this entity definition? This won't delete the database table, but it will remove it from the UI configuration.")) return;
+        if (!confirm(t('superadmin:entity_builder:confirm_delete'))) return;
         
         try {
             const res = await api.brain.post('entity/delete', { id });
             if (res.success) {
-                toast.success("Entity deleted");
+                toast.success(t('common:delete_success'));
                 await refreshConfig(true);
             }
         } catch (e: any) {
-            toast.error("Delete failed");
+            toast.error(t('common:error'));
         }
     };
 
@@ -108,16 +108,16 @@ export function EntityDefinitionsPanel() {
                 <div className="space-y-1">
                     <h3 className="text-xl font-black italic uppercase tracking-tighter flex items-center gap-2">
                         <Box className="text-primary" />
-                        Entity Builder
+                        {t('superadmin:entity_builder:title')}
                     </h3>
-                    <p className="text-xs text-slate-500 font-medium">Define new database modules and UI structures dynamically. {entityData.length} {entityData.length === 1 ? 'entity' : 'entity'} available.</p>
+                    <p className="text-xs text-slate-500 font-medium">{t('superadmin:entity_builder:subtitle')} {entityData.length} {t('common:records', { count: entityData.length })}.</p>
                 </div>
                 <Button 
                     onClick={startNew}
                     className="rounded-xl font-black uppercase italic text-xs px-6"
                 >
                     <Plus className="mr-2 h-4 w-4" />
-                    New Entity
+                    {t('superadmin:entity_builder:new_entity')}
                 </Button>
             </div>
 
@@ -130,33 +130,33 @@ export function EntityDefinitionsPanel() {
                             </div>
                             <div>
                                 <h4 className="text-lg font-black uppercase italic tracking-tight">
-                                    {editingEntity.id ? `Edit: ${editingEntity.name}` : 'Create New Entity'}
+                                    {editingEntity.id ? t('superadmin:entity_builder:edit_entity', { name: editingEntity.name }) : t('superadmin:entity_builder:create_new')}
                                 </h4>
                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">
-                                    Complete Entity Configuration
+                                    {t('superadmin:entity_builder:complete_config')}
                                 </p>
                             </div>
                         </div>
                         <div className="flex gap-3">
-                            <Button variant="ghost" className="rounded-xl font-bold text-xs" onClick={() => setEditingEntity(null)}>Cancel</Button>
+                            <Button variant="ghost" className="rounded-xl font-bold text-xs" onClick={() => setEditingEntity(null)}>{t('superadmin:entity_builder:cancel')}</Button>
                             <Button 
                                 className="rounded-xl font-black uppercase italic text-xs px-8" 
                                 disabled={saving}
                                 onClick={handleSave}
                             >
                                 {saving ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                Save Entity
+                                {t('superadmin:entity_builder:save_entity')}
                             </Button>
                         </div>
                     </div>
 
                     <Tabs defaultValue="basic" className="w-full">
                         <TabsList className="grid w-full grid-cols-5 lg:grid-cols-5 bg-slate-100/50 p-2 rounded-2xl">
-                            <TabsTrigger value="basic" className="text-[10px] font-bold uppercase" title="Basic entity properties">Basic</TabsTrigger>
-                            <TabsTrigger value="fields" className="text-[10px] font-bold uppercase" title="Field definitions">Fields</TabsTrigger>
-                            <TabsTrigger value="display" className="text-[10px] font-bold uppercase flex items-center gap-1" title="List and form display settings"><Eye size={12} />Display</TabsTrigger>
-                            <TabsTrigger value="menu" className="text-[10px] font-bold uppercase flex items-center gap-1" title="Navigation menu settings"><Menu size={12} />Menu</TabsTrigger>
-                            <TabsTrigger value="dashboard" className="text-[10px] font-bold uppercase flex items-center gap-1" title="Dashboard widget settings"><LayoutDashboard size={12} />Dashboard</TabsTrigger>
+                            <TabsTrigger value="basic" className="text-[10px] font-bold uppercase">{t('superadmin:entity_builder:tabs:basic')}</TabsTrigger>
+                            <TabsTrigger value="fields" className="text-[10px] font-bold uppercase">{t('superadmin:entity_builder:tabs:fields')}</TabsTrigger>
+                            <TabsTrigger value="display" className="text-[10px] font-bold uppercase flex items-center gap-1"><Eye size={12} />{t('superadmin:entity_builder:tabs:display')}</TabsTrigger>
+                            <TabsTrigger value="menu" className="text-[10px] font-bold uppercase flex items-center gap-1"><Menu size={12} />{t('superadmin:entity_builder:tabs:menu')}</TabsTrigger>
+                            <TabsTrigger value="dashboard" className="text-[10px] font-bold uppercase flex items-center gap-1"><LayoutDashboard size={12} />{t('superadmin:entity_builder:tabs:dashboard')}</TabsTrigger>
                         </TabsList>
 
                         {/* BASIC TAB */}
@@ -165,41 +165,41 @@ export function EntityDefinitionsPanel() {
                                 {/* Basic Info */}
                                 <div className="space-y-5">
                                     <div className="space-y-2">
-                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">System Name (Identifier)</Label>
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">{t('superadmin:entity_builder:system_name')}</Label>
                                         <Input 
                                             placeholder="e.g. products" 
                                             value={editingEntity.name}
                                             onChange={(e) => setEditingEntity({ ...editingEntity, name: e.target.value })}
                                             className="h-12 rounded-2xl border-slate-200 font-bold focus:ring-primary/20"
                                         />
-                                        <p className="text-[8px] text-slate-400 italic">Unique identifier used in database and URLs</p>
+                                        <p className="text-[8px] text-slate-400 italic">{t('superadmin:entity_builder:tooltips:system_name')}</p>
                                     </div>
                                     <div className="space-y-2">
-                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Display Label</Label>
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">{t('superadmin:entity_builder:display_label')}</Label>
                                         <Input 
                                             placeholder="e.g. Inventory Products" 
                                             value={editingEntity.label}
                                             onChange={(e) => setEditingEntity({ ...editingEntity, label: e.target.value })}
                                             className="h-12 rounded-2xl border-slate-200 font-medium focus:ring-primary/20"
                                         />
-                                        <p className="text-[8px] text-slate-400 italic">Human-readable label shown in UI</p>
+                                        <p className="text-[8px] text-slate-400 italic">{t('superadmin:entity_builder:tooltips:display_label')}</p>
                                     </div>
                                     <div className="space-y-2">
-                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Database Table Name</Label>
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">{t('superadmin:entity_builder:db_table')}</Label>
                                         <Input 
                                             placeholder="Optional: will default to identifier" 
                                             value={editingEntity.tableName}
                                             onChange={(e) => setEditingEntity({ ...editingEntity, tableName: e.target.value })}
                                             className="h-10 rounded-xl border-slate-200 font-mono text-xs focus:ring-primary/20"
                                         />
-                                        <p className="text-[8px] text-slate-400 italic">Database table name (auto-generated if empty)</p>
+                                        <p className="text-[8px] text-slate-400 italic">{t('superadmin:entity_builder:tooltips:db_table')}</p>
                                     </div>
                                 </div>
 
                                 {/* Description & Icon */}
                                 <div className="space-y-5">
                                     <div className="space-y-2">
-                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Description</Label>
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">{t('superadmin:entity_builder:description')}</Label>
                                         <textarea 
                                             placeholder="Describe what this entity represents..." 
                                             value={editingEntity.description}
@@ -208,28 +208,28 @@ export function EntityDefinitionsPanel() {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Visual Identity (Icon)</Label>
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">{t('superadmin:entity_builder:icon')}</Label>
                                         <IconPicker 
                                             value={editingEntity.icon}
                                             onChange={(val) => setEditingEntity({ ...editingEntity, icon: val })}
                                             placeholder="Choose an icon..."
                                         />
-                                        <p className="text-[8px] text-slate-400 italic">Icon used in navigation and lists</p>
+                                        <p className="text-[8px] text-slate-400 italic">{t('superadmin:entity_builder:tooltips:icon')}</p>
                                     </div>
 
                                     <div className="space-y-2">
-                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">Color Theme</Label>
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500">{t('superadmin:entity_builder:color_theme')}</Label>
                                         <select 
                                             value={editingEntity.colorTheme || 'blue'}
                                             onChange={(e) => setEditingEntity({ ...editingEntity, colorTheme: e.target.value })}
                                             className="h-10 rounded-xl border border-slate-200 text-xs font-bold bg-white px-3 focus:ring-2 focus:ring-primary/20"
                                         >
-                                            <option value="blue">Blue</option>
-                                            <option value="green">Green</option>
-                                            <option value="purple">Purple</option>
-                                            <option value="red">Red</option>
-                                            <option value="amber">Amber</option>
-                                            <option value="slate">Slate</option>
+                                            <option value="blue">{t('superadmin:entity_builder:colors:blue')}</option>
+                                            <option value="green">{t('superadmin:entity_builder:colors:green')}</option>
+                                            <option value="purple">{t('superadmin:entity_builder:colors:purple')}</option>
+                                            <option value="red">{t('superadmin:entity_builder:colors:red')}</option>
+                                            <option value="amber">{t('superadmin:entity_builder:colors:amber')}</option>
+                                            <option value="slate">{t('superadmin:entity_builder:colors:slate')}</option>
                                         </select>
                                     </div>
                                 </div>
@@ -242,7 +242,7 @@ export function EntityDefinitionsPanel() {
                                 <div className="flex items-center justify-between">
                                     <Label className="text-[11px] font-black uppercase italic tracking-widest text-slate-900 flex items-center gap-2">
                                         <Columns className="h-4 w-4" />
-                                        Field Architecture
+                                        {t('superadmin:entity_builder:field_architecture')}
                                     </Label>
                                     <Button 
                                         variant="outline" 
@@ -254,7 +254,7 @@ export function EntityDefinitionsPanel() {
                                             setEditingEntity({ ...editingEntity, fields });
                                         }}
                                     >
-                                        <Plus className="mr-1 h-3 w-3" /> Add Field
+                                        <Plus className="mr-1 h-3 w-3" /> {t('superadmin:entity_builder:add_field')}
                                     </Button>
                                 </div>
 
@@ -292,16 +292,16 @@ export function EntityDefinitionsPanel() {
                                                         }}
                                                         className="h-9 rounded-xl border-slate-200 text-[10px] font-black uppercase italic bg-white px-3"
                                                     >
-                                                        <option value="text">Short Text</option>
-                                                        <option value="textarea">Long Text</option>
-                                                        <option value="number">Number</option>
-                                                        <option value="date">Date</option>
-                                                        <option value="datetime">DateTime</option>
-                                                        <option value="boolean">Toggle / Switch</option>
-                                                        <option value="select">Dropdown</option>
-                                                        <option value="relation">Relation (DB Link)</option>
-                                                        <option value="image">Image Upload</option>
-                                                        <option value="file">File Upload</option>
+                                                        <option value="text">{t('superadmin:entity_builder:field_types:text')}</option>
+                                                        <option value="textarea">{t('superadmin:entity_builder:field_types:textarea')}</option>
+                                                        <option value="number">{t('superadmin:entity_builder:field_types:number')}</option>
+                                                        <option value="date">{t('superadmin:entity_builder:field_types:date')}</option>
+                                                        <option value="datetime">{t('superadmin:entity_builder:field_types:datetime')}</option>
+                                                        <option value="boolean">{t('superadmin:entity_builder:field_types:boolean')}</option>
+                                                        <option value="select">{t('superadmin:entity_builder:field_types:select')}</option>
+                                                        <option value="relation">{t('superadmin:entity_builder:field_types:relation')}</option>
+                                                        <option value="image">{t('superadmin:entity_builder:field_types:image')}</option>
+                                                        <option value="file">{t('superadmin:entity_builder:field_types:file')}</option>
                                                     </select>
                                                 </div>
                                                 
@@ -315,9 +315,9 @@ export function EntityDefinitionsPanel() {
                                                         }}
                                                         className="h-9 rounded-xl border-slate-200 text-[9px] font-bold bg-white px-2"
                                                     >
-                                                        <option value="1/1">Full Width</option>
-                                                        <option value="1/2">Half</option>
-                                                        <option value="1/4">Quarter</option>
+                                                        <option value="1/1">{t('superadmin:entity_builder:layout:full')}</option>
+                                                        <option value="1/2">{t('superadmin:entity_builder:layout:half')}</option>
+                                                        <option value="1/4">{t('superadmin:entity_builder:layout:quarter')}</option>
                                                     </select>
 
                                                     <label className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-xl cursor-pointer">
@@ -331,7 +331,7 @@ export function EntityDefinitionsPanel() {
                                                             }}
                                                             className="w-3.5 h-3.5 rounded"
                                                         />
-                                                        <span className="text-[8px] font-black uppercase text-slate-400">Req</span>
+                                                        <span className="text-[8px] font-black uppercase text-slate-400">{t('common:required_short')}</span>
                                                     </label>
 
                                                     <Button 
@@ -353,7 +353,7 @@ export function EntityDefinitionsPanel() {
                                 
                                 {(!editingEntity.fields || editingEntity.fields.length === 0) && (
                                     <div className="py-12 border-2 border-dashed border-slate-200 rounded-3xl text-center">
-                                        <p className="text-[10px] font-black uppercase italic text-slate-400">No fields defined yet. Start by adding one.</p>
+                                        <p className="text-[10px] font-black uppercase italic text-slate-400">{t('superadmin:entity_builder:no_fields')}</p>
                                     </div>
                                 )}
                             </div>
@@ -364,12 +364,12 @@ export function EntityDefinitionsPanel() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="space-y-5">
                                     <div>
-                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500 mb-3">List View Settings</Label>
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500 mb-3">{t('superadmin:entity_builder:settings:list_view')}</Label>
                                         <div className="space-y-3 p-4 bg-slate-50 rounded-2xl">
                                             <div className="space-y-2">
                                                 <label className="text-[9px] font-bold uppercase text-slate-600 flex items-center gap-2">
                                                     <EyeOff size={12} />
-                                                    Default List Columns
+                                                    {t('superadmin:entity_builder:settings:default_columns')}
                                                 </label>
                                                 <div className="space-y-1">
                                                     {(editingEntity.fields || []).slice(0, 5).map((field: any) => (
@@ -385,7 +385,7 @@ export function EntityDefinitionsPanel() {
                                                 </div>
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-[9px] font-bold uppercase text-slate-600">Items Per Page</label>
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:items_per_page')}</label>
                                                 <Input 
                                                     type="number" 
                                                     placeholder="50" 
@@ -403,12 +403,12 @@ export function EntityDefinitionsPanel() {
 
                                 <div className="space-y-5">
                                     <div>
-                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500 mb-3">Form Layout Settings</Label>
+                                        <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500 mb-3">{t('superadmin:entity_builder:settings:form_layout')}</Label>
                                         <div className="space-y-3 p-4 bg-slate-50 rounded-2xl">
                                             <div className="space-y-2">
                                                 <label className="text-[9px] font-bold uppercase text-slate-600 flex items-center gap-2">
                                                     <LayoutGrid size={12} />
-                                                    Form Column Layout
+                                                    {t('superadmin:entity_builder:settings:form_layout')}
                                                 </label>
                                                 <select 
                                                     defaultValue={editingEntity.uiConfig?.form?.columns || '2'}
@@ -418,13 +418,14 @@ export function EntityDefinitionsPanel() {
                                                     }}
                                                     className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold bg-white px-3"
                                                 >
-                                                    <option value="1">1 Column</option>
-                                                    <option value="2">2 Columns</option>
-                                                    <option value="3">3 Columns</option>
+                                                    <option value="1">{t('superadmin:entity_builder:settings:form_columns', { count: 1 })}</option>
+                                                    <option value="2">{t('superadmin:entity_builder:settings:form_columns_plural', { count: 2 })}</option>
+                                                    <option value="3">{t('superadmin:entity_builder:settings:form_columns_plural', { count: 3 })}</option>
+                                                    <option value="4">{t('superadmin:entity_builder:settings:form_columns_plural', { count: 4 })}</option>
                                                 </select>
                                             </div>
                                             <div className="flex items-center justify-between">
-                                                <label className="text-[9px] font-bold uppercase text-slate-600">Show Timestamps</label>
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:show_timestamps')}</label>
                                                 <Switch 
                                                     defaultChecked={editingEntity.uiConfig?.form?.showTimestamps !== false}
                                                     onCheckedChange={(checked) => {
@@ -434,11 +435,15 @@ export function EntityDefinitionsPanel() {
                                                 />
                                             </div>
                                             <div className="flex items-center justify-between">
-                                                <label className="text-[9px] font-bold uppercase text-slate-600">Show Archive/Delete</label>
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:show_actions')}</label>
                                                 <Switch 
-                                                    defaultChecked={editingEntity.uiConfig?.form?.showActions !== false}
+                                                    checked={editingEntity.uiConfig?.form?.showActions === true}
                                                     onCheckedChange={(checked) => {
-                                                        const config = { ...editingEntity.uiConfig, form: { ...editingEntity.uiConfig?.form, showActions: checked } };
+                                                        const config = { 
+                                                            ...editingEntity.uiConfig, 
+                                                            form: { ...editingEntity.uiConfig?.form, showActions: checked },
+                                                            list: { ...editingEntity.uiConfig?.list, showActions: checked } // Level 8 Sync
+                                                        };
                                                         setEditingEntity({ ...editingEntity, uiConfig: config });
                                                     }}
                                                 />
@@ -455,11 +460,11 @@ export function EntityDefinitionsPanel() {
                                 <div>
                                     <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500 mb-3 flex items-center gap-2">
                                         <Menu size={14} />
-                                        Navigation Menu Settings
+                                        {t('superadmin:entity_builder:settings:navigation_menu')}
                                     </Label>
                                     <div className="space-y-3 p-4 bg-slate-50 rounded-2xl">
                                         <div className="flex items-center justify-between">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Show in Main Menu</label>
+                                            <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:main_menu')}</label>
                                             <Switch 
                                                 defaultChecked={editingEntity.menuConfig?.showInMenu !== false}
                                                 onCheckedChange={(checked) => {
@@ -469,7 +474,7 @@ export function EntityDefinitionsPanel() {
                                             />
                                         </div>
                                         <div className="flex items-center justify-between">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Show in Admin Menu</label>
+                                            <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:admin_menu')}</label>
                                             <Switch 
                                                 defaultChecked={editingEntity.menuConfig?.showInAdminMenu}
                                                 onCheckedChange={(checked) => {
@@ -479,7 +484,7 @@ export function EntityDefinitionsPanel() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[9px] font-black uppercase text-slate-600">Pictogramă (Lucide)</label>
+                                            <label className="text-[9px] font-black uppercase text-slate-600">{t('superadmin:entity_builder:settings:menu_icon')}</label>
                                             <IconPicker 
                                                 value={editingEntity.menuConfig?.icon || ''}
                                                 onChange={(val) => {
@@ -488,10 +493,10 @@ export function EntityDefinitionsPanel() {
                                                 }}
                                                 placeholder="Alege o pictogramă pentru meniu..."
                                             />
-                                            <p className="text-[8px] text-slate-400 italic">Dacă este goală, se va folosi iconița principală a entității.</p>
+                                            <p className="text-[8px] text-slate-400 italic">{t('superadmin:entity_builder:tooltips:menu_icon')}</p>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Menu Priority (Sort Order)</label>
+                                            <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:menu_priority_sort')}</label>
                                             <Input 
                                                 type="number" 
                                                 placeholder="100" 
@@ -502,10 +507,10 @@ export function EntityDefinitionsPanel() {
                                                 }}
                                                 className="h-9 rounded-lg text-xs"
                                             />
-                                            <p className="text-[8px] text-slate-400 italic">Lower numbers appear first</p>
+                                            <p className="text-[8px] text-slate-400 italic">{t('superadmin:entity_builder:tooltips:menu_priority')}</p>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Custom Menu Badge (Optional)</label>
+                                            <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:menu_badge')}</label>
                                             <Input 
                                                 placeholder="e.g. NEW, BETA, 5" 
                                                 defaultValue={editingEntity.menuConfig?.badge || ''}
@@ -527,11 +532,11 @@ export function EntityDefinitionsPanel() {
                                 <div>
                                     <Label className="text-[10px] font-black uppercase italic tracking-widest text-slate-500 mb-3 flex items-center gap-2">
                                         <LayoutDashboard size={14} />
-                                        Dashboard Widget Settings
+                                        {t('superadmin:entity_builder:settings:dashboard_widget')}
                                     </Label>
                                     <div className="space-y-3 p-4 bg-slate-50 rounded-2xl">
                                         <div className="flex items-center justify-between">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Show in Dashboard</label>
+                                            <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:dashboard_show')}</label>
                                             <Switch 
                                                 defaultChecked={editingEntity.dashboardConfig?.enabled !== false}
                                                 onCheckedChange={(checked) => {
@@ -540,60 +545,107 @@ export function EntityDefinitionsPanel() {
                                                 }}
                                             />
                                         </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:widget_type')}</label>
+                                                <select 
+                                                    defaultValue={editingEntity.dashboardConfig?.widgetType || 'stats'}
+                                                    onChange={(e) => {
+                                                        const config = { ...editingEntity.dashboardConfig, widgetType: e.target.value };
+                                                        setEditingEntity({ ...editingEntity, dashboardConfig: config });
+                                                    }}
+                                                    className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold bg-white px-3"
+                                                >
+                                                    <option value="stats">{t('superadmin:entity_builder:widget_types:stats')}</option>
+                                                    <option value="list">{t('superadmin:entity_builder:widget_types:list')}</option>
+                                                    <option value="chart">{t('superadmin:entity_builder:widget_types:chart')}</option>
+                                                    <option value="table">{t('superadmin:entity_builder:widget_types:table')}</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:color_theme')}</label>
+                                                <select 
+                                                    defaultValue={editingEntity.colorTheme || 'indigo'}
+                                                    onChange={(e) => {
+                                                        setEditingEntity({ ...editingEntity, colorTheme: e.target.value });
+                                                    }}
+                                                    className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold bg-white px-3"
+                                                >
+                                                    <option value="indigo">Indigo (Primary)</option>
+                                                    <option value="blue">{t('superadmin:entity_builder:colors:blue')}</option>
+                                                    <option value="emerald">Emerald (Green)</option>
+                                                    <option value="purple">{t('superadmin:entity_builder:colors:purple')}</option>
+                                                    <option value="rose">Rose (Red)</option>
+                                                    <option value="amber">{t('superadmin:entity_builder:colors:amber')}</option>
+                                                    <option value="slate">{t('superadmin:entity_builder:colors:slate')}</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:items_to_show')}</label>
+                                                <Input 
+                                                    type="number" 
+                                                    placeholder="5" 
+                                                    defaultValue={editingEntity.dashboardConfig?.itemsToShow || 5}
+                                                    onChange={(e) => {
+                                                        const config = { ...editingEntity.dashboardConfig, itemsToShow: Number(e.target.value) };
+                                                        setEditingEntity({ ...editingEntity, dashboardConfig: config });
+                                                    }}
+                                                    className="h-9 rounded-lg text-xs font-bold"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:priority_weight')}</label>
+                                                <Input 
+                                                    type="number" 
+                                                    placeholder="10" 
+                                                    defaultValue={editingEntity.dashboardConfig?.priority || 10}
+                                                    onChange={(e) => {
+                                                        const config = { ...editingEntity.dashboardConfig, priority: Number(e.target.value) };
+                                                        setEditingEntity({ ...editingEntity, dashboardConfig: config });
+                                                    }}
+                                                    className="h-9 rounded-lg text-xs font-bold"
+                                                />
+                                            </div>
+                                        </div>
                                         <div className="space-y-2">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Widget Type</label>
+                                            <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:widget_width')}</label>
                                             <select 
-                                                defaultValue={editingEntity.dashboardConfig?.widgetType || 'summary'}
+                                                defaultValue={editingEntity.dashboardConfig?.width || '1/4'}
                                                 onChange={(e) => {
-                                                    const config = { ...editingEntity.dashboardConfig, widgetType: e.target.value };
+                                                    const config = { ...editingEntity.dashboardConfig, width: e.target.value };
                                                     setEditingEntity({ ...editingEntity, dashboardConfig: config });
                                                 }}
                                                 className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold bg-white px-3"
                                             >
-                                                <option value="summary">Summary Card</option>
-                                                <option value="list">Recent Items List</option>
-                                                <option value="chart">Chart/Analytics</option>
-                                                <option value="stats">Statistics Cards</option>
-                                                <option value="custom">Custom</option>
+                                                <option value="1/4">{t('superadmin:entity_builder:layout:small')}</option>
+                                                <option value="1/2">{t('superadmin:entity_builder:layout:medium')}</option>
+                                                <option value="3/4">{t('superadmin:entity_builder:layout:large')}</option>
+                                                <option value="full">{t('superadmin:entity_builder:layout:full_block')}</option>
                                             </select>
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Items to Show in Widget</label>
-                                            <Input 
-                                                type="number" 
-                                                placeholder="5" 
-                                                defaultValue={editingEntity.dashboardConfig?.itemsToShow || 5}
-                                                onChange={(e) => {
-                                                    const config = { ...editingEntity.dashboardConfig, itemsToShow: Number(e.target.value) };
-                                                    setEditingEntity({ ...editingEntity, dashboardConfig: config });
-                                                }}
-                                                className="h-9 rounded-lg text-xs"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Widget Size</label>
-                                            <select 
-                                                defaultValue={editingEntity.dashboardConfig?.size || 'medium'}
-                                                onChange={(e) => {
-                                                    const config = { ...editingEntity.dashboardConfig, size: e.target.value };
-                                                    setEditingEntity({ ...editingEntity, dashboardConfig: config });
-                                                }}
-                                                className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold bg-white px-3"
-                                            >
-                                                <option value="small">Small (1 column)</option>
-                                                <option value="medium">Medium (2 columns)</option>
-                                                <option value="large">Large (Full width)</option>
-                                            </select>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-[9px] font-bold uppercase text-slate-600">Show Chart Trends</label>
-                                            <Switch 
-                                                defaultChecked={editingEntity.dashboardConfig?.showTrends !== false}
-                                                onCheckedChange={(checked) => {
-                                                    const config = { ...editingEntity.dashboardConfig, showTrends: checked };
-                                                    setEditingEntity({ ...editingEntity, dashboardConfig: config });
-                                                }}
-                                            />
+                                        <div className="grid grid-cols-2 gap-4 pt-2">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-[9px] font-bold uppercase text-slate-600">{t('superadmin:entity_builder:settings:show_trends')}</label>
+                                                <Switch 
+                                                    defaultChecked={editingEntity.dashboardConfig?.showTrends !== false}
+                                                    onCheckedChange={(checked) => {
+                                                        const config = { ...editingEntity.dashboardConfig, showTrends: checked };
+                                                        setEditingEntity({ ...editingEntity, dashboardConfig: config });
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between col-span-2 border-t border-slate-100 pt-3 mt-1">
+                                                <label className="text-[10px] font-black uppercase text-indigo-600">{t('superadmin:entity_builder:settings:enable_dashboard')}</label>
+                                                <Switch 
+                                                    defaultChecked={editingEntity.dashboardConfig?.enabled !== false}
+                                                    onCheckedChange={(checked) => {
+                                                        const config = { ...editingEntity.dashboardConfig, enabled: checked };
+                                                        setEditingEntity({ ...editingEntity, dashboardConfig: config });
+                                                    }}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -604,7 +656,7 @@ export function EntityDefinitionsPanel() {
                     <div className="pt-4">
                         <Label className="text-[11px] font-black uppercase italic tracking-widest text-slate-400 flex items-center gap-2 mb-3">
                             <Code className="h-3 w-3" />
-                            Advanced JSON View (Read-Only)
+                            {t('superadmin:entity_builder:settings:advanced_json')}
                         </Label>
                         <textarea 
                             value={JSON.stringify(editingEntity, null, 2)}

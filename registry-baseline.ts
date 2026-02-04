@@ -178,10 +178,11 @@ export const NAV = {
     { id: 'dashboard', label: { ro: 'Tablou de bord', en: 'Dashboard' }, icon: 'Layout', path: '/', priority: 1, category: 'main_menu' },
   ],
   worker: [],
-  SHORTCUT: [
-    { id: 'blueprint-architect', label: { ro: 'Arhitect Blueprint', en: 'Blueprint Architect' }, icon: 'Sparkles', path: '/superadmin?tab=ai-architect', priority: 1 },
-    { id: 'cloud-status', label: { ro: 'Status Cloudflare', en: 'Cloudflare Status' }, icon: 'Cloud', path: '/monitoring?tab=cloudflare', priority: 2, localAgentOnly: true },
-    { id: 'local-agent', label: { ro: 'Agent Local', en: 'Local Agent' }, icon: 'HardDrive', path: '/monitoring?tab=agent', priority: 3, localAgentOnly: true },
+  shortcuts: [
+    { id: 'profile', label: { ro: 'Profilul Meu', en: 'My Profile' }, icon: 'User', path: '/profile', priority: 1 },
+    { id: 'blueprint-architect', label: { ro: 'Arhitect Blueprint', en: 'Blueprint Architect' }, icon: 'Sparkles', path: '/superadmin?tab=ai-architect', priority: 2 },
+    { id: 'cloud-status', label: { ro: 'Status Cloudflare', en: 'Cloudflare Status' }, icon: 'Cloud', path: '/monitoring?tab=cloudflare', priority: 3, localAgentOnly: true },
+    { id: 'local-agent', label: { ro: 'Agent Local', en: 'Local Agent' }, icon: 'HardDrive', path: '/monitoring?tab=agent', priority: 4, localAgentOnly: true },
   ],
   admin: [
     { id: 'monitoring', label: { ro: 'Monitorizare', en: 'Monitoring' }, icon: 'Activity', path: '/monitoring', priority: 90, category: 'administration', localAgentOnly: true },
@@ -197,7 +198,7 @@ export const NAV = {
   auth: [],
 } as const;
 
-export const SHORTCUT = [
+export const shortcuts = [
   { action: 'open-search', key: 'k', ctrlKey: true, label: { ro: 'Căutare Globală', en: 'Global Search' } },
   { action: 'open-search-ai', key: 'j', ctrlKey: true, label: { ro: 'Căutare AI / Chat', en: 'AI Search / Chat' } },
   { action: 'open-search-file', key: '.', ctrlKey: true, label: { ro: 'Căutare Fișiere', en: 'File Search' } },
@@ -260,7 +261,12 @@ export const CONSTANT = {
     'system_error',
     '_ai_prompt',
     'user',
-    'role'
+    'role',
+    'session',
+    'changelog',
+    'bug_report',
+    '_help_content',
+    'system_performance_log'
   ],
   auditExclusion: [
     'audit_log',
@@ -1301,6 +1307,69 @@ export interface EntityDefinition {
 }
 
 // ============================================================================
+// ENTITY BLUEPRINTS (Level 8 Module Accelerator)
+// Common templates that can be used to quickly bootstrap new modules
+// ============================================================================
+
+export const BLUEPRINT = {
+  product: {
+    label: { ro: 'Produs', en: 'Product' },
+    icon: 'Package',
+    colorTheme: 'blue',
+    features: { auditable: true, creatable: true, editable: true, deletable: true },
+    fields: [
+      { id: 'name', label: { ro: 'Nume Produs', en: 'Product Name' }, type: 'text', required: true, searchable: true },
+      { id: 'sku', label: { ro: 'SKU / Cod', en: 'SKU / Code' }, type: 'text', unique: true },
+      { id: 'price', label: { ro: 'Preț Uniutar', en: 'Unit Price' }, type: 'currency', required: true },
+      { id: 'stock', label: { ro: 'Stoc Curent', en: 'Current Stock' }, type: 'number', defaultValue: 0 },
+      { id: 'category', label: { ro: 'Categorie', en: 'Category' }, type: 'select', options: [
+          { value: 'hardware', label: 'Hardware' },
+          { value: 'software', label: 'Software' },
+          { value: 'service', label: 'Service' }
+        ]
+      },
+      { id: 'description', label: { ro: 'Descriere', en: 'Description' }, type: 'richtext' }
+    ]
+  },
+  lead: {
+    label: { ro: 'Lead / Prospect', en: 'Lead / Prospect' },
+    icon: 'UserPlus',
+    colorTheme: 'indigo',
+    features: { auditable: true, statusFlow: true },
+    fields: [
+      { id: 'name', label: { ro: 'Nume Complet', en: 'Full Name' }, type: 'text', required: true, searchable: true },
+      { id: 'email', label: 'Email', type: 'email', required: true },
+      { id: 'phone', label: { ro: 'Telefon', en: 'Phone' }, type: 'phone' },
+      { id: 'source', label: { ro: 'Sursă', en: 'Source' }, type: 'select', options: [
+          { value: 'website', label: 'Website' },
+          { value: 'referral', label: 'Referral' },
+          { value: 'social', label: 'Social Media' }
+        ]
+      },
+      { id: 'status', label: 'Status', type: 'status', defaultValue: 'new', options: [
+          { value: 'new', label: { ro: 'Nou', en: 'New' }, color: '#3b82f6' },
+          { value: 'contacted', label: { ro: 'Contactat', en: 'Contacted' }, color: '#f59e0b' },
+          { value: 'qualified', label: { ro: 'Calificat', en: 'Qualified' }, color: '#10b981' },
+          { value: 'lost', label: { ro: 'Pierdut', en: 'Lost' }, color: '#ef4444' }
+        ]
+      }
+    ]
+  },
+  task: {
+    label: { ro: 'Task / Activitate', en: 'Task / Activity' },
+    icon: 'CheckSquare',
+    colorTheme: 'emerald',
+    fields: [
+      { id: 'title', label: { ro: 'Titlu', en: 'Title' }, type: 'text', required: true },
+      { id: 'dueDate', label: { ro: 'Termen Limită', en: 'Due Date' }, type: 'date' },
+      { id: 'priority', label: { ro: 'Prioritate', en: 'Priority' }, type: 'priority' },
+      { id: 'assignedTo', label: { ro: 'Alocat lui', en: 'Assigned To' }, type: 'relation-one', relation: { target: 'user' } },
+      { id: 'completed', label: { ro: 'Finalizat', en: 'Completed' }, type: 'boolean', defaultValue: false }
+    ]
+  }
+} as const;
+
+// ============================================================================
 // ENTITY CONFIGURATIONS
 // ============================================================================
 
@@ -1338,6 +1407,11 @@ export const ENTITY_CONFIG = {
         type: 'relation', 
         relation: { target: 'workspace', field: 'name' }, 
         hidden: true 
+      },
+      userId: { 
+        type: 'string', 
+        hidden: true,
+        description: { ro: 'ID-ul utilizatorului asociat (dacă există)', en: 'The associated user ID (if any)' }
       },
       name: { 
         type: 'string', 
@@ -1397,6 +1471,12 @@ export const ENTITY_CONFIG = {
         ui: { width: 12, icon: 'Tag' },
         description: { ro: 'Categorii și etichete asociate contactului', en: 'Categories and tag associated with the contact' }
       },
+      notes: { 
+        type: 'relation-many', 
+        relation: { target: 'entity_note', field: 'content' },
+        ui: { width: 12, icon: 'StickyNote' },
+        description: { ro: 'Note și comentarii despre acest contact', en: 'Notes and comments about this contact' }
+      },
       permission: {
         type: 'json',
         hidden: true,
@@ -1441,8 +1521,8 @@ export const ENTITY_CONFIG = {
     searchFields: ['name', 'description'],
     isSystem: true,
     dashboardConfig: {
-      enabled: true,
-      showInDashboard: false,
+      enabled: false,
+      showInDashboard: true,
       priority: 3,
       category: 'CORE'
     },
@@ -1510,8 +1590,8 @@ export const ENTITY_CONFIG = {
     sortField: 'createdAt',
     searchFields: ['name', 'description'],
     dashboardConfig: {
-      enabled: true,
-      showInDashboard: false,
+      enabled: false,
+      showInDashboard: true,
       priority: 4,
       category: 'CORE'
     },
@@ -1615,7 +1695,7 @@ export const ENTITY_CONFIG = {
       id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       contactId: { type: 'relation', relation: { target: 'contact', field: 'name' } },
-      channel: { type: 'enum', options: ['whatsapp', 'email', 'sms', 'system'] },
+      channel: { type: 'enum', options: ['whatsapp', 'email', 'sms', 'system', 'ai'] },
       type: { type: 'enum', options: ['inbound', 'outbound'] },
       subject: { type: 'string', searchable: true },
       body: { type: 'text', searchable: true },
@@ -1848,6 +1928,36 @@ export const ENTITY_CONFIG = {
       priority: 100
     }
   },
+
+  // --- AUTOMATED PERFORMANCE MONITORING (LEVEL 9) ---
+  system_performance_log: {
+    label: { ro: 'Log Performanță', en: 'Performance Log' },
+    labelPlural: { ro: 'Log-uri Performanță', en: 'Performance Logs' },
+    icon: 'Zap',
+    tableName: 'system_performance_log',
+    isSystem: true,
+    features: {
+      creatable: false,
+      editable: false,
+      deletable: true,
+      auditable: false,
+      timestamps: true
+    },
+    fields: {
+      id: { type: 'uuid', primaryKey: true, generated: 'uuid', hidden: true },
+      query: { type: 'text', required: true, label: { ro: 'Interogare', en: 'Query' } },
+      durationMs: { type: 'number', required: true, label: { ro: 'Durată (ms)', en: 'Duration (ms)' } },
+      affectedTable: { type: 'string', label: { ro: 'Tabel Afectat', en: 'Affected Table' } },
+      explainPlan: { type: 'text', label: { ro: 'Plan Execuție', en: 'Execution Plan' } },
+      status: { type: 'string', label: { ro: 'Status', en: 'Status' } } // 'slow', 'optimal', 'error'
+    },
+    menuConfig: {
+      showInMainMenu: false,
+      category: 'administration',
+      icon: 'Activity',
+      priority: 99
+    }
+  },
   entity_definition: {
     label: { ro: 'Definiție Entitate', en: 'Entity Definition' },
     labelPlural: { ro: 'Builder Entități', en: 'Entity Builder' },
@@ -1863,8 +1973,8 @@ export const ENTITY_CONFIG = {
       timestamps: true
     },
     dashboardConfig: {
-      enabled: true,
-      showInDashboard: false,
+      enabled: false,
+      showInDashboard: true,
       priority: 1,
       widgetType: 'stats'
     },
@@ -2087,6 +2197,21 @@ export const ENTITY_CONFIG = {
       description: { type: 'string' }
     }
   },
+  help_content: {
+    label: { ro: 'Conținut Ajutor', en: 'Help Content' },
+    labelPlural: { ro: 'Conținuturi Ajutor', en: 'Help Contents' },
+    icon: 'BookOpen',
+    tableName: '_help_content',
+    isSystem: true,
+    features: { auditable: false, deletable: true, timestamps: true },
+    fields: {
+      id: { type: 'string', primaryKey: true, label: { ro: 'ID Secțiune', en: 'Section ID' } },
+      title: { type: 'string', label: { ro: 'Titlu', en: 'Title' } },
+      description: { type: 'string', label: { ro: 'Descriere', en: 'Description' } },
+      content: { type: 'text', label: { ro: 'Conținut', en: 'Content' } },
+      updatedAt: { type: 'string', label: { ro: 'Actualizat', en: 'Updated At' } }
+    }
+  },
   _ai_prompt: {
     label: { ro: 'Prompt AI', en: 'AI Prompt' },
     labelPlural: { ro: 'Prompturi AI', en: 'AI Prompts' },
@@ -2150,12 +2275,12 @@ export const ENTITY_CONFIG = {
       priority: 140
     }
   },
-  tag_assignment: {
-    label: { ro: 'Atribuire Etichetă', en: 'Tag Assignment' },
-    labelPlural: { ro: 'Atribuiri Etichete', en: 'Tag Assignments' },
-    icon: 'Tag',
-    tableName: 'tag_assignment',
-    displayField: 'tagId',
+  entity_relation_many: {
+    label: { ro: 'Relație Polimorfică Many', en: 'Polymorphic Relation Many' },
+    labelPlural: { ro: 'Relații Polimorfice Many', en: 'Polymorphic Relations Many' },
+    icon: 'Share2',
+    tableName: 'entity_relation_many',
+    displayField: 'targetId',
     isSystem: true,
     features: {
       creatable: true,
@@ -2171,14 +2296,13 @@ export const ENTITY_CONFIG = {
         relation: { target: 'workspace', field: 'name' }, 
         hidden: true 
       },
-      tagId: { 
-        type: 'relation', 
-        relation: { target: 'tag', field: 'name' },
-        ui: { width: 6 } 
-      },
-      entityType: { type: 'string', ui: { width: 4 } },
-      entityId: { type: 'string', ui: { width: 4 } },
+      sourceType: { type: 'string', ui: { width: 4 } },
+      sourceId: { type: 'string', ui: { width: 4 } },
+      targetType: { type: 'string', ui: { width: 4 } },
+      targetId: { type: 'string', ui: { width: 4 } },
       fieldName: { type: 'string', ui: { width: 4 } },
+      createdAt: { type: 'datetime', generated: 'now' },
+      updatedAt: { type: 'datetime', generated: 'now' },
     }
   },
   collection: {
@@ -2262,7 +2386,9 @@ export const ENTITY_CONFIG = {
       workspaceId: { type: 'relation', relation: { target: 'workspace', field: 'name' }, hidden: true },
       module: { type: 'string' },
       version: { type: 'string', required: true },
-      details: { type: 'text' },
+      title: { type: 'string' },
+      description: { type: 'text' },
+      type: { type: 'enum', enum: ['feature', 'fix', 'improvement'] },
       createdAt: { type: 'datetime', generated: 'now' },
     },
     menuConfig: {
@@ -2444,42 +2570,114 @@ export const THEME = {
 
 export const AI_CONFIG = {
   enabled: true,
-  defaultProvider: 'gemini',
+  default_provider: '',
+  active_provider: '',
+  model: '',
+  embedding_model: '@cf/baai/bge-small-en-v1.5',
   // Active providers that the system can use. 
   // All active providers are initialized in parallel.
-  activeProviders: ['gemini', 'cloudflare'], 
+  active_providers: [], 
   temperature: 0.7,
-  maxTokens: 2048,
-  ragEnabled: true,
-  agentPersonality: 'professional',
+  max_tokens: 2048,
+  rag_enabled: true,
+  agent_personality: 'professional',
+  preferred_model: '',
+  help_provider: 'cloudflare',
+  help_model: '@cf/meta/llama-3.1-8b-instruct',
+  changelog_provider: 'cloudflare',
+  changelog_model: '@cf/meta/llama-3.1-8b-instruct',
+  chat_provider: '',
+  chat_model: '',
+  translation_model: '@cf/meta/m2m100-1.2b',
+  vision_model: '',
+  transcription_model: '@cf/openai/whisper',
   providers: {
     gemini: {
       name: 'Google Gemini',
       apiKeyEnvVar: 'GEMINI_API_KEY',
-      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models/{{model}}:generateContent',
+      defaultModel: '',
+      type: 'google-v1beta',
+      color: 'bg-indigo-500 text-white',
+      icon: 'Brain',
+      iconColor: 'text-indigo-500',
+      typeName: 'Gemini',
     },
     openai: {
       name: 'OpenAI',
       apiKeyEnvVar: 'OPENAI_API_KEY',
-      baseUrl: 'https://api.openai.com/v1',
+      baseUrl: 'https://api.openai.com/v1/chat/completions',
+      defaultModel: '',
+      type: 'openai-v1',
+      color: 'bg-emerald-600 text-white',
+      icon: 'Sparkles',
+      iconColor: 'text-emerald-500',
+      typeName: 'OpenAI',
     },
     anthropic: {
       name: 'Anthropic Claude',
       apiKeyEnvVar: 'ANTHROPIC_API_KEY',
-      baseUrl: 'https://api.anthropic.com/v1',
+      baseUrl: 'https://api.anthropic.com/v1/messages',
+      defaultModel: '',
+      type: 'anthropic-v1',
+      color: 'bg-orange-600 text-white',
+      icon: 'Zap',
+      iconColor: 'text-orange-600',
+      typeName: 'Claude',
     },
     cloudflare: {
       name: 'Cloudflare Workers AI',
       apiKeyEnvVar: 'CLOUDFLARE_API_TOKEN',
-      baseUrl: 'https://api.cloudflare.com/client/v4',
+      accountId: '',
+      baseUrl: 'https://api.cloudflare.com/client/v4/accounts/{{accountId}}/ai/run/{{model}}',
+      defaultModel: '',
+      type: 'cloudflare-rpc',
+      color: 'bg-orange-500 text-white',
+      icon: 'Zap',
+      iconColor: 'text-amber-500',
+      typeName: 'Workers AI',
+    },
+    github: {
+      name: 'GitHub Copilot / Models',
+      apiKeyEnvVar: 'GITHUB_TOKEN',
+      baseUrl: 'https://models.inference.ai.azure.com/chat/completions',
+      defaultModel: '',
+      type: 'github-v1',
+      color: 'bg-slate-800 text-white',
+      icon: 'Github',
+      iconColor: 'text-slate-800',
+      typeName: 'GitHub',
+    },
+    groq: {
+      name: 'Groq Cloud',
+      apiKeyEnvVar: 'GROQ_API_KEY',
+      baseUrl: 'https://api.groq.com/openai/v1/chat/completions',
+      defaultModel: '',
+      type: 'openai-v1',
+      color: 'bg-rose-600 text-white',
+      icon: 'Zap',
+      iconColor: 'text-rose-600',
+      typeName: 'Groq',
+    },
+    deepseek: {
+      name: 'DeepSeek',
+      apiKeyEnvVar: 'DEEPSEEK_API_KEY',
+      baseUrl: 'https://api.deepseek.com/chat/completions',
+      defaultModel: '',
+      type: 'openai-v1',
+      color: 'bg-blue-700 text-white',
+      icon: 'Cpu',
+      iconColor: 'text-blue-700',
+      typeName: 'DeepSeek',
     },
   },
-  // Dynamic Model Registry - Add or modify models here
-  models: [
-    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'gemini', isDefault: true, capabilities: ['vision', 'chat', 'long-context'] },
-    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', provider: 'gemini', isDefault: false, capabilities: ['chat', 'fast'] },
-    { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'anthropic', isDefault: false, capabilities: ['chat', 'coding'] },
-    { id: '@cf/meta/llama-3-8b-instruct', name: 'Llama 3 8B (CF)', provider: 'cloudflare', isDefault: false, capabilities: ['chat', 'local'] },
+  // Dynamic Model Registry - Baseline contains only essential bootstrap models
+  // The system will automatically expand this list via the "AI Inventory" and DB overrides (D1)
+  models: [ 
+    { id: "@cf/meta/llama-3.1-8b-instruct", name: "Llama 3.1 8B (Direct)", provider: 'cloudflare', capabilities: ['chat', 'fast'], contextWindow: 131072, enabled: true },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: 'openai', capabilities: ['chat', 'fast'], contextWindow: 128000, enabled: true },
+    { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", provider: 'gemini', capabilities: ['chat', 'fast', 'vision'], contextWindow: 1000000, enabled: true },
+    { id: "claude-3-5-sonnet-20240620", name: "Claude 3.5 Sonnet", provider: 'anthropic', capabilities: ['chat', 'vision'], contextWindow: 200000, enabled: true }
   ],
   requestConfig: {
     timeout: 30000,
@@ -2510,6 +2708,7 @@ CORE ARCHITECTURE RULES:
 4. UI Config: Include { "form": { "columns": 2, "showChildren": true } } for parental entities.
 5. Inbound Relations: Set "showChildren": true/false and "hiddenChildren": [] to control automatic child-record visibility.
 6. Enums: Use { "options": [{ "label": "Text", "value": "val", "color": "#hex" }] }.
+7. List Actions: Set "showActions": true/false in uiConfig.form to show/hide row-level Edit/Delete buttons in listings (Default: false).
 
 EXAMPLE SCHEMA:
 {
@@ -2522,7 +2721,7 @@ EXAMPLE SCHEMA:
     "manager_id": { "type": "relation", "relation": { "target": "contact", "field": "name" } }
   },
   "uiConfig": {
-    "form": { "columns": 2, "showChildren": true }
+    "form": { "columns": 2, "showChildren": true, "showActions": false }
   }
 }
 
@@ -2536,7 +2735,7 @@ Always prioritize clean, normalized data structures and intuitive UI layouts. Ou
       isLocked: true 
     },
     { 
-      id: 'entity_extractor', 
+      id: 'ENTITY_EXTRACTION', 
       name: { ro: 'Extractor Entități Date', en: 'Data Entity Extractor' }, 
       content: 'Extract entities from the provided text according to the specific JSON schema. If data is missing, use null. Output ONLY JSON.',
       isLocked: true 
@@ -2546,6 +2745,24 @@ Always prioritize clean, normalized data structures and intuitive UI layouts. Ou
       name: { ro: 'Analist BI / Rapoarte', en: 'BI / Report Analyst' }, 
       content: 'You analyze business data and provide strategic insights. Focus on trends, KPIs, and actionable recommendations.',
       isLocked: true 
+    },
+    {
+      id: 'HELP_GENERATOR',
+      name: { ro: 'Generator Ajutor Sistem', en: 'System Help Generator' },
+      content: `You are the Lead Systems Architect and Technical Writer for Studio App v2. Generate expert-level technical documentation in JSON format.
+STYLE: Professional, direct, informative. Use bold (**) for UI elements. No repetitive phrases like "Utilizatorii pot...".
+STRUCTURE: 1. Obiectiv & Scop, 2. Capabilități Cheie (bullet list), 3. Operațiuni Standard (action-oriented).
+OUTPUT: JSON { "title": "...", "description": "...", "content": "Markdown Content" }.`,
+      isLocked: true
+    },
+    {
+      id: 'CHANGELOG_GENERATOR',
+      name: { ro: 'Generator Changelog', en: 'Changelog Generator' },
+      content: `You are a Senior Technical Writer. Generate a professional Changelog entry for Studio App v2 based on Git history.
+STYLE: Romanian language. Technical, concise. Use bullet points (-). Group changes logically.
+Tone: Direct, no "Această actualizare...".
+OUTPUT: JSON { "module": "...", "version": "...", "title": "...", "description": "Markdown Content", "type": "feature|fix|improvement" }.`,
+      isLocked: true
     },
     { 
       id: 'search', 
@@ -2558,6 +2775,37 @@ Always prioritize clean, normalized data structures and intuitive UI layouts. Ou
       name: { ro: 'Suport Chat Floating', en: 'Floating Chat Support' }, 
       content: 'You are a friendly support agent for the workspace. Help users find features and answer questions about the platform logic.',
       isLocked: true 
+    },
+    { 
+      id: 'magic_fill', 
+      name: { ro: 'Magic Fill Auto-completare', en: 'Magic Fill Auto-complete' }, 
+      content: 'You are an expert CRM data entry assistant. Task: Predictive Data Entry. Based on the available data and the provided schema, predict and fill in the missing fields realistically. Return ONLY valid JSON containing all fields (existing + predicted). NEVER add fake IDs or internal timestamps.',
+      isLocked: true 
+    },
+    { 
+      id: 'PERFORMANCE_OPTIMIZER', 
+      name: { ro: 'Optimizer Performanță SQL (L9)', en: 'SQL Performance Optimizer (L9)' }, 
+      content: `SQL PERFORMANCE ANALYSIS (Level 9)
+            
+Query Pattern: {{queryPattern}}
+Avg Duration: {{avgDuration}}ms
+Execution Plan: {{explainPlan}}
+Table: {{table}}
+            
+TASK: Suggest a SINGLE SQL command to optimize this (e.g. CREATE INDEX).
+RULES:
+1. Return ONLY the SQL command.
+2. If no index is needed (e.g. table is small), return "OPTIMAL".
+3. Do not include any explanations.
+4. Command MUST be compatible with SQLite (D1).
+5. Suggested index name should follow format: idx_{{table}}_performance_L9`,
+      isLocked: true 
+    },
+    {
+      id: 'AI_TEST_CONNECTION',
+      name: { ro: 'Test Conexiune AI', en: 'AI Connection Test' },
+      content: 'Respond strictly with the word "OK" to verify connectivity.',
+      isLocked: true
     }
   ],
   // GLOBAL PROMPTS: Created by SuperAdmin, available to all workspace.
@@ -2817,7 +3065,7 @@ export const SYSTEM_SETTING = {
   recent_arrivals_limit: 20,
   ai: {
     priority_provider: 'cloudflare',
-    model: 'gemini-1.5-pro',
+    model: '',
     temperature: 0.7,
     max_tokens: 2048,
     agent_personality: 'professional',
@@ -2909,7 +3157,7 @@ export const SYSTEM_SETTING = {
         defaultSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net'],
         scriptSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
+        imgSrc: ["'self'", 'data:', 'https:', 'http:', '*'],
       },
     },
   },
@@ -3049,6 +3297,7 @@ export const I18N = {
       delete: "Delete",
       edit: "Edit",
       search: "Search",
+      required_short: "Req",
       loading: "Loading...",
       error: "Error",
       confirm: "Confirm",
@@ -3081,6 +3330,13 @@ export const I18N = {
       preferences: "Preferences",
       preferences_desc: "Personal settings for language and notifications.",
       ai_draft: "AI Generated Draft",
+      ai_magic_fill: "AI Magic Fill",
+      ai_magic_fill_desc: "Automatically complete fields based on existing data",
+      ai_autofill_success: "AI has refilled the form!",
+      ai_autofill_error: "AI could not refill the form.",
+      ai_extraction_title: "Smart Extractor",
+      ai_extraction_desc: "Extract data from any source automatically",
+      other_details: "Other Details",
       publish: "Publish",
       back_to_list: "Back to list",
       delete_success: "Deleted successfully",
@@ -3136,6 +3392,12 @@ export const I18N = {
       no_records_in: "No records found in {{label}}",
       select: "Select",
       choose: "Choose",
+      undo: "Undo",
+      view_item: "View Item",
+      action_create: "Created",
+      action_update: "Updated",
+      action_delete: "Deleted",
+      action_insert: "Inserted",
       role_label: "Role",
       role: {
         superadmin: "Super Admin",
@@ -3200,7 +3462,15 @@ export const I18N = {
       workers_restarting: "Services are restarting...",
       restart_failed: "Restart failed",
       pending_tasks: "Pending task",
-      all_done: "All task completed"
+      all_done: "All task completed",
+      unified_activity_feed: "Unified Activity Feed",
+      view_all_audit: "View All Audit",
+      undo_success: "Action undone successfully!",
+      undo_error: "Undo error: ",
+      connection_error: "Connection error: ",
+      no_recent_records: "No recent records",
+      activity_trend: "Activity trend for {{name}}",
+      records_count: "records"
     },
     whatsapp: {
       title: "WhatsApp Messaging",
@@ -3225,7 +3495,109 @@ export const I18N = {
       tabs: {
         ai_architect: "AI Architect",
         marketplace: "Marketplace",
-        builder: "Studio Builder"
+        builder: "Studio Builder",
+        entity_builder: "Entity Builder"
+      },
+      entity_builder: {
+        title: "Entity Builder",
+        subtitle: "Define new database modules and UI structures dynamically.",
+        new_entity: "New Entity",
+        save_entity: "Save Entity",
+        save_success: "Entity {{name}} saved!",
+        name_required: "Entity name is required",
+        confirm_delete: "Are you sure you want to delete this entity definition? This won't delete the database table, but it will remove it from the UI configuration.",
+        edit_entity: "Edit: {{name}}",
+        create_new: "Create New Entity",
+        complete_config: "Complete Entity Configuration",
+        cancel: "Cancel",
+        tabs: {
+          basic: "Basic",
+          fields: "Fields",
+          display: "Display",
+          menu: "Menu",
+          dashboard: "Dashboard"
+        },
+        system_name: "System Name (Identifier)",
+        display_label: "Display Label",
+        db_table: "Database Table Name",
+        description: "Description",
+        icon: "Visual Identity (Icon)",
+        color_theme: "Color Theme",
+        field_architecture: "Field Architecture",
+        add_field: "Add Field",
+        tooltips: {
+          system_name: "Unique identifier used in database and URLs",
+          display_label: "Human-readable label shown in UI",
+          db_table: "Database table name (auto-generated if empty)",
+          icon: "Icon used in navigation and lists",
+          menu_icon: "If empty, entity icon will be used",
+          menu_priority: "Lower numbers appear first"
+        },
+        field_types: {
+          text: "Short Text",
+          textarea: "Long Text",
+          number: "Number",
+          date: "Date",
+          datetime: "DateTime",
+          boolean: "Toggle / Switch",
+          select: "Dropdown",
+          relation: "Relation (DB Link)",
+          image: "Image Upload",
+          file: "File Upload"
+        },
+        layout: {
+          full: "Full Width",
+          half: "Half",
+          quarter: "Quarter",
+          small: "Small (1/4 Width)",
+          medium: "Medium (1/2 Width)",
+          large: "Large (3/4 Width)",
+          full_block: "Full Block (100%)"
+        },
+        settings: {
+          list_view: "List View Settings",
+          default_columns: "Default List Columns",
+          items_per_page: "Items Per Page",
+          form_layout: "Form Layout Settings",
+          show_timestamps: "Show Timestamps",
+          show_actions: "Show Actions",
+          main_menu: "Show in Main Menu",
+          admin_menu: "Show in Admin Menu",
+          menu_priority: "Menu Priority",
+          menu_priority_sort: "Menu Priority (Sort Order)",
+          menu_badge: "Custom Menu Badge (Optional)",
+          navigation_menu: "Navigation Menu Settings",
+          menu_icon: "Menu Icon",
+          dashboard_show: "Show in Dashboard",
+          widget_type: "Widget Type",
+          widget_width: "Widget Width",
+          show_trends: "Show Trends",
+          enable_dashboard: "Enable on Dashboard",
+          dashboard_widget: "Dashboard Widget Settings",
+          priority_weight: "Priority (Weight)",
+          items_to_show: "Items to Show",
+          advanced_json: "Advanced JSON View (Read-Only)",
+          form_columns: "{{count}} Column",
+          form_columns_plural: "{{count}} Columns"
+        },
+        widget_types: {
+          stats: "Statistics (Count)",
+          list: "Recent Items List",
+          chart: "Activity Chart",
+          table: "Data Table"
+        },
+        no_fields: "No fields defined yet. Start by adding one.",
+        errors: {
+          name_required: "Entity name is required"
+        },
+        colors: {
+          blue: "Blue",
+          green: "Green",
+          purple: "Purple",
+          red: "Red",
+          amber: "Amber",
+          slate: "Slate"
+        }
       },
       ai_architect: {
         title: "AI Business Model Architect",
@@ -3238,7 +3610,7 @@ export const I18N = {
       navigation: {
         main_nav: "Main Navigation Orchestration",
         worker_apps: "Apps & Workers",
-        admin_SHORTCUT: "Admin SHORTCUT",
+        admin_SHORTCUT: "Admin shortcuts",
         sidebar_entity: "Data Entities in Sidebar",
         commit_dna: "Save Navigation Structure",
         commit_success: "Navigation structure saved successfully!"
@@ -3269,7 +3641,7 @@ export const I18N = {
       advanced_ui_config: "Advanced UI Configuration",
       theme_presets_label: "Theme Presets",
       theme_custom_colors: "Custom Colors",
-      theme_SHORTCUT: "Keyboard SHORTCUT",
+      theme_SHORTCUT: "Keyboard shortcuts",
       theme_sidebar: "Navigation Customization",
       theme_mode: "Display Mode",
       mode_light: "Light",
@@ -3293,7 +3665,7 @@ export const I18N = {
       shadows: "Shadow Effects",
       scrollbar: "Custom Scrollbar",
       preview: "Live Preview",
-      theme_sidebar_desc: "Pin entities or system tools to the global SHORTCUT section of your sidebar.",
+      theme_sidebar_desc: "Pin entities or system tools to the global shortcuts section of your sidebar.",
       user: {
         invite_title: "Invite Member",
         invite_desc: "Send an email invitation to a new team member",
@@ -3309,7 +3681,7 @@ export const I18N = {
       app_worker: "Apps & Workers",
       data_system: "Data Systems",
       administration: "System Settings",
-      SHORTCUT: "Quick Shortcuts",
+      shortcuts: "Quick Shortcuts",
       dashboard: "Dashboard",
       contact: "Contact",
       profile: "My Profile",
@@ -3341,6 +3713,23 @@ export const I18N = {
       new_value: "New value",
       select_field: "-- Select field --",
       value_placeholder: "Enter value...",
+    },
+    ai_dashboard: {
+      terminal_title: "SYNAPSE DIAGNOSTIC LOG v7.4",
+      synapse_ready: "AI_CORE_X7_SYNAPSE > READY FOR DIAGNOSTIC_COMMAND...",
+      starting_quality_test: "STARTING SYNAPSE QUALITY TEST...",
+      quality_ok: "✓ QUALITY OK: Latency {{latency}}ms | Logic: {{logic}}",
+      quality_error: "✗ QUALITY ERROR: {{error}}",
+      fatal_error: "✗ FATAL: {{error}}",
+      reindexing_kb: "REINDEXING KNOWLEDGE BASE VECTORS...",
+      reindex_success: "✓ {{message}}",
+      reindex_failed: "✗ REINDEXING FAILED",
+      sync_success: "✓ SYNC COMPLETED: {{count}} articles processed",
+      auditing_registry: "RUNNING REGISTRY INTEGRITY AUDIT...",
+      audit_success: "✓ STATUS: {{status}} | Issues: {{count}}",
+      audit_report: "> REPORT: {{report}}",
+      audit_failed: "✗ AUDIT CRASH",
+      syncing_rag: "SYNCING RAG KNOWLEDGE BASE..."
     }
   },
   ro: {
@@ -3356,6 +3745,7 @@ export const I18N = {
       delete: "Șterge",
       edit: "Editează",
       search: "Caută",
+      required_short: "Obs",
       loading: "Se încarcă...",
       error: "Eroare",
       confirm: "Confirmă",
@@ -3388,6 +3778,13 @@ export const I18N = {
       preferences: "Preferințe",
       preferences_desc: "Setările personale pentru limbă și notificări.",
       ai_draft: "Draft Generat de AI",
+      ai_magic_fill: "Auto-completare AI",
+      ai_magic_fill_desc: "Completează automat câmpurile pe baza datelor existente",
+      ai_autofill_success: "AI a completat formularul!",
+      ai_autofill_error: "AI nu a putut completa formularul.",
+      ai_extraction_title: "Extractor Inteligent",
+      ai_extraction_desc: "Extrage date din orice sursă automat",
+      other_details: "Alte Detalii",
       publish: "Publică",
       back_to_list: "Înapoi la listă",
       delete_success: "Șters cu succes",
@@ -3443,6 +3840,12 @@ export const I18N = {
       no_records_in: "Nicio înregistrare găsită în {{label}}",
       select: "Selectează",
       choose: "Alege",
+      undo: "Anulează",
+      view_item: "Vezi",
+      action_create: "Creat",
+      action_update: "Actualizat",
+      action_delete: "Șters",
+      action_insert: "Inserați",
       role_label: "Rol",
       role: {
         superadmin: "Super Admin",
@@ -3507,7 +3910,15 @@ export const I18N = {
       workers_restarting: "Serviciile se repornesc...",
       restart_failed: "Repornirea a eșuat",
       pending_tasks: "Task-uri în Așteptare",
-      all_done: "Toate task-urile completate"
+      all_done: "Toate task-urile completate",
+      unified_activity_feed: "Flux Activitate Uniformizat",
+      view_all_audit: "Vezi tot auditul",
+      undo_success: "Operațiune anulată cu succes!",
+      undo_error: "Eroare la undo: ",
+      connection_error: "Eroare conexiune: ",
+      no_recent_records: "Nicio înregistrare recentă",
+      activity_trend: "Tendință activitate {{name}}",
+      records_count: "înregistrări"
     },
     whatsapp: {
       title: "Mesagerie WhatsApp",
@@ -3532,7 +3943,109 @@ export const I18N = {
       tabs: {
         ai_architect: "AI Arhitect",
         marketplace: "Marketplace",
-        builder: "Studio Builder"
+        builder: "Studio Builder",
+        entity_builder: "Entity Builder"
+      },
+      entity_builder: {
+        title: "Entity Builder",
+        subtitle: "Definește noi module de bază de date și structuri UI dinamic.",
+        new_entity: "Entitate Nouă",
+        save_entity: "Salvează Entitatea",
+        save_success: "Entitatea {{name}} a fost salvată!",
+        name_required: "Numele entității este obligatoriu",
+        confirm_delete: "Sigur doriți să ștergeți această definiție de entitate? Acest lucru nu va șterge tabelul din baza de date, dar îl va elimina din configurația UI.",
+        edit_entity: "Editare: {{name}}",
+        create_new: "Creează Entitate Nouă",
+        complete_config: "Configurație Completă Entitate",
+        cancel: "Anulează",
+        tabs: {
+          basic: "General",
+          fields: "Câmpuri",
+          display: "Afișare",
+          menu: "Meniu",
+          dashboard: "Dashboard"
+        },
+        system_name: "Nume Sistem (Identificator)",
+        display_label: "Etichetă Afișare",
+        db_table: "Nume Tabel Bază de Date",
+        description: "Descriere",
+        icon: "Identitate Vizuală (Iconiță)",
+        color_theme: "Temă Culori",
+        field_architecture: "Arhitectură Câmpuri",
+        add_field: "Adaugă Câmp",
+        tooltips: {
+          system_name: "Identificator unic utilizat în baza de date și URL-uri",
+          display_label: "Etichetă vizibilă în interfață",
+          db_table: "Numele tabelului (generat automat dacă e gol)",
+          icon: "Iconiță utilizată în navigare și liste",
+          menu_icon: "Dacă este gol, se va folosi iconița entității",
+          menu_priority: "Numerele mai mici apar primele"
+        },
+        field_types: {
+          text: "Text Scurt",
+          textarea: "Text Lung",
+          number: "Număr",
+          date: "Dată",
+          datetime: "Dată și Oră",
+          boolean: "Comutator (Switch)",
+          select: "Listă derulantă",
+          relation: "Relație (DB Link)",
+          image: "Încărcare Imagine",
+          file: "Încărcare Fișier"
+        },
+        layout: {
+          full: "Lățime Completă",
+          half: "Jumătate",
+          quarter: "Sfert",
+          small: "Mic (1/4 Lățime)",
+          medium: "Mediu (1/2 Lățime)",
+          large: "Mare (3/4 Lățime)",
+          full_block: "Bloc Complet (100%)"
+        },
+        settings: {
+          list_view: "Setări Vizualizare Listă",
+          default_columns: "Coloane Implicite Listă",
+          items_per_page: "Elemente pe Pagini",
+          form_layout: "Setări Aspect Formular",
+          show_timestamps: "Afișează Timestamps",
+          show_actions: "Afișează Acțiuni",
+          main_menu: "Afișează în Meniul Principal",
+          admin_menu: "Afișează în Meniul Admin",
+          menu_priority: "Prioritate Meniu",
+          menu_priority_sort: "Prioritate Meniu (Ordine Sortare)",
+          menu_badge: "Badge Meniu Personalizat (Opțional)",
+          navigation_menu: "Setări Meniu Navigare",
+          menu_icon: "Iconiță Meniu",
+          dashboard_show: "Afișează în Dashboard",
+          widget_type: "Tip Widget",
+          widget_width: "Lățime Widget",
+          show_trends: "Afișează Tendințe",
+          enable_dashboard: "Activează pe Dashboard",
+          dashboard_widget: "Setări Widget Dashboard",
+          priority_weight: "Prioritate (Greutate)",
+          items_to_show: "Elemente de Afișat",
+          advanced_json: "Vizualizare JSON Avansată (Read-Only)",
+          form_columns: "{{count}} Coloană",
+          form_columns_plural: "{{count}} Coloane"
+        },
+        widget_types: {
+          stats: "Statistici (Contor)",
+          list: "Listă Elemente Recente",
+          chart: "Grafic Activitate",
+          table: "Tabel de Date"
+        },
+        no_fields: "Momentan nu există câmpuri definite. Adaugă unul.",
+        errors: {
+          name_required: "Numele entității este obligatoriu"
+        },
+        colors: {
+          blue: "Albastru",
+          green: "Verde",
+          purple: "Violet",
+          red: "Roșu",
+          amber: "Chihlimbar",
+          slate: "Gri"
+        }
       },
       ai_architect: {
         title: "AI Business Model Architect",
@@ -3616,7 +4129,7 @@ export const I18N = {
       app_worker: "Aplicații & Workeri",
       data_system: "Module Personalizate",
       administration: "Setări Sistem",
-      SHORTCUT: "Scurtături Rapide",
+      shortcuts: "Scurtături Rapide",
       dashboard: "Panou Control",
       contact: "Contact",
       profile: "Profilul Meu",
@@ -3648,6 +4161,23 @@ export const I18N = {
       new_value: "Valoare nouă",
       select_field: "-- Selectează câmp --",
       value_placeholder: "Introdu valoarea...",
+    },
+    ai_dashboard: {
+      terminal_title: "LOG DIAGNOSTIC SYNAPSE v7.4",
+      synapse_ready: "AI_CORE_X7_SYNAPSE > GATA PENTRU COMANDĂ_DIAGNOSTIC...",
+      starting_quality_test: "PORNIRE TEST CALITATE SYNAPSE...",
+      quality_ok: "✓ CALITATE OK: Latency {{latency}}ms | Logic: {{logic}}",
+      quality_error: "✗ EROARE CALITATE: {{error}}",
+      fatal_error: "✗ FATAL: {{error}}",
+      reindexing_kb: "REINDEXARE VECTORI KNOWLEDGE BASE...",
+      reindex_success: "✓ {{message}}",
+      reindex_failed: "✗ REINDEXARE EȘUATĂ",
+      sync_success: "✓ SINCRONIZARE COMPLETĂ: {{count}} articole procesate",
+      auditing_registry: "RULARE AUDIT INTEGRITATE REGISTRY...",
+      audit_success: "✓ STATUS: {{status}} | Issues: {{count}}",
+      audit_report: "> REPORT: {{report}}",
+      audit_failed: "✗ AUDIT CRASH",
+      syncing_rag: "SINCRONIZARE BAZĂ DE CUNOȘTINȚE RAG..."
     }
   }
 } as const;
@@ -3668,9 +4198,10 @@ export const REGISTRY_BASELINE = {
   debugMode: SYSTEM_SETTING.app.debugMode,
 
   NAV,
-  SHORTCUT,
+  shortcuts,
   CONSTANT,
   ENTITY_CONFIG,
+  BLUEPRINT,
   SYSTEM_ROLE,
   DASHBOARD,
   THEME,

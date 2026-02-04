@@ -88,7 +88,7 @@ export function ErrorBoundary({ children, error }: { children?: React.ReactNode;
         return (
             <div className="p-8 m-4 bg-destructive/10 border border-destructive/20 rounded-xl text-center space-y-4">
                 <h2 className="text-xl font-bold text-destructive">Component Error</h2>
-                <p className="text-muted-foreground">{error?.message || "An unexpected error occurred."}</p>
+                <p className="text-muted-foreground">{error?.message}</p>
                 <button 
                     onClick={() => window.location.reload()}
                     className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium"

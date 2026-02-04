@@ -125,9 +125,14 @@ const DialogContent = React.forwardRef<
         tabIndex={-1}
         onOpenAutoFocus={(e) => {
           if (onOpenAutoFocus) onOpenAutoFocus(e)
-          // To prevent Chrome "aria-hidden" warning, we transition focus immediately.
-          // We don't preventDefault here unless the component explicitly does it.
-          // This allows Radix's focus-trap to identify the content as focusable.
+          
+          // Enterprise Level 8: Focus Management Fix
+          // Prevents Chrome "Blocked aria-hidden on an element because its descendant retained focus"
+          // by ensuring the focus transition is handled before aria-hidden logic fully traps the UI.
+          if (!e.defaultPrevented) {
+             // We allow the default but we ensure the content can receive focus
+             contentRef.current?.focus();
+          }
         }}
         onCloseAutoFocus={(e) => {
           if (onCloseAutoFocus) onCloseAutoFocus(e)

@@ -11,5 +11,9 @@
   "to_open": "pentru deschidere",
   "to_search": "pentru căutare",
   "search_files": "pentru fișiere",
-  "search_contacts": "pentru contacte"
+  "search_contacts": "pentru contacte",
+  "mic_start": "Apasă pentru a vorbi",
+  "mic_stop": "Apasă pentru a opri",
+  "mic_transcribing": "Se transcrie...",
+  "mic_error": "Eroare la accesarea microfonului"
 }

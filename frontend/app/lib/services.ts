@@ -190,7 +190,7 @@ if (isBrowser && !DISABLE_SOCKET) {
 export function socketRequest(event: string, data: any = {}): Promise<any> {
     // Enterprise Level 8: Brain Fallback for system and common data events
     // This allows the app to work even if the Local Agent is not running.
-    if (event.startsWith('system:') || event.startsWith('registry:') || event.startsWith('workspace:') || event.startsWith('monitoring:')) {
+    if (event.startsWith('system:') || event.startsWith('registry:') || event.startsWith('workspace:') || event.startsWith('monitoring:') || event.startsWith('ai:')) {
         const parts = event.split(':');
         const resource = parts[0];
         const op = parts.slice(1).join('/');
@@ -234,7 +234,7 @@ export function socketRequest(event: string, data: any = {}): Promise<any> {
     return new Promise((resolve, reject) => {
         // Level 8: Block direct socket requests if the agent is disabled
         if (_registry && _registry.SYSTEM_SETTING && _registry.SYSTEM_SETTING.use_local_agent === false) {
-            return reject(new Error('LOCAL_AGENT_DISABLED'));
+            return resolve({ success: false, error: 'LOCAL_AGENT_DISABLED' });
         }
 
         // We removed the warning here to support L8 lazy connection (managed by AuthProvider)
@@ -277,10 +277,13 @@ export const getLocalAgentApiBaseUrl = () => {
     // We want API calls to hit the Local Agent process (typically port 4001)
     // rather than the dev server origin which may proxy or reject certain routes.
     if (isBrowser) {
-        const { hostname, protocol } = window.location;
+        const { hostname, origin } = window.location;
         const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.endsWith('.local');
         if (isLocal) {
-            return `${protocol}//${hostname}:${PORT}`;
+            // Enterprise Level 8: Always use Proxy-First approach for Local/Dev
+            // This ensures we pass through Vite's proxy (port 8788) which is already mapped to Backend V2
+            // This avoids direct port 4001 access issues which often fail in networks or firewalls.
+            return `${origin}/api-local`;
         }
     }
 
@@ -314,6 +317,16 @@ export const normalizeApiPath = (u: string) => {
             if (isBrowser) {
                 const token = localStorage.getItem('token');
                 if (token) config.headers.Authorization = `Bearer ${token}`;
+                
+                // Enterprise Level 8: Inject Current Language to all outgoing API requests
+                try {
+                    const fullLang = localStorage.getItem('i18nextLng') || 'ro';
+                    const lang = fullLang.split('-')[0].toLowerCase();
+                    if (lang === 'ro' || lang === 'en') {
+                        if (!config.params) config.params = {};
+                        config.params.lang = lang;
+                    }
+                } catch (e) {}
             }
             return config;
         },
@@ -337,6 +350,8 @@ const wrapRequest = (fnBrain: any, fnLocal: any) => async (url: string, dataOrCf
         return res;
     } catch (err: any) {
         const status = err?.response?.status;
+        const respData = err?.response?.data;
+
         if (status === 404 && shouldTryLocalOn404(url)) {
             // Try Local Agent API first (standard)
             try {
@@ -345,45 +360,28 @@ const wrapRequest = (fnBrain: any, fnLocal: any) => async (url: string, dataOrCf
                 return res2;
             } catch (e2: any) {
                 // If the Local Agent responded 404, try several alternate direct URLs
-                // Some local agents expose endpoints with or without the `/api` prefix
-                // and sometimes under `/workflow/...` instead of `/action/workflow/...`.
                 const normalized = normalizeApiPath(url);
                 const localBase = getLocalAgentApiBaseUrl();
-                const alt1 = `${localBase}/api${normalized}`; // http://host:4001/api/action/...
-                const alt2 = `${localBase}${normalized}`; // http://host:4001/action/...
-                const normalizedNoAction = normalized.replace(/^\/action\//, '/');
-                const alt3 = `${localBase}/api${normalizedNoAction}`; // http://host:4001/api/workflow/...
-                const alt4 = `${localBase}${normalizedNoAction}`; // http://host:4001/workflow/...
-
-                const candidates = [alt1, alt2, alt3, alt4];
-                let lastErr: any = e2;
-                // Build headers (include token if present)
-                const headers = (cfg && cfg.headers) ? { ...(cfg.headers || {}) } : {};
-                if (isBrowser) {
-                    const token = localStorage.getItem('token');
-                    if (token) headers.Authorization = `Bearer ${token}`;
-                }
-
-                for (const attemptUrl of candidates) {
-                    try {
-                        // eslint-disable-next-line no-console
-                        console.debug(`[SERVICES] Trying direct local agent URL: ${attemptUrl}`);
-                        const resp = await axios.post(attemptUrl, dataOrCfg || {}, { headers, timeout: cfg?.timeout || 15000 });
-                        return resp.data;
-                    } catch (attemptErr: any) {
-                        lastErr = attemptErr;
-                        // eslint-disable-next-line no-console
-                        console.debug(`[SERVICES] Direct local attempt failed: ${attemptUrl} -> ${attemptErr?.response?.status || attemptErr.message}`);
-                        // continue to next candidate
-                    }
-                }
-                // All direct attempts failed, throw the last error
-                throw lastErr;
+                const alt1 = `${localBase}/api${normalized}`; 
+                const alt2 = `${localBase}${normalized}`; 
+                
+                try {
+                    const rAlt = await axios.post(alt1, dataOrCfg || {}, { timeout: 5000 });
+                    return rAlt.data;
+                } catch (eAlt) {}
             }
         }
+        
+        // Level 8: Always prefer the server's error body if available
+        if (respData && typeof respData === 'object') {
+            return respData;
+        }
+
         throw err;
     }
-};
+}
+
+
 
 export const api = {
     get: wrapRequest((u: string, cfg?: any) => brainApi.get(u, cfg).then(r => r.data), (u: string, cfg?: any) => localAgentApi.get(u, cfg).then(r => r.data)),
@@ -421,36 +419,122 @@ export const api = {
         put: (url: string, data?: any, cfg?: any) => brainApi.put(normalizeApiPath(url), data, cfg).then(r => r.data),
         patch: (url: string, data?: any, cfg?: any) => brainApi.patch(normalizeApiPath(url), data, cfg).then(r => r.data),
         delete: (url: string, cfg?: any) => brainApi.delete(normalizeApiPath(url), cfg).then(r => r.data),
+        quickCreate: async (entityId: string, name: string, additionalData: any = {}, workspaceId?: string) => {
+            const ws = workspaceId || 'system';
+            const payload = {
+                name,
+                label: name,
+                title: name,
+                workspaceId: ws,
+                ...additionalData
+            };
+            const resp = await brainApi.post(normalizeApiPath(`db/collection/${entityId}/${ws}/new`), payload);
+            return resp.data;
+        }
     },
     local: {
-        get: (url: string, cfg?: any) => localAgentApi.get(normalizeApiPath(url), cfg).then(r => r.data),
-        post: (url: string, data?: any, cfg?: any) => localAgentApi.post(normalizeApiPath(url), data, cfg).then(r => r.data),
-        put: (url: string, data?: any, cfg?: any) => localAgentApi.put(normalizeApiPath(url), data, cfg).then(r => r.data),
-        patch: (url: string, data?: any, cfg?: any) => localAgentApi.patch(normalizeApiPath(url), data, cfg).then(r => r.data),
-        delete: (url: string, cfg?: any) => localAgentApi.delete(normalizeApiPath(url), cfg).then(r => r.data),
+        get: (url: string, cfg?: any) => {
+            if (_registry?.SYSTEM_SETTING?.use_local_agent === false) {
+                return Promise.resolve({ success: false, error: 'LOCAL_AGENT_DISABLED', message: 'Local agent is disabled in Registry.' });
+            }
+            return localAgentApi.get(normalizeApiPath(url), cfg).then(r => r.data);
+        },
+        post: (url: string, data?: any, cfg?: any) => {
+            if (_registry?.SYSTEM_SETTING?.use_local_agent === false) {
+                return Promise.resolve({ success: false, error: 'LOCAL_AGENT_DISABLED' });
+            }
+            return localAgentApi.post(normalizeApiPath(url), data, cfg).then(r => r.data);
+        },
+        put: (url: string, data?: any, cfg?: any) => {
+            if (_registry?.SYSTEM_SETTING?.use_local_agent === false) {
+                return Promise.resolve({ success: false, error: 'LOCAL_AGENT_DISABLED' });
+            }
+            return localAgentApi.put(normalizeApiPath(url), data, cfg).then(r => r.data);
+        },
+        patch: (url: string, data?: any, cfg?: any) => {
+            if (_registry?.SYSTEM_SETTING?.use_local_agent === false) {
+                return Promise.resolve({ success: false, error: 'LOCAL_AGENT_DISABLED' });
+            }
+            return localAgentApi.patch(normalizeApiPath(url), data, cfg).then(r => r.data);
+        },
+        delete: (url: string, cfg?: any) => {
+            if (_registry?.SYSTEM_SETTING?.use_local_agent === false) {
+                return Promise.resolve({ success: false, error: 'LOCAL_AGENT_DISABLED' });
+            }
+            return localAgentApi.delete(normalizeApiPath(url), cfg).then(r => r.data);
+        },
     }
 };
 
 // --- AI ENGINE ---
 
 export class BaseAiEngine {
-    config: any; fetch: any; logger: any; db: any; env: any;
+    config: any; fetch: any; logger: any; db: any; env: any; settings: any;
     constructor(adapter: any = {}) {
         this.config = adapter.config || _registry?.AI_CONFIG || {};
         this.fetch = adapter.fetch || (typeof fetch !== 'undefined' ? fetch.bind(undefined) : null);
         this.logger = adapter.logger || console;
         this.db = adapter.db || null;
         this.env = adapter.env || {};
+        this.settings = adapter.systemSetting || _registry?.SYSTEM_SETTING || {};
+
+        // Level 8: Inject dynamic models from Registry settings if present (Generic loop)
+        // We use this.config.providers instead of global _registry to be Worker-safe
+        if (this.config.models && this.config.providers && this.settings) {
+            Object.keys(this.config.providers).forEach(pId => {
+                const key = `discovered_${pId}_models`;
+                let dynamic = this.settings[key];
+                
+                // Level 8: Auto-parse if it's a JSON string from D1
+                if (typeof dynamic === 'string' && (dynamic.startsWith('[') || dynamic.startsWith('{'))) {
+                    try { dynamic = JSON.parse(dynamic); } catch(e) {}
+                }
+
+                if (Array.isArray(dynamic)) {
+                    const existingIds = new Set(this.config.models.map((m: any) => m.id));
+                    dynamic.forEach((m: any) => {
+                        if (m && m.id && !existingIds.has(m.id)) {
+                            // Ensure the model knows its provider if not set in D1
+                            if (!m.provider) m.provider = pId;
+                            this.config.models.push(m);
+                        }
+                    });
+                }
+            });
+        }
     }
     async chat(prompt: string, history: any[] = [], options: any = {}) {
         let providerName = options.provider;
         let modelId = options.model;
+        let foundModel: any = null;
 
-        // 1. If we have a model ID but no provider, attempt to resolve provider from the model list
-        if (!providerName && modelId && this.config.models) {
-            const foundModel = this.config.models.find((m: any) => m.id === modelId);
-            if (foundModel) {
+        // 1. Level 8: Provider Resolution (Priority: Model-specific > Explicit Provider > Active Provider)
+        // If we have a model ID, check which provider it belongs to. This overrides the suggested provider
+        // to prevent sending a Cloudflare model to Google, for example.
+        if (modelId && this.config.models) {
+            const models = this.config.models;
+            
+            if (Array.isArray(models)) {
+                foundModel = models.find((m: any) => String(m.id) === String(modelId) || String(m.pk) === String(modelId));
+            } else if (typeof models === 'object') {
+                foundModel = models[modelId];
+            }
+
+            if (foundModel && foundModel.provider) {
+                // Enterprise Level 8: The model's defined provider is the Single Source of Truth.
+                if (providerName && providerName !== foundModel.provider) {
+                    this.logger.warn(`[AI-ENGINE] Overriding requested provider "${providerName}" with "${foundModel.provider}" for model "${modelId}"`);
+                }
                 providerName = foundModel.provider;
+            } else {
+                // Level 8: Hardcoded Prefix Resolution (Safety Net for unknown/untagged models)
+                const mid = String(modelId);
+                if (mid.startsWith('@cf/')) providerName = 'cloudflare';
+                else if (mid.includes('azureml') || mid.includes('github')) providerName = 'github';
+                else if (mid.includes('gpt-') || mid.includes('o1-') || mid.includes('o3-')) providerName = 'openai';
+                else if (mid.includes('claude-')) providerName = 'anthropic';
+                else if (mid.includes('gemini-')) providerName = 'gemini';
+                else if (mid.includes('deepseek-')) providerName = 'deepseek';
             }
         }
 
@@ -461,62 +545,371 @@ export class BaseAiEngine {
                           this.config.defaultProvider;
         }
 
-        const providerConfig = this.config.providers?.[providerName];
+        // Level 8: Provider Aliasing (Google vs Gemini legacy support)
+        if (providerName === 'google' && !this.config.providers?.google && this.config.providers?.gemini) {
+            providerName = 'gemini';
+        }
 
-        if (!providerConfig) {
+        const providerConfig = { ...this.config.providers?.[providerName], ...options };
+
+        if (!providerConfig || Object.keys(providerConfig).length === 0) {
             this.logger.error(`[AI-ENGINE] Provider "${providerName}" not found. Available providers: ${Object.keys(this.config.providers || {}).join(', ')}`);
             throw new Error(`AI Provider "${providerName}" not found!`);
         }
+
+        // 3. Strict Model Resolution (Enterprise Level 8) - Strictly from Registry or Options
+        if (!modelId) {
+            // Check provider specific default
+            modelId = providerConfig.defaultModel;
+            
+            // Very last fallback from top-level config
+            if (!modelId) modelId = this.config.model || this.config.preferredModel;
+            
+            // Final validation - throw if no model resolved
+            if (!modelId) {
+                throw new Error(`[AI-ENGINE] No model specified for provider "${providerName}" and no default found in Registry.`);
+            }
+        }
+
+        // 4. Final Cross-Verification (Level 8: Prevent cross-provider model leakage)
+        // If the resolved model ID has a specific prefix, ensure the provider matches.
+        const mid = String(modelId);
+        let correctedProvider = providerName;
+        if (mid.startsWith('@cf/')) correctedProvider = 'cloudflare';
+        else if (mid.includes('azureml') || mid.includes('github')) correctedProvider = 'github';
+        else if (mid.includes('gpt-') || mid.includes('o1-') || mid.includes('o3-')) correctedProvider = 'openai';
+        else if (mid.includes('claude-')) correctedProvider = 'anthropic';
+        else if (mid.includes('gemini-')) correctedProvider = 'gemini';
+        else if (mid.includes('deepseek-')) correctedProvider = 'deepseek';
+
+        if (correctedProvider !== providerName) {
+            this.logger.warn(`[AI-ENGINE] Auto-correcting provider from "${providerName}" to "${correctedProvider}" for model "${mid}"`);
+            providerName = correctedProvider;
+        }
+
+        this.logger.log(`[AI-ENGINE] Resolved provider: ${providerName}, model: ${modelId}`);
+
+        // --- RAG INJECTION (Enterprise Level 8: Unified Context) ---
+        let finalPrompt = prompt;
+        if (this.config.ragEnabled && this.env.AI && this.env.VECTOR_INDEX && this.config.embeddingModel) {
+            try {
+                const queryEmb: any = await this.env.AI.run(this.config.embeddingModel, { text: [prompt] });
+                if (queryEmb?.data?.[0]) {
+                    const matches = await this.env.VECTOR_INDEX.query(queryEmb.data[0], { topK: 3, returnMetadata: true });
+                    if (matches?.matches?.length > 0) {
+                        const contextBlocks = matches.matches
+                            .filter((m: any) => m.score > 0.5) // Lower threshold for better recall in Level 8
+                            .map((m: any) => `[SURSA: ${m.metadata?.title || 'Knowledge Base'}]\n${m.metadata?.content || ''}\n(Relevance Score: ${Math.round(m.score * 100)}%)`)
+                            .join('\n---\n');
+                        
+                        if (contextBlocks) {
+                            finalPrompt = `SYSTEM INSTRUCTION: Use the following Knowledge Base (RAG) context to answer the user query accurately. 
+If the context doesn't contain the answer, rely on your general knowledge but mention the source is missing.
+
+RELEVANT DOCUMENTS:
+${contextBlocks}
+
+USER QUESTION:
+${prompt}`;
+                            this.logger.log(`[AI-ENGINE] RAG Context injected (${matches.matches.length} matches)`);
+                        }
+                    }
+                }
+            } catch (ragErr: any) {
+                this.logger.warn(`[AI-ENGINE] RAG process bypassed: ${ragErr.message}`);
+            }
+        }
+
+        const formattedHistory = this.formatHistory(history, providerConfig);
+
+        // Level 8: Detect if we should inject File Generation instructions
+        if (options.fileGenEnabled || (foundModel?.capabilities?.includes('files'))) {
+            const fileInstr = `\n\n[FILE GENERATION ENABLED] If you want to generate a downloadable file for the user, use the following markdown format:
+\`\`\`extension filename=yourfile.ext
+file content goes here
+\`\`\``;
+            if (options.systemPrompt) options.systemPrompt += fileInstr;
+            else options.systemPrompt = fileInstr;
+        }
+
         try {
-            return await this.executeProviderCall(providerName, providerConfig, prompt, history, { ...options, model: modelId });
+            return await this.executeProviderCall(providerName, providerConfig, finalPrompt, formattedHistory, { ...options, model: modelId });
         } catch (error: any) {
-            this.logger.error(`[AI-ENGINE] Chat error: ${error.message}`);
+            this.logger.error(`[AI-ENGINE] Primary chat error (${providerName}): ${error.message}`);
+            
+            // Enterprise Level 8: Multi-Provider Fallback logic (Restored by user request)
+            const activeProviders = Array.isArray(this.config.activeProviders) ? this.config.activeProviders : [];
+            const nextProviders = activeProviders.filter((p: string) => p !== providerName);
+            
+            if (nextProviders.length > 0) {
+                this.logger.warn(`[AI-ENGINE] Attempting fallback to: ${nextProviders.join(', ')}`);
+                for (const fallbackName of nextProviders) {
+                    try {
+                        const fallbackCfg = this.config.providers?.[fallbackName];
+                        if (fallbackCfg) {
+                            const fallbackHistory = this.formatHistory(history, fallbackCfg);
+                            // Level 8: During fallback, we let the provider use its own default model
+                            return await this.executeProviderCall(fallbackName, fallbackCfg, prompt, fallbackHistory, { 
+                                ...options, 
+                                model: undefined, 
+                                isFallback: true 
+                            });
+                        }
+                    } catch (fallbackErr: any) {
+                        this.logger.error(`[AI-ENGINE] Fallback to ${fallbackName} failed: ${fallbackErr.message}`);
+                    }
+                }
+            }
+            
             throw error;
         }
     }
-    resolveApiKey(p: any) {
+
+    formatHistory(history: any[], pCfg: any) {
+        if (!history || history.length === 0) return [];
+        
+        const type = pCfg?.type || '';
+
+        if (type === 'google-v1beta') {
+            const formatted = history.map(h => ({
+                role: h.role === 'assistant' || h.role === 'model' ? 'model' : 'user',
+                parts: [{ text: h.content || h.parts?.[0]?.text || "" }]
+            }));
+
+            // Gemini specific: First message MUST be 'user'. 
+            // If it's 'model', we drop it until we find a 'user' message.
+            while (formatted.length > 0 && formatted[0].role === 'model') {
+                formatted.shift();
+            }
+
+            // Gemini specific: Roles MUST alternate user -> model -> user -> model.
+            // If we have consecutive identical roles, we merge their parts.
+            const alternated: any[] = [];
+            formatted.forEach(item => {
+                if (alternated.length > 0 && alternated[alternated.length - 1].role === item.role) {
+                    alternated[alternated.length - 1].parts[0].text += "\n\n" + item.parts[0].text;
+                } else {
+                    alternated.push(item);
+                }
+            });
+
+            return alternated;
+        }
+        
+        return history.map(h => ({
+            role: h.role === 'model' ? 'assistant' : h.role,
+            content: h.content || h.parts?.[0]?.text || ""
+        }));
+    }
+
+    resolveApiKey(p: any, providerName: string = '') {
         if (p.apiKey && !p.apiKey.startsWith('{{')) return p.apiKey;
-        if (p.apiKeyEnvVar && this.env[p.apiKeyEnvVar]) return this.env[p.apiKeyEnvVar];
-        if (p.apiKeyEnvVar && typeof process !== 'undefined' && process.env?.[p.apiKeyEnvVar]) return process.env[p.apiKeyEnvVar];
+        
+        // Level 8: Prioritize Registry-defined Environment Variables (No Hardcoding)
+        const possibleVars = [
+            p.apiKeyEnvVar,
+            p.apiTokenEnvVar,
+            providerName ? `${providerName.toUpperCase()}_API_KEY` : '',
+            providerName ? `${providerName.toUpperCase()}_API_TOKEN` : '',
+            providerName ? `VITE_${providerName.toUpperCase()}_API_KEY` : '',
+        ].filter(Boolean) as string[];
+
+        for (const v of possibleVars) {
+            if (this.env && this.env[v]) return this.env[v];
+            if (typeof process !== 'undefined' && (process.env as any)?.[v]) return (process.env as any)[v];
+        }
+
+        // Level 8: Fallback to global registry settings (D1 overrides)
+        const s = this.settings || _registry?.SYSTEM_SETTING;
+        if (s) {
+            const registryKey = `${providerName}_api_key`;
+            const registryToken = `${providerName}_api_token`;
+            if (s[registryKey]) return s[registryKey];
+            if (s[registryToken]) return s[registryToken];
+        }
+        
         return '';
     }
-    async executeProviderCall(name: string, p: any, prompt: string, history: any[], options: any) {
-        const model = options.model || (p.models && p.models[0]) || p.defaultModel || this.config.model;
-        const apiKey = this.resolveApiKey(p);
-        let url = (p.baseUrl || "").replace('{{model}}', model || "").replace('{{apiKey}}', apiKey || "").replace('{{accountId}}', p.accountId || this.env.CLOUDFLARE_ACCOUNT_ID || "");
-        
-        // Auto-detect type if missing
-        const type = p.type || (name === 'openai' || name === 'gemini' || url.includes('openai') ? 'openai-v1' : 
-                                 name === 'anthropic' ? 'anthropic-v1' : 
-                                 name === 'cloudflare' ? 'cloudflare-rpc' : 'openai-v1');
 
-        const configWithKey = { ...p, apiKey };
+    resolveAccountId(p: any, providerName: string = '') {
+        if (p.accountId && !p.accountId.startsWith('{{')) return p.accountId;
+        
+        // Level 8: Prioritize Registry-defined Environment Variables
+        const v = providerName === 'cloudflare' ? 'CLOUDFLARE_ACCOUNT_ID' : `${providerName.toUpperCase()}_ACCOUNT_ID`;
+        if (this.env && this.env[v]) return this.env[v];
+        if (typeof process !== 'undefined' && (process.env as any)?.[v]) return (process.env as any)[v];
+
+        // Level 8: Fallback to global registry settings
+        const s = this.settings || _registry?.SYSTEM_SETTING;
+        if (s) {
+            const registryKey = `${providerName}_account_id`;
+            if (s[registryKey]) return s[registryKey];
+        }
+        
+        return '';
+    }
+
+    async executeProviderCall(name: string, p: any, prompt: string, history: any[], options: any) {
+        // Level 8: Improved Model Resolution logic
+        let model = options.model;
+
+        // Level 8: Resolve Reference (Map DB ID or Numeric ID back to Technical Name)
+        if (this.config.models && model) {
+             const record = this.config.models.find((m: any) => 
+                 String(m.id) === String(model) || 
+                 String(m._id) === String(model) || 
+                 String(m.pk) === String(model) ||
+                 m.model_id === model
+             );
+             if (record) {
+                 // Prioritize the technical ID/name over the numeric primary key
+                 model = record.technical_id || record.id || record.model_id;
+             }
+        }
+
+        if (!model && name !== 'cloudflare' && !this.env?.AI) {
+            // Level 8: Try to find any enabled model for this provider as fallback
+            const fallbackModel = (this.config.models || []).find((m: any) => m.provider === name && m.enabled !== false);
+            if (fallbackModel) model = fallbackModel.id;
+            else throw new Error(`Model not specified for provider ${name} and no default available in registry.`);
+        }
+
+        const apiKey = this.resolveApiKey(p, name);
+        const accountId = this.resolveAccountId(p, name);
+        this.logger.log(`[AI-ENGINE] Provider: ${name} | Model: ${model} | Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'MISSING'} | Account: ${accountId || 'MISSING'}`);
+        
+        let url = (p.baseUrl || "");
+        
+        // Level 8: Template Injection
+        if (url.includes('{{model}}')) url = url.replace(/\{\{model\}\}/g, model || "");
+        if (url.includes('{{accountId}}')) url = url.replace(/\{\{accountId\}\}/g, accountId || "");
+
+        // URL Normalization (Enterprise Level 8 Immunity)
+        if (url.startsWith('http')) {
+            const protocolMatch = url.match(/^(https?):\/\//);
+            if (protocolMatch) {
+                const protocol = protocolMatch[1];
+                let rest = url.substring(protocol.length + 3);
+                const queryParts = rest.split('?');
+                queryParts[0] = queryParts[0].replace(/\/+/g, '/').replace(/\/$/, '');
+                url = protocol + '://' + queryParts.join('?');
+            }
+        }
+        
+        const safeUrl = url.includes('key=') ? url.split('key=')[0] + 'key=***' : 
+                         url.includes('Authorization') ? url : url;
+        
+        let type = p.type;
+        if (!type && url.includes('/openai')) type = 'openai-v1';
+        if (!type && (url.includes('googleapis.com') || name === 'gemini')) type = 'google-v1beta';
+
+        if (!type) {
+            throw new Error(`AI Driver type is required for provider "${name}" (URL: ${safeUrl})`);
+        }
+
+        this.logger.log(`[AI-ENGINE] calling ${name} (${model}) | Type: ${type} | URL: ${safeUrl}`);
+
+        const configWithKey = { ...p, apiKey, accountId };
 
         switch (type) {
-            case 'google-v1beta': return await this.callGoogle(url, prompt, history, options, configWithKey);
+            case 'google-v1beta': 
+            case 'gemini':
+                return await this.callGoogle(url, prompt, history, options, configWithKey);
+            case 'github-v1': return await this.callGitHub(url, prompt, history, options, configWithKey);
             case 'openai-v1': return await this.callOpenAi(url, prompt, history, options, configWithKey);
             case 'anthropic-v1': return await this.callAnthropic(url, prompt, history, options, configWithKey);
             case 'cloudflare-rpc': return await this.callCloudflare(url, prompt, history, options, configWithKey);
             default: return await this.callOpenAi(url, prompt, history, options, configWithKey);
         }
     }
-    async callOpenAi(url: string, prompt: string, history: any[], options: any, p: any) {
-        const model = options.model || p.defaultModel || (p.models && p.models[0]);
+    async callGitHub(url: string, prompt: string, history: any[], options: any, p: any) {
+        // GitHub Models & Copilot Extensions
+        const model = options.model || p.defaultModel;
+        if (!model) throw new Error("GitHub model is required but missing.");
+        
+        // Level 8: Clean Model ID (Handle technical names, technical_id, or Azure ML URIs)
+        // If it's a full URI like azureml://.../Meta-Llama-3.1-70B-Instruct/versions/1, we want the name part.
+        let cleanModel = String(model);
+        if (cleanModel.includes('/versions/')) {
+            const parts = cleanModel.split('/versions/')[0].split('/');
+            cleanModel = parts[parts.length - 1];
+        } else if (cleanModel.includes('/')) {
+            cleanModel = cleanModel.split('/').pop()?.split('?')[0] || cleanModel;
+        }
+        
         const messages = [
             ...(options.systemPrompt ? [{ role: 'system', content: options.systemPrompt }] : []),
             ...history,
             { role: 'user', content: prompt }
         ];
         const body: any = { 
+            model: cleanModel, 
+            messages, 
+            temperature: options.temperature ?? this.config.temperature,
+            max_tokens: options.maxTokens ?? this.config.maxTokens
+        };
+        
+        // Level 8: Smart URL Construction (Fill only if missing)
+        let finalUrl = url;
+        if (!finalUrl.includes('/chat/completions') && !finalUrl.includes('?')) {
+            finalUrl = finalUrl.replace(/\/+$/, '') + '/chat/completions';
+        }
+        
+        const resp = await this.fetch(finalUrl, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${p.apiKey || ""}`,
+                'User-Agent': 'Studio-App-v2'
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => 'No error body');
+            throw new Error(`GitHub API Error ${resp.status}: ${errText}`);
+        }
+
+        const data = await resp.json();
+        if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+        return data.choices?.[0]?.message?.content || null;
+    }
+    async callOpenAi(url: string, prompt: string, history: any[], options: any, p: any) {
+        const model = options.model || p.defaultModel;
+        if (!model) throw new Error(`Model name is required for driver ${p.type || 'AI'} but missing.`);
+        
+        // Level 8: Vision Support for OpenAI-Compatible Providers
+        const userContent: any[] = [];
+        if (options.file && (options.file.startsWith('data:image') || options.fileType?.startsWith('image/'))) {
+            userContent.push({
+                type: 'image_url',
+                image_url: { url: options.file }
+            });
+        }
+        userContent.push({ type: 'text', text: prompt });
+
+        const messages = [
+            ...(options.systemPrompt ? [{ role: 'system', content: options.systemPrompt }] : []),
+            ...history,
+            { role: 'user', content: options.file ? userContent : prompt }
+        ];
+        const body: any = { 
             model, 
             messages, 
-            temperature: options.temperature ?? this.config.temperature ?? 0.7,
-            max_tokens: options.maxTokens ?? this.config.maxTokens ?? 2048
+            temperature: options.temperature ?? this.config.temperature,
+            max_tokens: options.maxTokens ?? this.config.maxTokens
         };
         if (options.response_mime_type === 'application/json') {
             body.response_format = { type: 'json_object' };
         }
-        const resp = await this.fetch(url + (url.endsWith('/') ? '' : '/') + 'chat/completions', {
+
+        // Level 8: Smart URL Construction (Fill only if missing)
+        let finalUrl = url;
+        if (!finalUrl.includes('/chat/completions') && !finalUrl.includes('/completions') && !finalUrl.includes('generateContent') && !finalUrl.includes('?')) {
+            finalUrl = finalUrl.replace(/\/+$/, '') + '/chat/completions';
+        }
+
+        const resp = await this.fetch(finalUrl, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -524,29 +917,165 @@ export class BaseAiEngine {
             },
             body: JSON.stringify(body)
         });
+
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => 'No error body');
+            let errorMessage = `OpenAI API Error ${resp.status}`;
+            
+            try {
+                const parsed = JSON.parse(errText);
+                if (resp.status === 429 && errText.includes('limit: 0')) {
+                    errorMessage = JSON.stringify({
+                        ro: `AI Quota Error: Modelul '${model}' are limită 0 pe acest cont. Te rugăm să verifici cota sau să alegi alt model în SuperAdmin.`,
+                        en: `AI Quota Error: Model '${model}' has limit 0 on this account. Please check quota or choose another model in SuperAdmin.`
+                    });
+                } else {
+                    errorMessage = parsed.error?.message || errText;
+                }
+            } catch(e) {}
+            
+            throw new Error(errorMessage);
+        }
+
         const data = await resp.json();
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
         return data.choices?.[0]?.message?.content || null;
     }
     async callGoogle(url: string, prompt: string, history: any[], options: any, p: any) {
-        const contents = [{ role: 'user', parts: [{ text: (options.systemPrompt ? `${options.systemPrompt}\n\n` : '') + prompt }] }];
-        const body = { 
+        const model = options.model || p.defaultModel;
+        
+        if (!model) throw new Error("Google Gemini Model name is required but missing in Registry/Options.");
+
+        // Level 8: Clean URL and strip /openai for native driver if user accidentally put it in Registry
+        let base = url.split('/openai')[0].split('?')[0].replace(/\/$/, ''); 
+        
+        // Advanced detection: if it's a native google url but doesn't have a version segment, add one.
+        if (base.includes('googleapis.com') && !base.includes('/v1')) {
+            base += '/v1beta';
+        }
+
+        let finalUrl = base;
+        // Level 8: Smart URL Construction (Enterprise Resilience)
+        // Ensure the URL ends with the correct model and action if they are missing
+        const urlWithoutProtocol = finalUrl.includes('://') ? finalUrl.split('://')[1] : finalUrl;
+        
+        if (!urlWithoutProtocol.includes(':')) {
+             const cleanModel = String(model).startsWith('models/') ? String(model).substring(7) : model;
+             if (!finalUrl.includes('/models/')) {
+                 finalUrl += `/models/${cleanModel}:generateContent`;
+             } else {
+                 finalUrl = finalUrl.replace(/\/+$/, '') + ':generateContent';
+             }
+        }
+        
+        // Final sanity check for double actions in URL (Enterprise Level 8 Immunity)
+        if (finalUrl.includes(':generateContent:generateContent')) {
+            finalUrl = finalUrl.replace(/:generateContent:generateContent/g, ':generateContent');
+        }
+        
+        // Ensure API key is present in the outgoing URL if it's not already merged
+        const apiKey = p.apiKey || p.apiToken;
+        if (!finalUrl.includes('key=') && apiKey) {
+            finalUrl += (finalUrl.includes('?') ? '&' : '?') + `key=${apiKey}`;
+        }
+
+        const contents = [
+            ...history.map((m: any) => ({
+                role: (m.role === 'assistant' || m.role === 'model') ? 'model' : 'user',
+                parts: [{ text: String(m.content || m.text || m.parts?.[0]?.text || '') }]
+            })),
+            { 
+                role: 'user', 
+                parts: [
+                    ...(options.file ? [{
+                        inline_data: {
+                            mime_type: options.fileType || (options.file.startsWith('data:image/png') ? 'image/png' : options.file.startsWith('data:image/jpeg') ? 'image/jpeg' : 'application/pdf'),
+                            data: options.file.split(',')[1] || options.file
+                        }
+                    }] : []),
+                    { text: prompt }
+                ] 
+            }
+        ];
+
+        const body: any = { 
             contents, 
             generationConfig: { 
-                temperature: options.temperature ?? this.config.temperature ?? 0.7,
-                maxOutputTokens: options.maxTokens ?? this.config.maxTokens ?? 2048
+                temperature: options.temperature ?? this.config.temperature,
+                maxOutputTokens: options.maxTokens ?? this.config.maxTokens
             } 
         };
-        const response = await this.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const data = await response.json(); return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+
+        const fetchGoogle = async (targetUrl: string): Promise<any> => {
+            this.logger.log(`[AI-ENGINE] Gemini Call: ${targetUrl.split('key=')[0]}key=***`);
+            
+            // Level 9: Support Native System Instructions for Gemini (Adapted to URL version)
+            const callBody = { ...body };
+            if (options.systemPrompt) {
+                if (targetUrl.includes('/v1beta') && !options.forceLegacySystem) {
+                    callBody.system_instruction = { parts: [{ text: options.systemPrompt }] };
+                } else {
+                    // Fallback for v1 or models rejecting native system instructions: prepend to first user message
+                    const cleanContents = JSON.parse(JSON.stringify(contents)); // Deep clone
+                    const firstUser = cleanContents.find((c: any) => c.role === 'user');
+                    if (firstUser) {
+                        firstUser.parts[0].text = `System Instruction: ${options.systemPrompt}\n\n${firstUser.parts[0].text}`;
+                    }
+                    callBody.contents = cleanContents;
+                    if (callBody.system_instruction) delete callBody.system_instruction;
+                }
+            }
+
+            const headers: any = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['x-goog-api-key'] = apiKey;
+            const resp = await this.fetch(targetUrl, { method: 'POST', headers, body: JSON.stringify(callBody) });
+            
+            if (!resp.ok) {
+                const errorText = await resp.text();
+                let errMsg = `Google API HTTP Error ${resp.status}`;
+                try {
+                    const parsed = JSON.parse(errorText);
+                    if (parsed.error?.message) errMsg = parsed.error.message;
+                } catch(e) {}
+                
+                // Level 8: Version & Schema Auto-Recovery
+                // 1. If v1beta failed with 404, try v1
+                if (resp.status === 404 && targetUrl.includes('/v1beta')) {
+                    this.logger.warn(`[AI-ENGINE] v1beta failed for Gemini (404). Retrying with v1...`);
+                    return fetchGoogle(targetUrl.replace('/v1beta', '/v1'));
+                }
+                
+                // 2. If rejected due to system_instruction (schema error), retry without it (moved to contents)
+                if (resp.status === 400 && errorText.includes('system_instruction') && options.systemPrompt && !options.isSchemaRetry) {
+                    this.logger.warn(`[AI-ENGINE] Gemini rejected system_instruction. Retrying with instruction merged into messages...`);
+                    return await this.callGoogle(url, prompt, history, { ...options, isSchemaRetry: true, forceLegacySystem: true }, p);
+                }
+                
+                throw new Error(errMsg);
+            }
+            return resp.json();
+        };
+
+        const data = await fetchGoogle(finalUrl);
+        
+        if (!data.candidates || data.candidates.length === 0) {
+            if (data.promptFeedback?.blockReason) throw new Error(`Google Safety Filter Blocked: ${data.promptFeedback.blockReason}`);
+            throw new Error(`Google API Error: No candidates returned.`);
+        }
+
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
     }
     async callAnthropic(url: string, prompt: string, history: any[], options: any, p: any) {
+        const messages = [
+            ...history,
+            { role: 'user', content: prompt }
+        ];
         const body = { 
-            model: options.model || p.model, 
-            messages: [{ role: 'user', content: prompt }], 
+            model: options.model || p.model || p.defaultModel, 
+            messages, 
             system: options.systemPrompt,
-            temperature: options.temperature ?? this.config.temperature ?? 0.7,
-            max_tokens: options.maxTokens ?? this.config.maxTokens ?? 2048
+            temperature: options.temperature ?? this.config.temperature,
+            max_tokens: options.maxTokens ?? this.config.maxTokens
         };
         const resp = await this.fetch(url, { 
             method: 'POST', 
@@ -557,16 +1086,227 @@ export class BaseAiEngine {
             }, 
             body: JSON.stringify(body) 
         });
-        const data = await resp.json(); return data.content?.[0]?.text || null;
+
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => 'No error body');
+            throw new Error(`Anthropic API Error ${resp.status}: ${errText}`);
+        }
+
+        const data = await resp.json(); 
+        if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+        return data.content?.[0]?.text || null;
     }
-    async callCloudflare(url: string, prompt: string, history: any[], options: any, p: any) {
-        const response = await this.fetch(url, { method: 'POST', headers: { 'Authorization': `Bearer ${p.apiToken || p.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'system', content: options.systemPrompt || "" }, { role: 'user', content: prompt }] }) });
-        const data = await response.json(); return data.result?.response || data.result?.text || null;
+    async callCloudflare(url: string, prompt: string, history: any[], options: any, p: any): Promise<any> {
+        const messages = [
+            ...(options.systemPrompt ? [{ role: 'system', content: options.systemPrompt }] : []),
+            ...history,
+            { role: 'user', content: prompt }
+        ];
+
+        const model = options.model || p.defaultModel;
+
+        let imagePayload: any = null;
+        if (options.file && (options.file.startsWith('data:image') || options.fileType?.startsWith('image/'))) {
+            try {
+                const parts = options.file.split('base64,');
+                imagePayload = parts.length > 1 ? parts[1] : options.file;
+            } catch (e) {}
+        }
+        
+        // Level 8: Native Cloudflare Workers AI Binding (High Performance - "Direct")
+        if (this.env && this.env.AI) {
+            if (!model) {
+                 throw new Error("Cloudflare Model is required even for direct AI binding. Please select one from the catalog.");
+            }
+            try {
+                this.logger.log(`[AI-ENGINE] Using Direct CF AI Binding: ${model}`);
+                const response = await (this.env.AI as any).run(model, { 
+                    messages,
+                    image: imagePayload ? Array.from(Uint8Array.from(atob(imagePayload), c => c.charCodeAt(0))) : undefined,
+                    temperature: options.temperature ?? this.config.temperature,
+                    max_tokens: options.maxTokens ?? this.config.maxTokens
+                });
+                return response.response || response.text || null;
+            } catch (e: any) {
+                this.logger.error(`[AI-ENGINE] Native Direct Cloudflare AI error: ${e.message}`);
+                // Only fall back to API if we have enough info to try
+            }
+        }
+
+        if (!model) throw new Error("Cloudflare Model ID is missing. Please check your Registry or select a model.");
+
+        // Fallback to fetch API
+        const apiToken = p.apiToken || p.apiKey || this.env?.CLOUDFLARE_API_TOKEN || this.env?.CF_API_TOKEN;
+        const accountId = p.accountId || this.resolveAccountId(p, 'cloudflare');
+        
+        if (!apiToken && !this.env?.AI) {
+            this.logger.error(`[AI-ENGINE] Cloudflare API Token missing and no direct AI binding available.`);
+            throw new Error("Cloudflare configuration missing (API Token or AI Binding)");
+        }
+
+        if (!accountId && !this.env?.AI) {
+            this.logger.error(`[AI-ENGINE] Cloudflare Account ID missing and direct binding failed.`);
+            throw new Error("Cloudflare Account ID missing. Cannot call Cloudflare API.");
+        }
+
+        // Level 8: Enterprise Template & Self-Healing URL Path
+        let finalUrl = url;
+        
+        // Replace template tags (High priority)
+        if (finalUrl.includes('{{accountId}}') && accountId) {
+            finalUrl = finalUrl.replace(/\{\{accountId\}\}/g, accountId);
+        }
+        if (finalUrl.includes('{{model}}') && model) {
+            finalUrl = finalUrl.replace(/\{\{model\}\}/g, model);
+        }
+        
+        // Self-Healing Logic for Cloudflare Paths
+        if (!finalUrl.includes('/accounts/')) {
+             // Case: api.cloudflare.com/client/v4 -> transform to full path
+             finalUrl = finalUrl.replace(/\/+$/, '') + `/accounts/${accountId}/ai/run/${model}`;
+        } else if (finalUrl.includes('/accounts/{{accountId}}/') || finalUrl.includes('/accounts//')) {
+             // Case: accountId was empty in Registry tag - fix it
+             finalUrl = finalUrl.replace(/\/accounts\/([^/]*)\//, `/accounts/${accountId}/`);
+        }
+
+        // Final safety for /ai/run/
+        if (finalUrl.includes('/ai/run/') && !finalUrl.endsWith(model)) {
+             if (finalUrl.endsWith('/ai/run') || finalUrl.endsWith('/ai/run/')) {
+                 finalUrl = finalUrl.replace(/\/+$/, '') + `/${model}`;
+             }
+        }
+
+        this.logger.log(`[AI-ENGINE] Using Cloudflare API Fetch: ${finalUrl}`);
+
+        const response = await this.fetch(finalUrl, { 
+            method: 'POST', 
+            headers: { 
+                'Authorization': `Bearer ${apiToken}`, 
+                'Content-Type': 'application/json' 
+            }, 
+            body: JSON.stringify({ 
+                messages,
+                image: imagePayload,
+                temperature: options.temperature ?? this.config.temperature,
+                max_tokens: options.maxTokens ?? this.config.maxTokens
+            }) 
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            
+            // Level 8: Auto-Agreement for Llama models (Cloudflare specific)
+            if (response.status === 403 && errText.includes('Model Agreement') && errText.includes("'agree'") && !options.isAgreementRetry) {
+                this.logger.warn(`[AI-ENGINE] Cloudflare Model Agreement required for ${model}. Attempting auto-agreement...`);
+                try {
+                    // Send literal 'agree' prompt. We try both 'prompt' and 'messages' for maximum compatibility.
+                    // Some CF models expect 'prompt' for special commands, others 'messages'.
+                    const agreePayloads = [
+                        { prompt: 'agree' },
+                        { messages: [{ role: 'user', content: 'agree' }] }
+                    ];
+
+                    let agreed = false;
+                    for (const payload of agreePayloads) {
+                        const agreeResp = await this.fetch(finalUrl, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (agreeResp.ok) {
+                            agreed = true;
+                            break;
+                        }
+                    }
+                    
+                    if (agreed) {
+                        this.logger.log(`[AI-ENGINE] Agreement submitted successfully. Retrying original prompt...`);
+                        return await this.callCloudflare(url, prompt, history, { ...options, isAgreementRetry: true }, p);
+                    } else {
+                        this.logger.error(`[AI-ENGINE] Auto-agreement submission failed with all attempts.`);
+                        if (errText.includes('European Union')) {
+                            throw new Error("Llama 3 models on Cloudflare are restricted for users/accounts in the European Union. Please use a different model or provider.");
+                        }
+                    }
+                } catch (retryErr: any) {
+                    this.logger.error(`[AI-ENGINE] Auto-agreement process failed: ${retryErr.message}`);
+                }
+            }
+            
+            throw new Error(`Cloudflare API HTTP Error ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json(); 
+        if (!data.success) throw new Error(`Cloudflare API Error: ${JSON.stringify(data.errors)}`);
+        return data.result?.response || data.result?.text || null;
     }
     extractJson(text: string) {
-        if (!text) return null;
-        const match = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-        if (match) { try { return JSON.parse(match[0]); } catch (e) { } }
+        if (!text || typeof text !== 'string') return null;
+        
+        // Enterprise Level 8: Ultra-Robust JSON Extraction
+        let cleanText = text.trim();
+        
+        try {
+            // 1. Direct try
+            return JSON.parse(cleanText);
+        } catch (e) {
+            // 2. Try to find JSON block in markdown wrappers
+            const mdMatch = cleanText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i) || 
+                            cleanText.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/i);
+            if (mdMatch) {
+                try { return JSON.parse(mdMatch[1]); } catch (e) {}
+            }
+            
+            // 3. Try to find the first { and last } or [ and ]
+            const startBrace = cleanText.indexOf('{');
+            const endBrace = cleanText.lastIndexOf('}');
+            const startBracket = cleanText.indexOf('[');
+            const endBracket = cleanText.lastIndexOf(']');
+            
+            let potential = '';
+            if (startBrace !== -1 && endBrace !== -1 && endBrace > startBrace) {
+                potential = cleanText.substring(startBrace, endBrace + 1);
+            } else if (startBracket !== -1 && endBracket !== -1 && endBracket > startBracket) {
+                potential = cleanText.substring(startBracket, endBracket + 1);
+            } else if (startBrace !== -1) {
+                // Enterprise Level 8: Handle truncated JSON (No closing brace)
+                potential = cleanText.substring(startBrace);
+            } else if (startBracket !== -1) {
+                potential = cleanText.substring(startBracket);
+            }
+            
+            if (potential) {
+                try {
+                    // Try parsing with potential trailing comma removal for common LLM mistakes
+                    let repaired = potential
+                        .replace(/,\s*([\}\]])/g, '$1'); // Trailing commas
+                    
+                    return JSON.parse(repaired);
+                } catch (e) {
+                    // Level 8: Last Ditch Effort - Handle common LLM JSON errors
+                    try {
+                        let betterRepaired = potential
+                            .replace(/,\s*([\}\]])/g, '$1') // Trailing commas
+                            .replace(/(\r\n|\n|\r)/gm, "\\n"); // Convert literal newlines to escaped \n for Markdown content
+                        
+                        return JSON.parse(betterRepaired);
+                    } catch (ex) {
+                        // Level 8: Handle truncated JSON by closing tokens
+                        if (potential.startsWith('{')) {
+                            try {
+                                return JSON.parse(potential.trim() + '" }');
+                            } catch (ee) {
+                                try { return JSON.parse(potential.trim() + ' }'); } catch (eee) {}
+                            }
+                        }
+                    }
+                    
+                    // One last try: just plain JSON.parse on the potential string
+                    try { return JSON.parse(potential); } catch (ex) {}
+                }
+            }
+        }
+        
         return null;
     }
 }
@@ -619,7 +1359,7 @@ export const PROMPT_MANAGER = {
             systemPrompt = prompts[`${name}_system`] || 
                            prompts.systemPrompts?.[name] || 
                            prompts.systemPrompts?.default ||
-                           "You are a helpful AI assistant.";
+                           "";
         }
 
         if (userTemplate === "{{message}}") {
@@ -627,7 +1367,7 @@ export const PROMPT_MANAGER = {
                            prompts[name] ||
                            context.prompt || 
                            context.message || 
-                           "{{message}}";
+                           "";
         }
 
         return {
@@ -644,8 +1384,15 @@ export class AiService {
     private engine: BaseAiEngine;
     private config: any;
     constructor(env: any = {}, options: any = {}) {
-        this.config = options.ai_config || _registry?.AI_CONFIG;
-        this.engine = new BaseAiEngine({ config: this.config, fetch: options.fetch, db: options.db, env: env });
+        // Level 8: Prioritize explicitly passed config, then fallback to global registry
+        this.config = options.ai_config || options.registry?.AI_CONFIG || _registry?.AI_CONFIG;
+        this.engine = new BaseAiEngine({ 
+            config: this.config, 
+            fetch: options.fetch, 
+            db: options.db, 
+            env: env,
+            systemSetting: options.registry?.SYSTEM_SETTING || options.systemSetting
+        });
     }
     
     // Discovery Methods
@@ -666,8 +1413,8 @@ export class AiService {
         const registry = { ..._registry, AI_CONFIG: this.config };
         const promptContext = await PROMPT_MANAGER.getPrompt({ db, registry, name: options.promptName || 'chat', context: { message, ...options } });
         
-        // Use preferred model if specified, otherwise the one resolved by prompt manager or options
-        const model = options.model || promptContext.model || this.config.model || (this.config.models?.[0]?.id);
+        // Strictly from options, prompt context, or top-level model setting
+        const model = options.model || promptContext.model || this.config.model;
         
         return this.chat(promptContext.prompt, options.history || [], { ...options, systemPrompt: promptContext.systemPrompt, model });
     }
@@ -677,6 +1424,91 @@ export class AiService {
         const resp = await this.chat(promptConfig.prompt, [], { ...options, systemPrompt: promptConfig.systemPrompt, model: promptConfig.model || options.model, response_mime_type: 'application/json' });
         return this.engine.extractJson(resp);
     }
+
+    // --- Enterprise Level 8: Test Connection ---
+    async testConnection(providerName: string, db: any = null, options: any = {}) {
+        try {
+            const registry = { ..._registry, AI_CONFIG: this.config };
+            const p = { ...this.config.providers?.[providerName], ...options };
+            
+            if (!p || Object.keys(p).length === 0) throw new Error(`Provider '${providerName}' not found in Registry.`);
+
+            const apiKey = this.engine.resolveApiKey(p, providerName);
+            const accountId = this.engine.resolveAccountId(p, providerName);
+
+            this.engine.logger.log(`[AI-ENGINE] Testing connection for ${providerName} (Discovery Mode)...`);
+            this.engine.logger.log(`[AI-ENGINE] Resolved Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'MISSING'} | Account: ${accountId || 'MISSING'}`);
+
+            // Enterprise Level 8: Discovery Mode (Decoupled from specific model)
+            // Tests the API Key/Credentials by attempting to list models.
+            try {
+                let discoveryUrl = p.baseUrl || "";
+                let headers: any = { 'Content-Type': 'application/json' };
+
+                if (p.type === 'google-v1beta' || discoveryUrl.includes('googleapis.com')) {
+                    // Google Gemini discovery - Extract base up to version (v1/v1beta)
+                    const baseMatch = discoveryUrl.match(/(https:\/\/generativelanguage\.googleapis\.com\/v[^\/]+)/);
+                    const base = baseMatch ? baseMatch[1] : discoveryUrl.split('/models/')[0].split('/openai')[0].replace(/\/$/, '');
+                    discoveryUrl = base + `/models?key=${apiKey}`;
+                    
+                    // Level 8: Add native Google API Key header as well for maximum compatibility
+                    headers['x-goog-api-key'] = apiKey;
+                } else if (p.type === 'openai-v1' || p.type === 'github-v1' || discoveryUrl.includes('api.openai.com') || discoveryUrl.includes('azure.com') || discoveryUrl.includes('groq.com') || discoveryUrl.includes('deepseek.com')) {
+                    // OpenAI-compatible discovery (OpenAI, GitHub, Groq, DeepSeek, etc.)
+                    discoveryUrl = discoveryUrl.split('/chat/')[0].split('/completions')[0].split('?')[0].replace(/\/$/, '') + `/models`;
+                    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+                    
+                    // GitHub and Azure often require or prefer User-Agent
+                    if (p.type === 'github-v1' || discoveryUrl.includes('azure.com')) {
+                        headers['User-Agent'] = 'Studio-App-v2';
+                    }
+                } else if (p.type === 'anthropic-v1' || discoveryUrl.includes('anthropic.com')) {
+                    // Anthropic discovery - handle potential /v1 in base
+                    const base = discoveryUrl.split('/messages')[0].replace(/\/$/, '');
+                    discoveryUrl = base.endsWith('/v1') ? base + '/models' : base + '/v1/models';
+                    if (apiKey) {
+                        headers['x-api-key'] = apiKey;
+                        headers['anthropic-version'] = '2023-06-01';
+                    }
+                } else if (p.type === 'cloudflare-rpc' || discoveryUrl.includes('api.cloudflare.com')) {
+                    // Cloudflare discovery
+                    if (accountId) {
+                        discoveryUrl = discoveryUrl.split('/accounts/')[0] + `/accounts/${accountId}/ai/models/search?limit=1`;
+                        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+                    }
+                }
+
+                if (discoveryUrl && !discoveryUrl.includes('{{')) {
+                    this.engine.logger.log(`[AI-ENGINE] Discovery Endpoint: ${discoveryUrl.split('key=')[0]}${discoveryUrl.includes('key=') ? 'key=***' : ''}`);
+                    const resp = await this.engine.fetch(discoveryUrl, { method: 'GET', headers });
+                    if (resp.ok) {
+                        this.engine.logger.log(`[AI-ENGINE] Discovery successful for ${providerName}. API Credentials validated.`);
+                        return {
+                            success: true,
+                            details: {
+                                durationMs: 0,
+                                model: "Discovery Endpoint (Authenticated)",
+                                provider: providerName,
+                                responseSnippet: "Connection Established! API Key is valid and authorized."
+                            }
+                        };
+                    } else {
+                        const err = await resp.text();
+                        let parsedErr: any = {};
+                        try { parsedErr = JSON.parse(err); } catch(e) {}
+                        const msg = parsedErr.error?.message || err;
+                        throw new Error(`Discovery Failed (${resp.status}): ${msg}`);
+                    }
+                }
+                throw new Error("Discovery URL could not be resolved from Registry. Check baseUrl.");
+            } catch (discErr: any) {
+                this.engine.logger.error(`[AI-ENGINE] Discovery Failed for ${providerName}: ${discErr.message}`);
+                return { success: false, message: discErr.message };
+            }
+        } catch (e: any) {
+            return { success: false, message: e.message };
+        }
+    }
 }
 
 export class CurrencyService {
@@ -684,13 +1516,14 @@ export class CurrencyService {
     constructor() { this.parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" }); }
     async fetchLatestRates() {
         const config = _registry?.CURRENCY || {};
-        const bnrUrl = config.BASE_URL || 'https://www.bnr.ro/nbrfxrates.xml';
-        const eurFallback = config.EUR_FALLBACK || 4.97;
+        const bnrUrl = config.BASE_URL || '';
+        const eurFallback = config.EUR_FALLBACK || 0;
         try {
+            if (!bnrUrl) throw new Error("BNR URL missing in Registry");
             const resp = await fetch(bnrUrl);
             const jsonObj = this.parser.parse(await resp.text());
             const cube = jsonObj.DataSet.Body.Cube;
-            const result: any = { date: cube['@_date'], rates: { EUR: eurFallback, USD: config.USD_FALLBACK || 4.55 } };
+            const result: any = { date: cube['@_date'], rates: { EUR: eurFallback, USD: config.USD_FALLBACK || 0 } };
             const rates = Array.isArray(cube.Rate) ? cube.Rate : [cube.Rate];
             rates.forEach((r: any) => { if (r) result.rates[r['@_currency']] = parseFloat(r['#text']); });
             return result;

@@ -59,7 +59,7 @@ export default function GenericEntityDetailPage() {
   }
 
   return (
-    <div className="h-full overflow-hidden">
+    <div className="animate-in fade-in duration-500">
         <DynamicEntityDetail 
             entityId={entityId!} 
             recordId={recordId!} 

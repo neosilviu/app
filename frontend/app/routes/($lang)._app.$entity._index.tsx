@@ -295,13 +295,13 @@ export default function EntityPage() {
                     </DialogTitle>
                     <DialogDescription className="text-slate-500 font-bold italic uppercase tracking-widest text-[10px] flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                      {t('entity:create_record_desc', { defaultValue: 'Introduceți datele pentru noua înregistrare' })}
+                      {t('entity:create_record_desc')}
                     </DialogDescription>
                   </div>
                 </div>
                 <div className="hidden sm:block">
                   <Badge variant="outline" className="rounded-full border-slate-200 dark:border-slate-800 text-slate-400 font-black italic text-[9px] uppercase tracking-tighter px-3 py-1 bg-white dark:bg-slate-950">
-                      Action: {t('common:create', { defaultValue: 'ADĂUGARE' })}
+                      Action: {t('common:create')}
                   </Badge>
                 </div>
               </div>
@@ -309,6 +309,7 @@ export default function EntityPage() {
             <DynamicForm 
               entityType={entityType} 
               loading={isSaving}
+              isModal={true}
               onSubmit={async (values) => {
                 if (isSaving) return;
                 try {
@@ -369,6 +370,7 @@ export default function EntityPage() {
                 entityType={entityType} 
                 initialData={editingItem}
                 loading={isSaving}
+                isModal={true}
                 onSubmit={async (values) => {
                   if (isSaving) return;
                   try {

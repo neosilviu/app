@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Activity, RotateCcw, Filter, Calendar, User, Zap, Database, ChevronDown, ChevronUp, Search, BarChart3 } from 'lucide-react';
+import { Activity, RotateCcw, Filter, Calendar, User, Zap, Database, ChevronDown, ChevronUp, Search, BarChart3, ArrowRight } from 'lucide-react';
 import { useConfig } from '~/hooks/useConfig';
 import { api } from '~/lib/core';
 import { Button } from '~/components/ui/button';
@@ -28,6 +28,56 @@ interface AuditStats {
   byAction: { action: string; count: number }[];
   byEntity: { entityType: string; count: number }[];
 }
+
+const JsonDiff = ({ before, after, lang }: { before: any, after: any, lang: string }) => {
+  const b = typeof before === 'string' ? JSON.parse(before) : (before || {});
+  const a = typeof after === 'string' ? JSON.parse(after) : (after || {});
+  
+  const allKeys = Array.from(new Set([...Object.keys(b), ...Object.keys(a)])).sort();
+  const changes = allKeys.filter(k => JSON.stringify(b[k]) !== JSON.stringify(a[k]));
+
+  if (changes.length === 0) {
+    return (
+      <div className="text-[10px] italic text-muted-foreground p-2">
+        {renderString({ ro: 'Nicio diferență detectată în datele brute.', en: 'No differences detected in raw data.' }, lang)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+        {renderString({ ro: 'Câmpuri Modificate', en: 'Changed Fields' }, lang)}
+      </div>
+      <div className="grid grid-cols-1 gap-2">
+        {changes.map(k => {
+          const valBefore = b[k];
+          const valAfter = a[k];
+          
+          return (
+            <div key={k} className="flex flex-col gap-1 p-2 rounded-lg border border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono font-bold text-indigo-600">{k}</span>
+                <Badge variant="outline" className="text-[8px] py-0 h-4">
+                  {typeof valAfter === 'object' ? 'object' : typeof valAfter}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-2">
+                <div className="text-[11px] font-mono p-1 bg-red-500/5 text-red-600 rounded break-all line-through opacity-70">
+                  {valBefore === null || valBefore === undefined ? 'null' : (typeof valBefore === 'object' ? JSON.stringify(valBefore) : String(valBefore))}
+                </div>
+                <ArrowRight size={12} className="text-slate-400" />
+                <div className="text-[11px] font-mono p-1 bg-green-500/5 text-green-600 rounded break-all font-bold">
+                  {valAfter === null || valAfter === undefined ? 'null' : (typeof valAfter === 'object' ? JSON.stringify(valAfter) : String(valAfter))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 export function AuditHistory() {
   const config = useConfig();
@@ -357,20 +407,42 @@ export function AuditHistory() {
                     <p className="text-sm text-muted-foreground">{formatForRender(log.details, lang)}</p>
                   )}
                   
-                  {expandedLog === log.id && log.snapshot_before && (
-                    <div className="mt-3 p-3 bg-muted rounded-md">
-                      <div className="text-xs font-semibold mb-2 text-muted-foreground">
-                        {renderString({ ro: 'Snapshot Înainte:', en: 'Snapshot Before:' }, lang)}
+                  {expandedLog === log.id && (log.snapshot_before || log.snapshot_after) && (
+                    <div className="mt-4 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                      {/* Visual Diff Section */}
+                      <Card className="p-4 border-indigo-100 bg-indigo-50/20 dark:bg-indigo-950/10 dark:border-indigo-900/30">
+                        <JsonDiff before={log.snapshot_before} after={log.snapshot_after} lang={lang} />
+                      </Card>
+
+                      {/* Raw Comparison Section */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {log.snapshot_before && (
+                          <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-xl">
+                            <div className="text-[10px] font-black uppercase tracking-widest mb-2 text-red-600">
+                              {renderString({ ro: 'Snapshot Înainte:', en: 'Snapshot Before:' }, lang)}
+                            </div>
+                            <pre className="text-[10px] font-mono overflow-auto max-h-48 p-2 bg-white/50 dark:bg-slate-900/50 rounded-lg border border-red-200/20">
+                              {typeof log.snapshot_before === 'string' ? JSON.stringify(JSON.parse(log.snapshot_before), null, 2) : JSON.stringify(log.snapshot_before, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        {log.snapshot_after && (
+                          <div className="p-3 bg-green-500/5 border border-green-500/10 rounded-xl">
+                            <div className="text-[10px] font-black uppercase tracking-widest mb-2 text-green-600">
+                              {renderString({ ro: 'Snapshot După:', en: 'Snapshot After:' }, lang)}
+                            </div>
+                            <pre className="text-[10px] font-mono overflow-auto max-h-48 p-2 bg-white/50 dark:bg-slate-900/50 rounded-lg border border-green-200/20">
+                              {typeof log.snapshot_after === 'string' ? JSON.stringify(JSON.parse(log.snapshot_after), null, 2) : JSON.stringify(log.snapshot_after, null, 2)}
+                            </pre>
+                          </div>
+                        )}
                       </div>
-                      <pre className="text-xs overflow-auto max-h-64 p-2 bg-background rounded">
-                        {JSON.stringify(log.snapshot_before, null, 2)}
-                      </pre>
                     </div>
                   )}
                 </div>
                 
                 <div className="flex items-center gap-2">
-                  {log.snapshot_before && (
+                  {(log.snapshot_before || log.snapshot_after) && (
                     <Button
                       variant="ghost"
                       size="sm"

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Search, Sparkles, Command, ArrowRight, X, MessageSquare, Bot, User, Activity, Settings, LayoutGrid, Users, Briefcase, CheckCircle2, Bug, Tag, Send, Minus, Maximize2, HardDrive, FileText } from "lucide-react";
+import { Search, Sparkles, Command, ArrowRight, X, MessageSquare, Bot, User, Activity, Settings, LayoutGrid, Users, Briefcase, CheckCircle2, Bug, Tag, Send, Minus, Maximize2, HardDrive, FileText, Paperclip, FileDown, Brain, Database, Mic, Loader2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { cn, getLocalizedPath, api, renderString } from "~/lib/core";
 import { Button } from "./ui/button";
 import { useConfig } from "~/hooks/useConfig";
+import { useAuth } from "~/hooks/useAuth";
 import { resolveIcon } from "~/lib/icons";
 
 const ENTITY_ICONS: Record<string, any> = {
@@ -14,6 +15,32 @@ const ENTITY_ICONS: Record<string, any> = {
   bug: Bug,
   tag: Tag,
   shield: Activity,
+};
+
+const getFriendlyDisplayName = (foundModel: any, activeModelId: string) => {
+  if (foundModel?.name) return foundModel.name;
+  if (!activeModelId) return 'AI Agent';
+  
+  // Enterprise Level 8: Advanced URI Parser for GitHub/Azure/Deep Links
+  if (activeModelId.includes('azureml') || activeModelId.includes('github') || activeModelId.includes('endpoints')) {
+    const parts = activeModelId.split('/');
+    
+    const eIdx = parts.indexOf('endpoints');
+    if (eIdx !== -1 && parts[eIdx+1]) return parts[eIdx+1].replace(/-/g, ' ').replace(/\b\w/g, (l: any) => l.toUpperCase());
+    
+    const mIdx = parts.indexOf('models');
+    if (mIdx !== -1 && parts[mIdx+1]) return parts[mIdx+1].replace(/-/g, ' ').replace(/\b\w/g, (l: any) => l.toUpperCase());
+
+    // Fallback: If last part is numeric (version), step back 2 levels (skip 'versions' keyword if present)
+    const last = parts[parts.length - 1];
+    if (last && /^\d+$/.test(last) && parts.length > 1) {
+        const candidate = parts[parts.length - 2];
+        if (candidate === 'versions' && parts.length > 2) return parts[parts.length - 3].replace(/-/g, ' ').replace(/\b\w/g, (l: any) => l.toUpperCase());
+        return candidate.replace(/-/g, ' ').replace(/\b\w/g, (l: any) => l.toUpperCase());
+    }
+  }
+  
+  return activeModelId.split('/').pop()?.replace(/-/g, ' ').replace(/\b\w/g, (l: any) => l.toUpperCase()) || 'AI Agent';
 };
 
 interface SearchResult {
@@ -41,6 +68,21 @@ export function AiCommandBar() {
   const { entity, constants, navigation, uiConfig } = useConfig();
   const settings = constants.SYSTEM_SETTING;
   const { t } = useTranslation(['common', 'ai']);
+
+  const aiConfig = constants.AI_CONFIG || {};
+  const registeredProviders = Object.keys(aiConfig.providers || {});
+  
+  const activeModelId = aiConfig.model || aiConfig.preferredModel || "";
+  const foundModel = (aiConfig.models || []).find((m: any) => m.id === activeModelId);
+  
+  // Level 8: Advanced Provider Resolution (ID-Aware Fallback)
+  const activeProvider = foundModel?.provider || 
+    (activeModelId.startsWith('@cf/') ? 'cloudflare' : 
+     (activeModelId.includes('azureml') || activeModelId.includes('github') ? 'github' : 
+      (aiConfig.active_provider || aiConfig.defaultProvider || registeredProviders[0] || '')));
+  
+  const modelDisplayName = getFriendlyDisplayName(foundModel, activeModelId);
+  const providerDisplayName = aiConfig.providers?.[activeProvider]?.typeName || aiConfig.providers?.[activeProvider]?.name || activeProvider;
 
   const searchShortcut = (uiConfig.shortcuts || []).find((s: any) => s.action === 'open-search');
   const searchKeyHint = searchShortcut ? `${searchShortcut.ctrlKey ? 'Ctrl+' : ''}${searchShortcut.key.toUpperCase()}` : 'Ctrl+K';
@@ -208,9 +250,14 @@ export function AiCommandBar() {
         action: "chat",
         message: query,
         role: "search",
+        model: activeModelId, // Enterprise Level 8: Explicitly pass the selected model
         lang: lang || 'ro'
       });
-      if (res.success) setAiResponse(res.data.response);
+      if (res.success && res.data) {
+        setAiResponse(res.data.response);
+      } else {
+        setAiResponse(res.error || "Error");
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -344,7 +391,9 @@ export function AiCommandBar() {
                 <span className="flex items-center gap-1"><span className="px-1 border rounded bg-white dark:bg-slate-800 font-mono mx-0.5">,</span> {renderString(t('ai:search_contacts'), lang)}</span>
                 <span className="flex items-center gap-1"><span className="px-1 border rounded bg-white dark:bg-slate-800 font-mono mx-0.5">↵</span> {renderString(t('ai:to_search'), lang)}</span>
              </div>
-             <div className="shrink-0">{renderString(t('common:ai_platform'), lang)}</div>
+             <div className="shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold border border-slate-200/50">
+                {modelDisplayName} <span className="text-[9px] opacity-40 font-normal">| {providerDisplayName}</span>
+             </div>
           </div>
         </div>
       )}
@@ -355,16 +404,93 @@ export function AiCommandBar() {
 // --- AiFloatingAgent Component ---
 
 export function AiFloatingAgent() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(['ai', 'common']);
   const { lang } = useParams();
+  const { constants } = useConfig();
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+
+  const storageKey = `chat_size_${user?.email || 'default'}`;
+
+  const [size, setSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) return JSON.parse(saved);
+      } catch (e) { console.warn("Failed to load chat size", e); }
+    }
+    return { width: 384, height: 500 };
+  });
+  const [isResizing, setIsResizing] = useState(false);
   const [input, setInput] = useState("");
+  const [selectedFile, setSelectedFile] = useState<{ name: string, data: string, type: string } | null>(null);
   const [messages, setMessages] = useState<any[]>([
     { role: 'assistant', content: renderString(t('ai:agent_welcome'), lang) }
   ]);
   const [loading, setLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const aiConfig = constants.AI_CONFIG || {};
+  const registeredProviders = Object.keys(aiConfig.providers || {});
+  const activeModelId = aiConfig.model || aiConfig.preferredModel || "";
+  const foundModel = (aiConfig.models || []).find((m: any) => m.id === activeModelId);
+  
+  const hasVision = foundModel?.capabilities?.includes('vision');
+  const hasFileGen = foundModel?.capabilities?.includes('files') || foundModel?.capabilities?.includes('agentic');
+
+  // Level 8: Advanced Provider Resolution (ID-Aware Fallback)
+  const activeProvider = foundModel?.provider || 
+    (activeModelId.startsWith('@cf/') ? 'cloudflare' : 
+     (activeModelId.includes('azureml') || activeModelId.includes('github') ? 'github' : 
+      (aiConfig.active_provider || aiConfig.defaultProvider || registeredProviders[0] || '')));
+  
+  const modelDisplayName = getFriendlyDisplayName(foundModel, activeModelId);
+  const providerDisplayName = aiConfig.providers?.[activeProvider]?.typeName || aiConfig.providers?.[activeProvider]?.name || activeProvider;
+
+  // Level 8 Memory Engine: Restore thread-safe history
+  useEffect(() => {
+    if (isOpen && messages.length <= 1) {
+        api.brain.post('ai', { action: 'history' }).then(res => {
+            if (res.success && res.data && res.data.length > 0) {
+                setMessages(res.data);
+            }
+        }).catch(e => console.error("History load error", e));
+    }
+  }, [isOpen]);
+
+  // Level 8: Resize Engine (Logic for top-left drag expansion)
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Since anchored at bottom-right, we calculate size based on distance from viewport edges
+      const newWidth = Math.max(320, window.innerWidth - e.clientX - 24); // 24 = right-6
+      const newHeight = Math.max(300, window.innerHeight - e.clientY - 24); // 24 = bottom-6
+      setSize({ width: newWidth, height: newHeight });
+    };
+
+    const handleMouseUp = () => setIsResizing(false);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // Persistent UI Settings (Enterprise Level 8)
+  useEffect(() => {
+    if (!isResizing && isOpen) {
+       localStorage.setItem(storageKey, JSON.stringify(size));
+    }
+  }, [isResizing, size.width, size.height, isOpen, storageKey]);
 
   useEffect(() => {
     const handleOpenHelp = () => setIsOpen(true);
@@ -376,22 +502,62 @@ export function AiFloatingAgent() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, isOpen]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File too large (max 5MB)");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setSelectedFile({
+        name: file.name,
+        type: file.type,
+        data: base64
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSendMessage = async () => {
-    if (!input.trim() || loading) return;
-    const userMessage = { role: 'user', content: input };
+    if (!input.trim() && !selectedFile) return;
+    
+    const userMessage: any = { role: 'user', content: input };
+    if (selectedFile) {
+        userMessage.attachments = [{ name: selectedFile.name, type: selectedFile.type }];
+    }
+
     setMessages(prev => [...prev, userMessage]);
+    
+    const currentInput = input;
+    const currentFile = selectedFile;
+    
     setInput("");
+    setSelectedFile(null);
     setLoading(true);
+    
     try {
       const res = await api.brain.post('ai', {
         action: "chat",
-        message: input,
+        message: currentInput,
+        image: currentFile?.data, // vision compat
+        file: currentFile?.data, // general file compat
+        fileName: currentFile?.name,
+        fileType: currentFile?.type,
         role: "chat",
-        history: messages.slice(-10),
+        model: activeModelId, 
+        history: messages.slice(-15).map(m => ({ role: m.role, content: m.content })),
         lang: lang || 'ro'
       });
-      if (res.success) setMessages(prev => [...prev, { role: 'assistant', content: res.data.response }]);
-      else setMessages(prev => [...prev, { role: 'assistant', content: res.error || renderString(t('common:error'), lang) }]);
+      if (res.success && res.data) {
+        setMessages(prev => [...prev, { role: 'assistant', content: res.data.response }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: res.error || renderString(t('common:error'), lang) }]);
+      }
     } catch (e: any) {
         setMessages(prev => [...prev, { role: 'assistant', content: renderString(t('ai:error_prefix'), lang) + e.message }]);
     } finally {
@@ -399,11 +565,76 @@ export function AiFloatingAgent() {
     }
   };
 
+  const downloadGeneratedFile = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'generated_file.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64data = (reader.result as string).split(',')[1];
+          setIsTranscribing(true);
+          try {
+            const res = await api.brain.post('ai', { action: 'transcribe', file: base64data });
+            if (res.success && res.data?.text) {
+              setInput(prev => prev ? prev + " " + res.data.text : res.data.text);
+            }
+          } catch (err) {
+            console.error("Transcription error", err);
+          } finally {
+            setIsTranscribing(false);
+          }
+        };
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error accessing microphone", err);
+      // Enterprise Level 8: Visible error via chat message if mic fails
+      setMessages(prev => [...prev, { role: 'assistant', content: renderString(t('ai:mic_error'), lang) }]);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleToggleVoice = () => {
+    if (isRecording) stopRecording();
+    else startRecording();
+  };
+
   if (!isOpen) {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-50 group border-4 border-white dark:border-slate-900"
+        className="fixed bottom-28 md:bottom-6 right-6 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-50 group border-4 border-white dark:border-slate-900"
       >
         <MessageSquare className="h-6 w-6 group-hover:hidden" /><Sparkles className="h-6 w-6 hidden group-hover:block animate-pulse" />
         <div className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-bounce" />
@@ -412,11 +643,29 @@ export function AiFloatingAgent() {
   }
 
   return (
-    <div className={cn("fixed bottom-6 right-6 w-80 md:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 transition-all duration-300 animate-in fade-in slide-in-from-bottom-5", isMinimized ? "h-14" : "h-[500px]")}>
-      <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-blue-600 rounded-t-2xl text-white">
+    <div 
+      style={{ width: isMinimized ? 320 : size.width, height: isMinimized ? 56 : size.height }}
+      className={cn(
+        "fixed bottom-28 md:bottom-6 right-6 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col z-50 animate-in fade-in slide-in-from-bottom-5", 
+        !isResizing && "transition-all duration-300",
+        isResizing && "select-none cursor-nwse-resize"
+      )}
+    >
+      {!isMinimized && (
+        <div 
+          onMouseDown={(e) => { e.preventDefault(); setIsResizing(true); }}
+          className="absolute -top-1 -left-1 w-8 h-8 cursor-nwse-resize z-[60] flex items-start justify-start p-1 bg-transparent rounded-tl-2xl hover:bg-blue-500/10 transition-colors group"
+        >
+           <div className="w-3 h-3 border-t-2 border-l-2 border-transparent group-hover:border-blue-500 transition-colors rounded-tl-sm" />
+        </div>
+      )}
+      <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-blue-600 rounded-t-2xl text-white shrink-0">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center"><Bot size={18} /></div>
-          <div><p className="text-sm font-bold">{renderString(t('ai:agent_title'), lang)}</p>{!isMinimized && <p className="text-[10px] text-blue-100 italic">{renderString(t('ai:agent_status'), lang)}</p>}</div>
+          <div>
+            <p className="text-sm font-bold leading-tight">{modelDisplayName}</p>
+            {!isMinimized && <p className="text-[10px] text-blue-100 italic leading-tight opacity-90">{providerDisplayName}</p>}
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/10" onClick={() => setIsMinimized(!isMinimized)}>{isMinimized ? <Maximize2 size={16} /> : <Minus size={16} />}</Button>
@@ -426,12 +675,44 @@ export function AiFloatingAgent() {
       {!isMinimized && (
         <>
           <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-4 bg-slate-50/30 dark:bg-slate-800/10">
-            {messages.map((m, i) => (
-              <div key={i} className={cn("flex gap-2 max-w-[85%]", m.role === 'user' ? "ml-auto flex-row-reverse" : "")}>
-                <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shrink-0", m.role === 'user' ? "bg-slate-200 dark:bg-slate-700" : "bg-blue-100 dark:bg-blue-900/40 text-blue-600")}>{m.role === 'user' ? <User size={14} /> : <Bot size={14} />}</div>
-                <div className={cn("p-3 rounded-2xl text-sm shadow-sm", m.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-100 dark:border-slate-800")}>{m.content}</div>
-              </div>
-            ))}
+            {messages.map((m, i) => {
+              // Level 8: Detect file generation (Markdown code blocks with filename hint)
+              const fileMatch = m.role === 'assistant' && m.content.match(/```[\w]*\s+filename[:=]\s*([\w.]+)\s*\n([\s\S]*?)```/i);
+              const generatedFileName = fileMatch ? fileMatch[1] : null;
+              const generatedContent = fileMatch ? fileMatch[2] : null;
+
+              return (
+                <div key={i} className={cn("flex flex-col space-y-1", m.role === 'user' ? "items-end" : "items-start")}>
+                  <div className={cn("flex gap-2 max-w-[90%]", m.role === 'user' ? "flex-row-reverse" : "")}>
+                    <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shrink-0", m.role === 'user' ? "bg-slate-200 dark:bg-slate-700" : "bg-blue-100 dark:bg-blue-900/40 text-blue-600")}>
+                        {m.role === 'user' ? <User size={14} /> : <Bot size={14} />}
+                    </div>
+                    <div className={cn("p-3 rounded-2xl text-sm shadow-sm", m.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-100 dark:border-slate-800")}>
+                        {m.content}
+                        
+                        {m.attachments?.map((at: any, idx: number) => (
+                           <div key={idx} className="mt-2 flex items-center gap-2 p-1.5 bg-black/10 rounded-lg text-[10px] font-mono">
+                               <Paperclip size={12} /> {at.name}
+                           </div>
+                        ))}
+
+                        {generatedFileName && (
+                          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                             <Button 
+                                size="sm" 
+                                variant="outline" 
+                                className="h-8 text-[11px] gap-2 w-full"
+                                onClick={() => downloadGeneratedFile(generatedContent!, generatedFileName)}
+                             >
+                                <FileDown size={14} /> {renderString(t('ai:download_generated'), lang)} {generatedFileName}
+                             </Button>
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
             {loading && (
               <div className="flex gap-2">
                 <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0"><Bot size={14} className="text-blue-600" /></div>
@@ -440,11 +721,75 @@ export function AiFloatingAgent() {
             )}
           </div>
           <div className="p-4 border-t border-slate-100 dark:border-slate-800">
-            <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="relative">
-              <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={renderString(t('ai:type_message'), lang)} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl py-3 pl-4 pr-12 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
-              <button type="submit" disabled={loading || !input.trim()} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 bg-blue-600 text-white rounded-lg flex items-center justify-center hover:bg-blue-700 disabled:opacity-50 transition-colors"><Send size={16} /></button>
+            {selectedFile && (
+               <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg flex items-center justify-between animate-in slide-in-from-bottom-2">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                     <Paperclip size={14} className="text-blue-500 shrink-0" />
+                     <span className="text-[11px] truncate font-medium">{selectedFile.name}</span>
+                  </div>
+                  <button onClick={() => setSelectedFile(null)} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
+               </div>
+            )}
+            <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="relative flex items-center gap-2">
+              <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
+              
+              <div className="relative flex-grow">
+                <input 
+                  type="text" 
+                  value={input} 
+                  onChange={(e) => setInput(e.target.value)} 
+                  placeholder={renderString(t('ai:type_message'), lang)} 
+                  className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl py-3 pl-4 pr-10 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+                />
+                
+                {hasVision && (
+                   <button 
+                     type="button" 
+                     onClick={() => fileInputRef.current?.click()}
+                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-blue-500 transition-colors"
+                   >
+                     <Paperclip size={18} />
+                   </button>
+                )}
+              </div>
+
+              <button 
+                type="button" 
+                onClick={handleToggleVoice}
+                disabled={isTranscribing}
+                title={renderString(t(isRecording ? 'ai:mic_stop' : (isTranscribing ? 'ai:mic_transcribing' : 'ai:mic_start')), lang)}
+                className={cn(
+                  "h-10 w-10 shrink-0 rounded-xl flex items-center justify-center transition-all",
+                  isRecording 
+                    ? "bg-red-500 text-white animate-pulse" 
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-blue-500"
+                )}
+              >
+                {isTranscribing ? <Loader2 size={18} className="animate-spin" /> : <Mic size={18} />}
+              </button>
+
+              <button type="submit" disabled={loading || (!input.trim() && !selectedFile)} className="h-10 w-10 shrink-0 bg-blue-600 text-white rounded-xl flex items-center justify-center hover:bg-blue-700 disabled:opacity-50 transition-colors"><Send size={18} /></button>
             </form>
-            <p className="text-[10px] text-center text-slate-400 mt-3 flex items-center justify-center gap-1">{renderString(t('ai:powered_by'), lang)} <Sparkles size={8} /></p>
+            <div className="flex items-center justify-between mt-3">
+               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/50">
+                  <div className={cn("h-1.5 w-1.5 rounded-full animate-pulse", messages.length > 2 ? "bg-emerald-500" : "bg-slate-300")} />
+                  <span className="text-[9px] font-black uppercase italic text-slate-400 tracking-tighter flex items-center gap-1">
+                     <Brain size={10} className={cn(messages.length > 2 ? "text-blue-500" : "text-slate-300")} />
+                     Memory: {messages.length > 1 ? `${messages.length} Events` : 'Clean'}
+                  </span>
+               </div>
+               
+               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700/50">
+                  <span className="text-[9px] font-black uppercase italic text-slate-400 tracking-tighter flex items-center gap-1">
+                     <Database size={10} className="text-purple-500" />
+                     RAG: Active
+                  </span>
+               </div>
+            </div>
+            <p className="text-[10px] text-center text-slate-400 mt-2 flex items-center justify-center gap-1">
+                {renderString(t('ai:powered_by'), lang)} <Sparkles size={8} /> 
+                {hasFileGen && <span className="ml-2 px-1 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 flex items-center gap-1 font-bold"><FileDown size={8} /> File Gen </span>}
+            </p>
           </div>
         </>
       )}

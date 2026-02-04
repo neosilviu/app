@@ -18,15 +18,64 @@ const activeMutations: Map<string, Promise<Response>> = global.activeMutations;
 
 import { getDb, clearColumnCache } from './lib/d1.server';
 import { getAuth, verifyAuth } from "./lib/auth-core.server";
-import { AiService, getRegistry, clearRegistryCache, resolveCollection, getPrimaryKey, normalizeEntity, safeParse, getDisplayValue, renderString } from './lib/core';
-import { isGlobalAdmin, hasPermission, hasPageAccess, isWorkspaceAdmin } from './lib/auth-utils';
-import { ensureSystemTables, waitForDbReady, mapFieldType, ensureBaselineSync, syncEntityTable } from './lib/db-init.server';
+import { getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, getDisplayValue, renderString } from './lib/core';
+import { isGlobalAdmin, hasPageAccess, isWorkspaceAdmin } from './lib/auth-utils';
+import { ensureSystemTables, waitForDbReady, syncEntityTable } from './lib/db-init.server';
+import { handleAiRequest, handleSelfHealing, handleHelpRequest } from './lib/ai.server';
 
 // --- SYSTEM CONSTANTS (Level 8: Decoupled to Registry - NO FAILSAFES) ---
+
+// Patch: Extend menuConfig type to allow 'badge'
+type MenuConfig = {
+    showInMainMenu?: boolean;
+    label?: string;
+    path?: string;
+    category?: string;
+    priority?: number;
+    icon?: string;
+    badge?: string;
+};
+
 const isGlobalEntity = (name: string, registry?: any) => {
     const list = registry?.CONSTANT?.globalEntity || [];
     return list.map((e: string) => e.toLowerCase()).includes((name || '').toLowerCase());
 };
+
+/**
+ * Enterprise Level 8 Cache Management
+ * Handles both in-memory and KV cache invalidation
+ */
+async function clearKvConfigCache(env: any, workspaceId?: string) {
+    try {
+        if (!global.CACHED_CONFIGS) global.CACHED_CONFIGS = {};
+        
+        if (workspaceId) {
+            const cacheKey = `config_${workspaceId}`;
+            delete global.CACHED_CONFIGS[cacheKey];
+            if (env?.KV) await env.KV.delete(cacheKey);
+            console.log(`[CACHE] Invalidated workspace cache: ${workspaceId}`);
+        } else {
+            // Global Flush
+            global.CACHED_CONFIGS = {};
+            if (env?.KV) {
+                // KV batch clear is not native, we usually list and delete or clear specific prefixes
+                const list = await env.KV.list({ prefix: 'config_' });
+                for (const key of list.keys) {
+                    await env.KV.delete(key.name);
+                }
+            }
+            console.log('[CACHE] Global registry flush executed');
+        }
+    } catch (e: any) {
+        console.warn('[CACHE] Error clearing KV cache:', e.message);
+    }
+}
+
+/**
+ * Level 9: Self-Healing Intelligence
+ * Analyzes performance logs and applies optimizations automatically.
+ * (Moved to ai.server.ts)
+ */
 
 // --- TYPING ---
 declare global {
@@ -55,11 +104,14 @@ const error = (msg: any, status = 400, reason?: string) => {
 };
 
 const deepParse = (obj: any): any => {
-    if (typeof obj === 'string' && (obj.startsWith('{') || obj.startsWith('['))) {
-        try {
-            return deepParse(JSON.parse(obj));
-        } catch (e) {
-            return obj; // Return as is if parsing fails
+    if (typeof obj === 'string') {
+        const trimmed = obj.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+                return deepParse(JSON.parse(trimmed));
+            } catch (e) {
+                return obj; // Return original if parsing fails
+            }
         }
     }
     if (!obj || typeof obj !== 'object') return obj;
@@ -129,31 +181,32 @@ const convertToCSV = (data: any[]): string => {
  * based on the requested language, recursively through the entire response tree.
  */
 const transformTranslations = (obj: any, lang: string = 'ro'): any => {
-    if (!obj) return obj;
+    if (!obj || typeof obj !== 'object') return obj;
     
-    // Handle translation objects: { ro: 'text', en: 'text' }
-    if (typeof obj === 'object' && !Array.isArray(obj) && 
-        typeof obj[lang] === 'string' && 
-        Object.keys(obj).every((k) => typeof obj[k] === 'string')) {
-        return obj[lang] || obj['en'] || obj['ro'] || '';
-    }
-    
-    // Recursively transform arrays
+    // Handle arrays recursively
     if (Array.isArray(obj)) {
         return obj.map(item => transformTranslations(item, lang));
     }
+
+    // Enterprise Level 8: Robust Multilingual Detection
+    // Conditions for a translation object: 
+    // 1. Has at least one key
+    // 2. ALL keys are valid language codes
+    const keys = Object.keys(obj);
+    const validLangs = ['ro', 'en', 'fr', 'de', 'hu', 'it', 'es'];
+    const isMultilingual = keys.length > 0 && keys.every(k => validLangs.includes(k));
     
-    // Recursively transform objects
-    if (typeof obj === 'object') {
-        const result: any = {};
-        for (const [key, value] of Object.entries(obj)) {
-            result[key] = transformTranslations(value, lang);
-        }
-        return result;
+    if (isMultilingual) {
+        // Return based on priority: exact match -> default 'ro' -> default 'en' -> first available
+        return obj[lang] ?? obj['ro'] ?? obj['en'] ?? obj[keys[0]] ?? '';
     }
-    
-    // Return as is for primitives or unmatched types
-    return obj;
+
+    // Regular object: recurse into values
+    const result: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+        result[key] = transformTranslations(value, lang);
+    }
+    return result;
 };
 
 /**
@@ -207,20 +260,25 @@ const validateStateTransition = async (
     registry: any,
     currentData: any
 ): Promise<{ valid: boolean; error?: string; nextStates?: string[] }> => {
-    const flowRules = registry?.CONSTANT?.flowRules || {};
-    const entityRules = flowRules[entityType];
+    // Enterprise Level 8: Flow rules are now defined in BOTH Registry Constants (Baseline) 
+    // AND in the Entity Definition (Dynamic Builder). We merge them.
+    const entityDef = (registry.ENTITY_CONFIG || {})[entityType];
+    const entityFlowRules = entityDef?.flowRules || {};
+    const globalFlowRules = (registry?.CONSTANT?.flowRules || {})[entityType] || {};
     
-    if (!entityRules) {
+    const rules = { ...globalFlowRules, ...entityFlowRules };
+    
+    if (Object.keys(rules).length === 0) {
         // No flow rules defined for this entity type - allow any transition
         return { valid: true };
     }
     
-    const currentStateRule = entityRules[fromStatus];
+    const currentStateRule = rules[fromStatus];
     if (!currentStateRule) {
         return { 
             valid: false, 
             error: `Current state '${fromStatus}' is not defined in workflow for ${entityType}`,
-            nextStates: Object.keys(entityRules)
+            nextStates: Object.keys(rules)
         };
     }
     
@@ -234,7 +292,7 @@ const validateStateTransition = async (
     }
     
     // Check required fields for the transition
-    const requiredFields = currentStateRule.requiresFields || [];
+    const requiredFields = (rules[toStatus]?.requiresFields || []);
     const missingFields = requiredFields.filter((f: string) => !currentData[f]);
     
     if (missingFields.length > 0) {
@@ -254,24 +312,79 @@ const validateStateTransition = async (
  * Get allowed transitions for current state
  */
 const getNextTransitions = (entityType: string, currentStatus: string, registry: any): any[] => {
-    const flowRules = registry?.CONSTANT?.flowRules || {};
-    const entityRules = flowRules[entityType];
+    const entityDef = (registry.ENTITY_CONFIG || {})[entityType];
+    const entityFlowRules = entityDef?.flowRules || {};
+    const globalFlowRules = (registry?.CONSTANT?.flowRules || {})[entityType] || {};
     
-    if (!entityRules || !entityRules[currentStatus]) {
+    const rules = { ...globalFlowRules, ...entityFlowRules };
+    
+    if (Object.keys(rules).length === 0 || !rules[currentStatus]) {
         return [];
     }
     
-    const stateRule = entityRules[currentStatus];
+    const stateRule = rules[currentStatus];
     const nextStates = stateRule.nextStates || [];
-    const lang = 'ro'; // Default language for metadata
     
     return nextStates.map((state: string) => ({
         value: state,
-        label: entityRules[state]?.label || { ro: state, en: state },
-        icon: entityRules[state]?.icon || 'ArrowRight',
-        action: entityRules[state]?.action || `transition_to_${state}`,
-        requiresFields: entityRules[state]?.requiresFields || []
+        label: rules[state]?.label || { ro: state, en: state },
+        icon: rules[state]?.icon || 'ArrowRight',
+        action: rules[state]?.action || `transition_to_${state}`,
+        requiresFields: rules[state]?.requiresFields || []
     }));
+};
+
+/**
+ * Enterprise Level 8: Workflow Trigger Engine
+ * Executes side-effects when an entity changes status
+ */
+const triggerFlowActions = async (
+    db: any,
+    entityType: string,
+    id: string,
+    toStatus: string,
+    registry: any,
+    user: any,
+    env: any
+) => {
+    try {
+        // Enterprise Level 8: Flow rules are now defined in BOTH Registry Constants (Baseline) 
+        // AND in the Entity Definition (Dynamic Builder). We merge them.
+        const entityDef = (registry.ENTITY_CONFIG || {})[entityType];
+        const entityFlowRules = entityDef?.flowRules || {};
+        const globalFlowRules = (registry?.CONSTANT?.flowRules || {})[entityType] || {};
+        
+        const mergedRules = { ...globalFlowRules, ...entityFlowRules };
+        const stateRule = mergedRules[toStatus];
+        
+        if (!stateRule || !stateRule.action) return;
+
+        console.log(`[FLOW-TRIGGER] Executing '${stateRule.action}' for ${entityType}/${id} to status ${toStatus}`);
+
+        // 1. Audit Log Entry
+        await db.create('audit_log', {
+            id: crypto.randomUUID(),
+            action: `flow:${stateRule.action}`,
+            entityType,
+            entityId: id,
+            details: `Status change to ${toStatus} triggered: ${stateRule.action}`,
+            user: user?.email || user?.id || 'system',
+            workspaceId: user?.workspaceId || 'system',
+            createdAt: new Date().toISOString()
+        });
+
+        // 2. Core Actions (Expandable)
+        if (stateRule.action === 'email_admin') {
+            // Logic for admin email notification
+            console.log("[FLOW] Action: Notifying Admin...");
+        } else if (stateRule.action === 'whatsapp_client') {
+            // Logic for WhatsApp trigger via Local Agent Proxy
+            console.log("[FLOW] Action: WhatsApp Triggered...");
+        }
+
+    } catch (e: any) {
+        console.error(`[FLOW-TRIGGER-ERROR] ${e.message}`);
+    }
 };
 
 // --- CONFIG CACHE & PENDING FETCHES ---
@@ -283,68 +396,126 @@ if (global.PENDING_CONFIG_FETCHES === undefined) global.PENDING_CONFIG_FETCHES =
  * Ensures consistency between baseline template and dynamic D1 entities.
  */
 function synthesizeNavigation(merged: any, template: any) {
-    if (!merged.NAV) return;
+    if (!merged || !merged.NAV || !template || !template.NAV) return;
 
-    // Reset dynamic groupings for synthesis
-    const synthesizedNav: any = {
-        ...template.NAV,
-        main: [...(template.NAV?.main || [])],
-        worker: [],
-        entity: [],
-        admin: [...(template.NAV?.admin || [])],
-        SHORTCUT: [...(template.NAV?.SHORTCUT || [])],
+    // 1. Create Deep Copies of Template Groups to avoid mutating global baseline
+    const groups: any = {
+        main: JSON.parse(JSON.stringify(template.NAV?.main || [])),
+        admin: JSON.parse(JSON.stringify(template.NAV?.admin || [])),
+        worker: JSON.parse(JSON.stringify(template.NAV?.worker || [])),
+        user: JSON.parse(JSON.stringify(template.NAV?.user || [])),
+        entity: JSON.parse(JSON.stringify(template.NAV?.entity || [])),
+        shortcuts: JSON.parse(JSON.stringify(template.NAV?.shortcuts || [])),
     };
 
-    // Unified Entity-to-Nav Synthesizer
+
+    // Robust label merger: Preserves existing translations if override is partial
+    const mergeLabels = (val: any, fallback: any) => {
+        if (!val) return fallback;
+        if (typeof val === 'object') {
+            if (val.ro || val.en) {
+                // If fallback is also an object, merge translations
+                if (typeof fallback === 'object' && fallback !== null) {
+                    return { 
+                        ro: val.ro || fallback.ro || '', 
+                        en: val.en || fallback.en || '' 
+                    };
+                }
+                return val;
+            }
+            return fallback;
+        }
+        if (typeof val === 'string' && val.trim() !== '') return val;
+        return fallback;
+    };
+
+    // 2. Process all entities (both system and dynamic)
     Object.entries(merged.ENTITY_CONFIG || {}).forEach(([name, def]: [string, any]) => {
-        // Enterprise Level 8: Always normalize for synthesis to ensure defaults (showInMainMenu, icons, etc)
         const norm = normalizeEntity(def);
-        const menu = norm.menuConfig || {};
-        
-        if (menu.showInMainMenu === false) return; // Explicitly hidden
+        const menu: MenuConfig = norm.menuConfig || {};
 
-        const navItem = {
-            id: name,
-            label: menu.label || norm.labelPlural || norm.label || name,
-            icon: menu.icon || norm.icon || 'Box',
-            path: menu.path || `/${name}`,
-            priority: menu.priority || 50,
-            category: menu.category,
-            workerName: norm.workerName,
-            isSystem: norm.isSystem
-        };
+        // Explicit deletion from all groups if hidden in menu
+        if (menu.showInMainMenu === false) {
+            Object.keys(groups).forEach(g => {
+                groups[g] = groups[g].filter((item: any) => item.id !== name);
+            });
+            return;
+        }
 
-        // Group by Category (Enterprise Level 8 Standard)
+        // Determine target category based on Level 8 priority logic
         const cat = (menu.category || '').toLowerCase();
+        let targetGroup = 'entity';
         
-        // Level 8 Optimization: If showInMainMenu is true and NO category is specified, 
-        // default to main_menu to ensure visibility for dynamic entities.
         const isMain = cat === 'main_menu' || cat.includes('meniu') || cat.includes('main') || 
                        (menu.showInMainMenu === true && !cat);
+        const isAdmin = cat === 'administration' || cat.includes('admin') || cat.includes('workspace');
+        const isWorker = cat === 'worker' || cat === 'workers' || cat.includes('worker') || cat.includes('app');
+        const isUser = cat === 'user' || cat === 'profile';
 
-        if (isMain) {
-            if (!synthesizedNav.main.find((i: any) => i.id === name)) {
-                synthesizedNav.main.push(navItem);
+        if (isMain) targetGroup = 'main';
+        else if (isAdmin) targetGroup = 'admin';
+        else if (isWorker) targetGroup = 'worker';
+        else if (isUser) targetGroup = 'user';
+
+        // Find existing instance to update instead of creating duplicates
+        let existing: any = null;
+        let currentGroupName = '';
+        for (const gname of Object.keys(groups)) {
+            const found = groups[gname].find((i: any) => i.id === name);
+            if (found) {
+                existing = found;
+                currentGroupName = gname;
+                break;
             }
-        } else if (cat === 'worker' || cat === 'workers' || cat.includes('worker') || cat.includes('app')) {
-            synthesizedNav.worker.push(navItem);
-        } else if (cat === 'administration' || cat.includes('admin') || cat.includes('workspace')) {
-            if (!synthesizedNav.admin.find((i: any) => i.id === name)) {
-                synthesizedNav.admin.push(navItem);
+        }
+
+        if (existing) {
+            // Enterprise Level 8: Apply Overrides to existing template items
+            // We use explicit null/undefined checks to allow empty strings (e.g. clearing a badge)
+            existing.label = mergeLabels(menu.label, existing.label);
+            if (menu.icon !== undefined && menu.icon !== null) existing.icon = menu.icon;
+            if (menu.badge !== undefined && menu.badge !== null) existing.badge = menu.badge;
+            if (menu.priority !== undefined && menu.priority !== null) existing.priority = menu.priority;
+            
+            // Handle group migration if category changed
+            if (currentGroupName !== targetGroup) {
+                groups[currentGroupName] = groups[currentGroupName].filter((i: any) => i.id !== name);
+                groups[targetGroup].push(existing);
             }
         } else {
-            synthesizedNav.entity.push(navItem);
+            // Add as new dynamic navigation item
+            groups[targetGroup].push({
+                id: name,
+                label: mergeLabels(menu.label, norm.labelPlural || norm.label || name),
+                icon: menu.icon || norm.icon || 'Box',
+                path: menu.path || `/${name}`,
+                priority: menu.priority || 50,
+                category: menu.category,
+                badge: menu.badge || undefined,
+                workerName: norm.workerName,
+                isSystem: norm.isSystem
+            });
         }
     });
 
-    // Sort all groups by priority
-    Object.keys(synthesizedNav).forEach(key => {
-        if (Array.isArray(synthesizedNav[key])) {
-            synthesizedNav[key].sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99));
+    // 3. Sort all groups by priority (Level 8 Optimization)
+    Object.keys(groups).forEach(key => {
+        if (Array.isArray(groups[key])) {
+            groups[key].sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99));
         }
     });
 
-    merged.NAV = synthesizedNav;
+    // Level 8 Failsafe: Ensure 'profile' is present in the user group
+    if (!groups.user.some((i: any) => i.id === 'profile')) {
+        groups.user.unshift({ id: 'profile', label: { ro: 'Profil', en: 'Profile' }, icon: 'User', path: '/profile', priority: 1 });
+    }
+
+    // Level 9 Failsafe: Ensure 'blueprint-architect' is in shortcuts
+    if (!groups.shortcuts.some((i: any) => i.id === 'blueprint-architect')) {
+        groups.shortcuts.push({ id: 'blueprint-architect', label: { ro: 'Arhitect Blueprint', en: 'Blueprint Architect' }, icon: 'Sparkles', path: '/superadmin?tab=ai-architect', priority: 1 });
+    }
+
+    merged.NAV = groups;
 }
 
 /**
@@ -385,10 +556,10 @@ async function getEntityDependencies(db: any, entity: string, id: string, regist
                         foundOnThisEntity = true;
                         break; // Move to next entity, we found at least one link
                     }
-                } else if (fd.type === 'relation-many') {
-                    // Many-to-many usually uses tag_assignment
-                    const query = `SELECT COUNT(*) as count FROM tag_assignment WHERE entityType = ? AND tagId = ?`;
-                    const res = await db.query(query, [otherEntity, id]).catch(() => []);
+                } else if (fd.type === 'relation-many' || fd.type === 'tag') {
+                    // Many-to-many uses entity_relation_many (Universal)
+                    const query = `SELECT COUNT(*) as count FROM entity_relation_many WHERE sourceType = ? AND targetId = ? AND targetType = ?`;
+                    const res = await db.query(query, [otherEntity, id, entityToScan]).catch(() => []);
                     const count = res[0]?.count || 0;
                     if (count > 0) {
                         dependencies.push({ 
@@ -532,7 +703,8 @@ async function mergeRegistryWithD1(db: any, workspaceId: string = 'system', env?
                 }
 
                 if (!configFromD1[namespace]) configFromD1[namespace] = {};
-                configFromD1[namespace][key] = parsedValue;
+                // Enterprise Level 8: Force lowercase keys for SSOT consistency
+                configFromD1[namespace][key.toLowerCase()] = parsedValue;
             }
             
             // 4. Merge logic...
@@ -644,6 +816,16 @@ async function mergeRegistryWithD1(db: any, workspaceId: string = 'system', env?
         // We synthesize the navigation strictly from ENTITY_CONFIG.
         // This eliminates custom filtering logic and ensures D1 entities show up.
         synthesizeNavigation(merged, template);
+
+        // Enterprise Level 8: Logical Normalization for Frontend
+        // We ensure that the frontend can access these properties regardless of naming convention (entity vs ENTITY_CONFIG)
+        merged.entity = merged.ENTITY_CONFIG || {};
+        merged.navigation = merged.NAV || {};
+        merged.constants = { 
+            ...merged,
+            SYSTEM_SETTING: merged.SYSTEM_SETTING || {},
+            ENTITY_CONFIG: merged.ENTITY_CONFIG || {}
+        };
 
         // Final Obsolete Cleanup (Remove only raw namespace duplicates if they were merged elsewhere)
         Object.keys(namespaceMapping).forEach(source => {
@@ -796,25 +978,6 @@ function createAuditProxy(db: any, user: any) {
 // (Initialization logic moved to lib/db-init.server.ts)
 
 // --- CACHE HELPERS ---
-async function clearKvConfigCache(env: any, workspaceId?: string) {
-    if (!env?.KV) return;
-    try {
-        if (workspaceId) {
-            await env.KV.delete(`config_${workspaceId}`);
-            console.log(`[BRAIN-CACHE] Cleared KV config for workspace: ${workspaceId}`);
-        } else {
-            // If no workspaceId, we should ideally clear all or at least 'system'
-            await env.KV.delete('config_system');
-            
-            // Note: Cloudflare KV doesn't support wildcard delete easily without listing.
-            // For now, clearing system is the most important as it's the baseline.
-            console.log(`[BRAIN-CACHE] Cleared system KV config`);
-        }
-    } catch (e) {
-        console.error('[BRAIN-CACHE] KV Clear Error:', e);
-    }
-}
-
 async function clearUserPermsCache(env: any, userId: string, workspaceId?: string) {
     if (!env?.KV || !userId) return;
     try {
@@ -1018,61 +1181,6 @@ async function checkAccess(db: any, user: any, entity: string, action: string, s
 
 // --- DOMAIN HANDLERS ---
 const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
-    'ai/extract': async ({ db, body, env, user, selectedLang }) => {
-        const { entityId, sourceType, content, schema } = body;
-        if (!content && sourceType === 'text') return error("Content is required", 400);
-
-        const registry = await getRegistry(db);
-        const aiConfig = registry.AI_CONFIG || {};
-        const ai = new AiService(env, { ai_config: aiConfig, db });
-
-        // Build the extraction prompt
-        const schemaBrief = schema.map((f: any) => `- ${f.name} (${f.type}): ${renderString(f.label, selectedLang)}`).join('\n');
-        
-        const prompt = `
-            TASK: EXTRACT SCHEMA DATA FROM CONTENT.
-            
-            ENTITY: ${entityId}
-            FIELDS TO EXTRACT:
-            ${schemaBrief}
-            
-            CONTENT TO ANALYZE:
-            """
-            ${content}
-            """
-            
-            RULES:
-            1. Return ONLY a valid JSON object.
-            2. Match values to the field names exactly.
-            3. For 'currency'/'number' fields, return ONLY the numeric value (no symbols).
-            4. For 'date' fields, use ISO format (YYYY-MM-DD).
-            5. For 'select'/'enum' fields, match one of the available options if possible.
-            6. If a field is not found, do not include it in the JSON.
-            7. DO NOT add any explanations or preamble.
-        `;
-
-        try {
-            const response = await ai.chat(prompt, [], {
-                provider: aiConfig.active_provider,
-                model: aiConfig.preferredModel || 'gemini-1.5-flash',
-                temperature: 0.1, // Low temperature for extraction
-                systemPrompt: "You are a data extraction specialist. Always return valid JSON matching the requested schema."
-            });
-
-            // Extract JSON from response (handle markdown blocks)
-            const jsonMatch = response.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                console.error("[AI-EXTRACT] No JSON found in response:", response);
-                return error("No valid data could be extracted by AI", 500);
-            }
-
-            const extractedData = JSON.parse(jsonMatch[0]);
-            return success(extractedData);
-        } catch (e: any) {
-            console.error("[AI-EXTRACT-ERROR]", e.message);
-            return error(`AI Extraction failed: ${e.message}`, 500);
-        }
-    },
     asset: async ({ db, parts, env }) => {
         const filename = parts[1];
         if (!filename) return error("Filename required", 400);
@@ -1143,8 +1251,13 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         }
         
         if (op === "save" && method === 'POST') {
-            const { namespace, key, value, dataType } = body;
-            if (!namespace || !key) return error("Namespace and key required");
+            const { namespace: rawNamespace, key: rawKey, value, dataType } = body;
+            if (!rawNamespace || !rawKey) return error("Namespace and key required");
+            
+            // Enterprise Level 8: Case-Insensitive Normalization
+            // This prevents duplicates like 'AI_CONFIG' and 'ai_config' and ensures SSOT integrity.
+            const namespace = rawNamespace.toLowerCase();
+            const key = rawKey.toLowerCase();
             
             // Invalidate Global Cache so next request gets fresh data
             global.CACHE_EXPIRY = 0;
@@ -1266,7 +1379,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }, selectedLang), 403);
         }
         
-        const systemActions = ['save', 'install', 'save-architecture', 'upsert', 'delete'];
+        const systemActions = ['save', 'install', 'save-architecture', 'upsert', 'delete', 'garbage-collect'];
         
         // Support both "op" (from URL) and "action" (from body) 
         let action = op || body?.action;
@@ -1287,6 +1400,49 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         if (method === 'GET') {
             const registry = await mergeRegistryWithD1(db, user?.workspaceId || 'system', env);
             const allConfigs = registry.ENTITY_CONFIG || {};
+
+            if (action === 'garbage-collect') {
+                // Enterprise Level 8: Identification of Orphaned Tables
+                const activeEntities = Object.values(registry.ENTITY_CONFIG || {});
+                
+                // 1. Get ALL tables from D1 (Excluding internal tables)
+                const tablesResult = await db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE '_metadata'");
+                const allDatabaseTables = (tablesResult || []).map((r: any) => r.name);
+                
+                // 2. Define "Immortal" System Tables
+                const immortalTables = [
+                    'entity_definition', 'system_settings', 'audit_log', 
+                    'workspace', 'user', 'session', 'entity_relation_many',
+                    'd1_migrations', 'activity', 'notification', 'whatsapp_message',
+                    'contact_group', 'contact_tag', 'entity_attachments', 'automation_flow',
+                    'automation_log'
+                ];
+                
+                // 3. Identify Defined Tables
+                const definedTables = new Set(activeEntities.map((e: any) => e.tableName || e.name));
+                
+                // 4. Filter Orphans
+                const orphans = allDatabaseTables.filter((tableName: string) => {
+                    const lower = tableName.toLowerCase();
+                    if (immortalTables.includes(lower)) return false;
+                    if (definedTables.has(lower)) return false;
+                    if (definedTables.has(tableName)) return false;
+                    return true;
+                });
+                
+                // 5. Get row count for each orphan to assess risk
+                const orphanDetails = [];
+                for (const table of orphans) {
+                    try {
+                        const count = await db.count(table, {});
+                        orphanDetails.push({ name: table, rowCount: count });
+                    } catch (e) {
+                        orphanDetails.push({ name: table, rowCount: -1, error: 'Could not count' });
+                    }
+                }
+                
+                return success({ orphans: orphanDetails });
+            }
 
             if (action === 'get-one' && op) {
                 const config = allConfigs[op];
@@ -1316,6 +1472,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             
             // Normalize inputs: single entity or array of entities (from template)
             const entitiesToProcess = body.entity || body.template?.entity || (body.name || body.id ? [body] : []);
+            const isDryRun = body.dryRun === true;
             
             if (!entitiesToProcess || !Array.isArray(entitiesToProcess)) {
                 return error("No entities provided to save");
@@ -1323,6 +1480,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
             const results = [];
             const syncErrors = [];
+            const dryRunResults: Record<string, string[]> = {};
             const staticRegistry = await getRegistry();
             const staticBaselineEntities = staticRegistry.ENTITY_CONFIG || {};
 
@@ -1334,8 +1492,6 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     if (!name) continue;
 
                     // Enterprise Level 8: Workspace Namespacing
-                    // System entities are always global (workspaceId = 'system')
-                    // Custom entities are scoped to the current user's workspace
                     const baselineEntry = (staticBaselineEntities[name] || staticBaselineEntities[name.toLowerCase()] || {});
                     const coreList = (staticRegistry.CONSTANT?.coreEntity || []).map((e: string) => e.toLowerCase());
                     
@@ -1348,7 +1504,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
                     console.log(`[BRAIN-ENTITY] Save check for "${name}": isCore=${isCore}, resulting isSystem=${isSystem}, workspace=${entityWorkspaceId}`);
 
-                    // Level 8 System Lock
+                    // Level 8 System Lock: Safeguarding core entity
                     if (isSystem && existing && isCore) {
                         console.log(`[BRAIN-ENTITY] Safeguarding core entity: ${name}`);
                         if (norm.name && norm.name !== existing.name) {
@@ -1359,12 +1515,18 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     // Level 8 Namespacing: Prefix table name for custom entities to prevent collisions
                     let tableName = norm.tableName || name;
                     if (!isSystem && entityWorkspaceId !== 'system') {
-                        // Use a short prefix of the workspace ID if it's a UUID, otherwise use full
                         const prefix = entityWorkspaceId.length > 8 ? entityWorkspaceId.substring(0, 8) : entityWorkspaceId;
                         tableName = `ws_${prefix}_${name}`;
                     }
 
-                    // Prepare storage object (Convert structured objects back to JSON strings for D1)
+                    if (isDryRun) {
+                        const sqls = await syncEntityTable(db, { ...norm, tableName }, staticRegistry, true);
+                        dryRunResults[name] = sqls as string[];
+                        results.push({ name, status: 'simulated' });
+                        continue;
+                    }
+
+                    // Prepare storage object
                     const stringifyIfObj = (v: any) => typeof v === 'object' ? JSON.stringify(v) : v;
 
                     const definition = {
@@ -1375,7 +1537,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                         icon: norm.icon || 'Box',
                         colorTheme: norm.colorTheme || 'blue',
                         tableName,
-                        displayField: norm.displayField || 'id',
+                        displayField: norm.displayField || '',
                         isSystem: isSystem ? 1 : 0,
                         fields: JSON.stringify(norm.fields || []),
                         validations: JSON.stringify(norm.validations || {}),
@@ -1403,8 +1565,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     }
 
                     // --- METAPROGRAMMING: Trigger DDL (CREATE/ALTER) ---
-                    // Important: pass the namespaced table name to sync
-                    await syncEntityTable(db, { ...norm, tableName });
+                    await syncEntityTable(db, { ...norm, tableName }, staticRegistry);
                     
                     // CRITICAL: Clear cache so the driver sees any new table columns immediately
                     clearColumnCache(name);
@@ -1416,9 +1577,12 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 }
             }
 
+            if (isDryRun) {
+                return success({ results, dryRun: dryRunResults });
+            }
+
             // Force registry reload by invalidating cache
             global.CACHED_CONFIGS = {};
-            // Pass env if available in destructuring
             await clearKvConfigCache(env, user?.workspaceId);
             
             if (syncErrors.length > 0 && results.length === 0) {
@@ -1432,8 +1596,19 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         }
 
         if (action === "delete" && method === 'POST') {
-            const { id, name, dropDatabase } = body;
+            const { id, name, dropDatabase, tableName: manualTableName } = body;
             
+            // Garbage Collector Support: Direct drop by table name
+            if (manualTableName && dropDatabase && !id && !name) {
+                console.log(`[BRAIN-SCHEMA] Orphan Drop: ${manualTableName}`);
+                try {
+                    await db.query(`DROP TABLE IF EXISTS "${manualTableName}"`);
+                    return success({ dropped: manualTableName });
+                } catch (e: any) {
+                    return error(`Failed to drop orphan table: ${e.message}`, 500);
+                }
+            }
+
             // Resolve target ID: prioritize direct ID, fallback to finding by name
             let targetId = id;
             let targetEntity = null;
@@ -1514,9 +1689,21 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
     },
     auth: async ({ op, method, db, env, body, request, user, selectedLang }) => {
         if (op === "check-admin") {
+            // Enterprise Level 8: Check KV for admin status to bypass DB hit (Super Fast)
+            if (env?.KV) {
+                const cached = await env.KV.get('admin_exists');
+                if (cached === 'true') return success({ exists: true });
+            }
+
             // Enterprise Level 8: Check if any user exists to determine setup status
             const result = await db.query("SELECT COUNT(*) as count FROM user");
             const exists = (result?.[0]?.count || 0) > 0;
+            
+            // Cache in KV if exists (but not if false, as it might change soon during setup)
+            if (exists && env?.KV) {
+                await env.KV.put('admin_exists', 'true');
+            }
+            
             return success({ exists });
         }
         if (op === "local-token") return success({ token: env.API_KEY || `dev-${Date.now()}` });
@@ -1787,7 +1974,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 
                 return success({ 
                     permission: permissions,
-                    role: target.role || 'member'
+                    role: target.role || 'guest'
                 });
             }
         }
@@ -1916,7 +2103,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                         id,
                         email,
                         name: email.split('@')[0],
-                        role: role || 'member',
+                        role: role || 'guest',
                         workspaceId: targetWorkspaceId,
                         emailVerified: 0,
                         createdAt: registerTime,
@@ -1928,7 +2115,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                         `wu_${id}_${targetWorkspaceId}`,
                         targetWorkspaceId,
                         id,
-                        role || 'member',
+                        role || 'guest',
                         registerTime,
                         registerTime
                     ]);
@@ -1954,7 +2141,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     const template = registry?.EMAIL_TEMPLATE?.[templateKey];
                     const lang = user?.lang || registry.language || 'ro';
                     
-                    const roleLabel = renderString(registry.SYSTEM_ROLE?.[role || targetUser?.role || 'member']?.label || (role || targetUser?.role || 'member'), lang);
+                    const roleLabel = renderString(registry.SYSTEM_ROLE?.[role || targetUser?.role || 'guest']?.label || (role || targetUser?.role || 'guest'), lang);
                     const appUrl = url.origin;
 
                     if (template) {
@@ -2113,7 +2300,24 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         }
         return error("Workspace operation not found", 404);
     },
-    system: async ({ op, db, user, method, body, env, request, registry }) => {
+    system: async (ctx) => {
+        const { op, db, user, method, body, env, request, registry, parts } = ctx;
+
+        // Level 9: Self-Healing & Automation
+        if (op === 'self-healing' && method === 'POST') {
+            if (!isGlobalAdmin(user, registry)) return error("Unauthorized", 403);
+            const result = await handleSelfHealing(db, registry, env);
+            return success(result);
+        }
+
+        if (op === 'db-sync' && method === 'POST') {
+            if (!isGlobalAdmin(user, registry)) return error("Unauthorized", 403);
+            const entity = parts[2];
+            if (!entity) return error("Entity required", 400);
+            await syncEntityTable(db.rawBinding || db, entity, registry);
+            return success(`Synced table for ${entity}`);
+        }
+
         // CLIENT-SIDE ERROR LOGGING (Public/All Users)
         if (op === "log-error" && method === 'POST') {
             // Map incoming client body fields
@@ -2155,15 +2359,24 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             const stats: any = {};
             
             try {
-                stats.users = (await db.query("SELECT COUNT(*) as count FROM user"))[0]?.count || 0;
-                stats.workspace = (await db.query("SELECT COUNT(*) as count FROM workspace"))[0]?.count || 0;
-                stats.entities = (await db.query("SELECT COUNT(*) as count FROM entity_definition"))[0]?.count || 0;
+                const userCount = await db.query("SELECT COUNT(*) as count FROM user");
+                stats.users = userCount?.[0]?.count || 0;
+                
+                const wsCount = await db.query("SELECT COUNT(*) as count FROM workspace");
+                stats.workspace = wsCount?.[0]?.count || 0;
+                
+                const entityCount = await db.query("SELECT COUNT(*) as count FROM entity_definition");
+                stats.entities = entityCount?.[0]?.count || 0;
             } catch (e: any) {
                 console.warn("[BRAIN-SYSTEM] Stats check failed:", e.message);
             }
 
             const cf = (request as any).cf || {};
             const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || '127.0.0.1';
+
+            const uptimeSeconds = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+                ? Math.floor(performance.now() / 1000)
+                : 0;
 
             return success({
                 info: {
@@ -2177,7 +2390,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                         free: 64 * 1024 * 1024    // Placeholder
                     },
                     localIps: [clientIp],
-                    uptime: Math.floor(performance.now() / 1000),
+                    uptime: uptimeSeconds,
                     stats,
                     registryConfigured: !!registry.SYSTEM_SETTING?.local_agent_url,
                     database: "Cloudflare D1",
@@ -2191,26 +2404,28 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             
             // Enterprise Level 8: Return both registry defaults and D1 overrides
             // D1 overrides take priority
-            const d1Settings = await db.query('SELECT namespace, key, value, dataType FROM SYSTEM_SETTING');
+            const d1Settings = await db.query('SELECT namespace, key, value, dataType FROM system_setting').catch(() => []);
             const mergedSettings: Record<string, any> = { ...(registry.SYSTEM_SETTING || {}) };
             
-            d1Settings.forEach((row: any) => {
-                const ns = (row.namespace || 'system_setting').toLowerCase();
-                
-                let value = row.value;
-                try {
-                    value = (row.dataType === 'json' || (typeof row.value === 'string' && (row.value.startsWith('{') || row.value.startsWith('['))))
-                        ? JSON.parse(row.value)
-                        : row.value;
-                } catch (e) { value = row.value; }
+            if (Array.isArray(d1Settings)) {
+                d1Settings.forEach((row: any) => {
+                    const ns = (row.namespace || 'system_setting').toLowerCase();
+                    
+                    let value = row.value;
+                    try {
+                        value = (row.dataType === 'json' || (typeof row.value === 'string' && row.value && (row.value.startsWith('{') || row.value.startsWith('['))))
+                            ? JSON.parse(row.value)
+                            : row.value;
+                    } catch (e) { value = row.value; }
 
-                if (!mergedSettings[ns]) mergedSettings[ns] = {};
-                mergedSettings[ns][row.key] = value;
-                
-                if (ns === 'system_setting' || ns === 'system' || ns === 'general') {
-                    mergedSettings[row.key] = value;
-                }
-            });
+                    if (!mergedSettings[ns]) mergedSettings[ns] = {};
+                    mergedSettings[ns][row.key] = value;
+                    
+                    if (ns === 'system_setting' || ns === 'system' || ns === 'general') {
+                        mergedSettings[row.key] = value;
+                    }
+                });
+            }
 
             return success({ settings: mergedSettings });
         }
@@ -2300,16 +2515,24 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         const isAdmin = hasPageAccess(user, 'monitoring', registry);
         if (!isAdmin) return error("Forbidden", 403);
 
-        // parts looks like ['monitoring', 'db', 'sync'] or ['monitoring', 'backups', 'list']
         const subOp = parts[2];
 
         if (op === "storage") {
              // Real Logic: Cross-table row count estimate
              let totalRows = 0;
              try {
-                 const tables = await db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%'");
-                 const counts = await Promise.all(tables.map((t: any) => db.query(`SELECT COUNT(*) as c FROM ${t.name}`).catch(() => [{c:0}])));
-                 totalRows = counts.reduce((acc, curr) => acc + (curr[0]?.c || 0), 0);
+                 // Enterprise Level 8: Filter out internal Cloudflare/D1 system tables that cause SQLITE_AUTH errors
+                 const tables = await db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE '_metadata'");
+                 
+                 // Enterprise Level 8: Chunking COUNT(*) queries to avoid D1 bottlenecks/throttling
+                 const counts = [];
+                 for (let i = 0; i < tables.length; i += 10) {
+                     const chunk = tables.slice(i, i + 10);
+                     const chunkResults = await Promise.all(chunk.map((t: any) => db.query(`SELECT COUNT(*) as c FROM ${t.name}`).catch(() => [{c:0}])));
+                     counts.push(...chunkResults);
+                 }
+                 
+                 totalRows = counts.reduce((acc, curr: any) => acc + (curr[0]?.c || 0), 0);
              } catch (e) {}
 
              return success({ 
@@ -2396,14 +2619,19 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
             // Level 8: Live Stats Engine (Respects Entity Dashboard Config)
             try {
-                // ... logic exists ...
                 const entityConfigs = registry.ENTITY_CONFIG || {};
                 
                 // Identify entities that should appear on the dashboard
-                const dashboardEntities = Object.entries(entityConfigs).filter(([key, config]: [string, any]) => 
-                    config.dashboardConfig?.enabled !== false && 
-                    (config.dashboardConfig?.showInDashboard !== false || ['contact', 'workspace', 'interaction'].includes(key))
-                );
+                const dashboardEntities = Object.entries(entityConfigs).filter(([key, config]: [string, any]) => {
+                    const norm = normalizeEntity({ ...config, name: key });
+                    const isEnabled = norm.dashboardConfig?.enabled !== false;
+                    const isVisibilityHidden = norm.dashboardConfig?.showInDashboard === false;
+                    
+                    // Specific core entities always show if not explicitly disabled
+                    const isCore = ['contact', 'workspace', 'interaction'].includes(key);
+                    
+                    return isEnabled && (!isVisibilityHidden || isCore);
+                });
 
                 const tableStats = await Promise.all(dashboardEntities.map(async ([key, config]: [string, any]) => {
                     const table = config.tableName || key;
@@ -2451,7 +2679,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
         if (op === "workers" || op === "worker") {
             if (subOp === "control") {
-                return success({ message: `Worker ${body.name} action ${body.action} accepted (Cloud Mode).` });
+                return success({ message: `Worker ${body?.name || 'unknown'} action ${body?.action || 'unknown'} accepted (Cloud Mode).` });
             }
 
             // Enterprise Level 8 Resilience: Handle both singular and plural switches
@@ -2486,45 +2714,6 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
             const logs = await db.list('audit_log', {}, { limit: 100, sortBy: 'createdAt', sortOrder: 'DESC' });
             return success(logs);
-        }
-
-        if (op === "ai") {
-            if (subOp === "sync-rag") {
-                return success({ message: "RAG updated (Cloud mode)" });
-            }
-            
-            const providers = {
-                gemini: { 
-                    status: env.GEMINI_API_KEY ? 'ONLINE' : 'OFFLINE', 
-                    model: registry.AI_CONFIG?.model || 'gemini-1.5-flash' 
-                },
-                claude: { 
-                    status: env.CLAUDE_API_KEY ? 'ONLINE' : 'OFFLINE', 
-                    model: 'claude-3-opus' 
-                },
-                cloudflare: { 
-                    status: env.AI ? 'ONLINE' : 'OFFLINE', 
-                    provider: 'Cloudflare Workers AI' 
-                }
-            };
-
-            // Count AI operations in last 24h
-            let totalOps = 0;
-            try {
-                const yesterday = new Date();
-                yesterday.setHours(yesterday.getHours() - 24);
-                const res = await db.query("SELECT COUNT(*) as c FROM audit_log WHERE (action LIKE '%ai%' OR action LIKE '%chat%') AND createdAt > ?", [yesterday.toISOString()]);
-                totalOps = res[0]?.c || 0;
-            } catch (e) {}
-
-            return success({
-                status: 'online',
-                providers,
-                totalOperations: totalOps,
-                totalTasks: totalOps, // Map to UI expectation
-                vectorCount: 0, // Placeholder for cloud-mode vector index
-                ragEnabled: registry.AI_CONFIG?.rag_enabled
-            });
         }
 
         if (op === "backups") {
@@ -2636,13 +2825,41 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 }
             }
         } else {
-            collection = parts[1]; // original case might matter for table names depending on driver
-            if ((parts[2] || '').toLowerCase() === 'item' && parts[3]) {
-                id = parts[3];
-                subAction = (parts[4] || '').toLowerCase();
+            const subOp = (parts[1] || '').toLowerCase();
+            
+            // Enterprise Level 8: Handle generic endpoints (/db/list, /db/batch) where collection is in the body/query
+            if ((subOp === 'list' || subOp === 'batch') && parts.length <= 2) {
+                // Determine collection from body or query
+                const bodyObj = (body && typeof body === 'object' && !Array.isArray(body)) ? body : {};
+                collection = (url.searchParams.get('table') || bodyObj.entity || bodyObj.table || bodyObj.collection || '').toLowerCase();
+                
+                // Level 8: Relax collection requirement for polymorphic batch operations
+                const isPolymorphicBatch = subOp === 'batch' && Array.isArray(bodyObj.operations);
+                
+                if (!collection && !isPolymorphicBatch) {
+                    return error(`Malformed request: Collection name missing in body/query for operation '${subOp}'`, 400);
+                }
+                
+                if (!collection && isPolymorphicBatch) collection = 'batch'; // Virtual collection for polymorphic routing
+
+                id = undefined;
+                subAction = subOp === 'batch' ? 'batch' : undefined;
             } else {
-                id = parts[2];
-                subAction = (parts[3] || '').toLowerCase();
+                collection = subOp;
+                
+                // Enterprise Level 8: Prevent reserved words from becoming collections
+                const reserved = ['all', 'item', 'new', 'create'];
+                if (reserved.includes(collection) && parts.length <= 2) {
+                    return error(`Malformed request: Collection name missing before operation '${collection}'`, 400);
+                }
+
+                if ((parts[2] || '').toLowerCase() === 'item' && parts[3]) {
+                    id = parts[3];
+                    subAction = (parts[4] || '').toLowerCase();
+                } else {
+                    id = parts[2];
+                    subAction = (parts[3] || '').toLowerCase();
+                }
             }
         }
 
@@ -2701,7 +2918,12 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         const actionMap: Record<string, string> = {
             'GET': 'read', 'POST': 'create', 'PUT': 'update', 'PATCH': 'update', 'DELETE': 'delete'
         };
-        const action = actionMap[method] || 'read';
+        let action = actionMap[method] || 'read';
+
+        // Enterprise Level 8: Adjust action for generic /db/list or /db/query (it's a READ, not a CREATE)
+        if (method === 'POST' && (op === 'list' || parts[1] === 'list' || subAction === 'list' || op === 'query')) {
+            action = 'read';
+        }
 
         // --- ENTERPRISE LEVEL 8 FEATURE LOCKS ---
         if (entityDef?.features) {
@@ -2763,8 +2985,8 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         // Step 3: Special Operations (Batch & Import)
         if (method === 'POST' && (subAction === 'batch' || subAction === 'import' || subAction === 'import-csv' || subAction === 'bulk-create' || collection === 'batch')) {
             // Support both standard items list and the 'operations' format used by useEntity.ts
-            const isPolymorphic = Array.isArray(body.operations);
-            const items = isPolymorphic ? body.operations : (Array.isArray(body) ? body : (body.items || body.data || []));
+            const isPolymorphic = Array.isArray(body?.operations);
+            const items = isPolymorphic ? body.operations : (Array.isArray(body) ? body : (body?.items || body?.data || []));
             
             if (!Array.isArray(items)) return error("Invalid batch data: expected array");
 
@@ -2848,6 +3070,11 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     createdAt: timestamp, 
                     updatedAt: timestamp 
                 };
+
+                // Enterprise Level 8: Default role for contacts (Guest = No Permissions)
+                if (targetCollection === 'contact' && !data.role) {
+                    data.role = 'guest';
+                }
                 
                 // Special check: ensure we don't accidentally import null/empty objects
                 if (Object.keys(data).length <= 4 && !data.name && !data.email && !data.phone) {
@@ -2866,39 +3093,65 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     data[pk] = crypto.randomUUID();
                 }
 
-                // Level 8 Optimization: Build batch query instead of sequential awaits
-                // We cache columns per request to avoid unnecessary PRAGMAs in the batch loop
-                let validColumns = columnsCache.get(targetCollection);
-                if (!validColumns) {
-                    const fetchedCols = await (db as any).getTableColumns?.(targetCollection).catch(() => []) || [];
-                    validColumns = fetchedCols;
-                    columnsCache.set(targetCollection, fetchedCols);
-                }
+        // Level 8 Optimization: Build batch query instead of sequential awaits
+        // We cache columns per request to avoid unnecessary PRAGMAs in the batch loop
+        let validColumns = columnsCache.get(targetCollection);
+        if (!validColumns) {
+            try {
+                const fetchedCols = await (db as any).getTableColumns?.(targetCollection).catch((e: any) => {
+                    console.error(`[BRAIN-DB-BATCH] getTableColumns failed for ${targetCollection}:`, e.message);
+                    return [];
+                }) || [];
+                validColumns = fetchedCols;
+                columnsCache.set(targetCollection, fetchedCols);
+            } catch (e) {
+                validColumns = [];
+            }
+        }
 
-                const filteredData = { ...data };
-                if (Array.isArray(validColumns) && validColumns.length > 0) {
-                    Object.keys(filteredData).forEach(k => {
-                        if (Array.isArray(validColumns) && !validColumns.includes(k)) delete filteredData[k];
-                    });
-                }
+        const filteredData = { ...data };
+        if (Array.isArray(validColumns) && validColumns.length > 0) {
+            Object.keys(filteredData).forEach(k => {
+                if (Array.isArray(validColumns) && !validColumns.includes(k)) delete filteredData[k];
+            });
+        } else if (targetCollection !== 'batch') {
+            // Enterprise Level 8: If we can't get columns for a specific table, it might not exist
+            // This is a common cause of 400s during import if the migration hasn't run
+            console.warn(`[BRAIN-DB-BATCH] ⚠️ No columns found for table "${targetCollection}". Is the table created?`);
+        }
 
-                const keys = Object.keys(filteredData);
-                if (keys.length === 0) continue;
+        const keys = Object.keys(filteredData).filter(k => filteredData[k] !== undefined);
+        if (keys.length === 0) {
+            console.warn(`[BRAIN-DB-BATCH] ⚠️ Skipping item for "${targetCollection}" because it has no valid columns to insert.`);
+            continue;
+        }
 
-                const sql = `INSERT OR REPLACE INTO "${resolveCollection(targetCollection, registry)}" (${keys.map(k => `"${k}"`).join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`;
-                batchQueries.push({ sql, params: keys.map(k => filteredData[k]) });
-                results.push(data[pk]);
+        try {
+            const sql = `INSERT OR REPLACE INTO "${resolveCollection(targetCollection, registry)}" (${keys.map(k => `"${k}"`).join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`;
+            batchQueries.push({ sql, params: keys.map(k => filteredData[k]) });
+            results.push(data[pk]);
+        } catch (e: any) {
+            return error(`Failed to construct batch query for ${targetCollection}: ${e.message}`, 400);
+        }
 
                 // D1 batch limit is 100 statements
                 if (batchQueries.length >= 100) {
-                    await (db as any).batch(batchQueries);
+                    try {
+                        await (db as any).batch(batchQueries);
+                    } catch (err: any) {
+                        return error(`Batch execution failed: ${err.message}`, 400);
+                    }
                     batchQueries.length = 0;
                 }
             }
 
             // Final flush
             if (batchQueries.length > 0) {
-                await (db as any).batch(batchQueries);
+                try {
+                    await (db as any).batch(batchQueries);
+                } catch (err: any) {
+                    return error(`Batch execution failed (Final): ${err.message}`, 400);
+                }
             }
 
             return success({ 
@@ -2921,16 +3174,17 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
         }
         // Step 5: CRUD Operations
-        // GET LIST
-        if (method === 'GET' && !id) {
+        // GET LIST or POST QUERY (Level 8 Polymorphic Query Support)
+        if ((method === 'GET' || (method === 'POST' && action === 'read')) && !id) {
             let results: any[] | null = null;
             
             // Enterprise Level 8: Workspace-Aware Filtering
-            let filters: any = {};
+            // We initialize filters from the body if it's a POST/Query, otherwise from empty or searchParams
+            let filters: any = (method === 'POST') ? { ...body } : {};
             const isGlobal = isGlobalEntity(collection, registry);
             
             // Map workspaceId from path or params for explicit filtering
-            const explicitWS = pathWorkspaceId || url.searchParams.get("workspaceId");
+            const explicitWS = pathWorkspaceId || url.searchParams.get("workspaceId") || filters.workspaceId;
 
             if (collection === 'workspace') {
                 if (!isSuper && !isWsAdmin) filters.ownerId = user.id;
@@ -2949,7 +3203,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 // If effectiveWorkspaceId is 'system' and no explicit WS requested, show everything (SuperAdmin view)
             } else {
                 // Regular User: Always restrict to their current or requested workspace
-                filters.workspaceId = explicitWS || user.workspaceId || 'system' || 'system';
+                filters.workspaceId = explicitWS || user.workspaceId || 'system';
             }
 
             if (entityDef?.permission?.ownerOnly && !isSuper && !isWsAdmin) {
@@ -3026,13 +3280,24 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
             // --- STRATEGY 3: Standard List / System Fallback ---
             if (!results) {
-                const options: any = { sortBy: url.searchParams.get("sortBy") || "createdAt", sortOrder: url.searchParams.get("sortOrder") || "DESC" };
-                if (url.searchParams.get("limit")) options.limit = parseInt(url.searchParams.get("limit")!);
-                if (url.searchParams.get("offset")) options.offset = parseInt(url.searchParams.get("offset")!);
+                const options: any = { 
+                    sortBy: filters.sortBy || url.searchParams.get("sortBy") || "createdAt", 
+                    sortOrder: filters.sortOrder || url.searchParams.get("sortOrder") || "DESC" 
+                };
+                if (filters.limit || url.searchParams.get("limit")) options.limit = parseInt(filters.limit || url.searchParams.get("limit")!);
+                if (filters.offset || url.searchParams.get("offset")) options.offset = parseInt(filters.offset || url.searchParams.get("offset")!);
 
+                // Clean up filters object so it only contains database columns
+                const reservedKeys = ['pageSize', 'page', 'sortBy', 'sortOrder', 'limit', 'offset', 'workspaceId', 'entity', 'table', 'collection', 'items', 'data'];
+                
                 url.searchParams.forEach((v: string, k: string) => { 
-                    if (!['pageSize', 'page', 'sortBy', 'sortOrder', 'limit', 'offset', 'workspaceId'].includes(k)) filters[k] = v; 
+                    if (!reservedKeys.includes(k)) filters[k] = v; 
                 });
+                
+                // If it's a POST, the filters already contain the body. We remove reserved keys to avoid SQL errors.
+                if (method === 'POST') {
+                    reservedKeys.forEach(k => delete filters[k]);
+                }
                 
                 // Enterprise Level 8: Global System Fallback for common entities like Tag
                 const includeSystem = ['tag', 'role', 'user_profile', 'category', 'theme'].includes(collection.toLowerCase());
@@ -3052,7 +3317,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     }
 
                     Object.entries(filters).forEach(([k, v]) => {
-                        if (k === 'workspaceId') return;
+                        if (k === 'workspaceId' || k === 'where') return;
                         sql += ` AND "${k}" = ?`;
                         queryParams.push(v);
                     });
@@ -3074,7 +3339,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 
                 // Resilient field iteration for population (Support Map & Array)
                 const allFields = Array.isArray(entityDef.fields) 
-                    ? entityDef.fields.map(f => [f.name || f.id, f])
+                    ? entityDef.fields.map((f: any) => [f.name || f.id, f])
                     : Object.entries(entityDef.fields);
 
                 const fieldsToPopulate = allFields.filter(([name, f]: any) => {
@@ -3099,9 +3364,16 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                             const targetPk = getPrimaryKey(targetEntity, registry);
 
                             if (def.type === 'relation-many' || def.type === 'tag' || def.type === 'multi-select') {
-                                // --- MANY-TO-MANY (via tag_assignment or column) ---
-                                const placeholder = recordIds.map(() => '?').join(',');
-                                const assignments = await db.query(`SELECT entityId, tagId FROM tag_assignment WHERE entityType = ? AND (fieldName = ? OR fieldName IS NULL) AND entityId IN (${placeholder})`, [collection, fieldName, ...recordIds]).catch(() => []);
+                                // --- MANY-TO-MANY (Universal via entity_relation_many) ---
+                                // Enterprise Level 8: Chunking to avoid D1 "too many SQL variables" limit
+                                const assignments: any[] = [];
+                                const CHUNK_SIZE = 80;
+                                for (let i = 0; i < recordIds.length; i += CHUNK_SIZE) {
+                                    const chunk = recordIds.slice(i, i + CHUNK_SIZE);
+                                    const chunkPlaceholder = chunk.map(() => '?').join(',');
+                                    const chunkAssignments = await db.query(`SELECT sourceId as entityId, targetId as tagId FROM entity_relation_many WHERE sourceType = ? AND (fieldName = ? OR fieldName IS NULL) AND sourceId IN (${chunkPlaceholder})`, [collection, fieldName, ...chunk]).catch(() => []);
+                                    assignments.push(...chunkAssignments);
+                                }
                                 
                                 const columnIds: string[] = [];
                                 for (const item of results) {
@@ -3130,7 +3402,14 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                                 const allRelatedIds = [...new Set([...assignments.map((a: any) => a.tagId), ...columnIds])].filter(Boolean);
 
                                 if (allRelatedIds.length > 0) {
-                                    const relatedObjects = await db.query(`SELECT * FROM "${resolveCollection(targetEntity, registry)}" WHERE "${targetPk}" IN (${allRelatedIds.map(() => '?').join(',')})`, allRelatedIds).catch(() => []);
+                                    // Enterprise Level 8: Chunking to avoid D1 "too many SQL variables" limit
+                                    const relatedObjects: any[] = [];
+                                    const CHUNK_SIZE = 80;
+                                    for (let i = 0; i < allRelatedIds.length; i += CHUNK_SIZE) {
+                                        const chunk = allRelatedIds.slice(i, i + CHUNK_SIZE);
+                                        const chunkResults = await db.query(`SELECT * FROM "${resolveCollection(targetEntity, registry)}" WHERE "${targetPk}" IN (${chunk.map(() => '?').join(',')})`, chunk).catch(() => []);
+                                        relatedObjects.push(...chunkResults);
+                                    }
                                     const objectMap = new Map(relatedObjects.map((obj: any) => [String(obj[targetPk] || obj.id || obj), deepParse(obj)]));
 
                                     for (const item of results) {
@@ -3170,7 +3449,14 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                                 }))].filter(Boolean);
                                 
                                 if (allRelatedIds.length > 0) {
-                                    const relatedObjects = await db.query(`SELECT * FROM "${resolveCollection(targetEntity, registry)}" WHERE "${targetPk}" IN (${allRelatedIds.map(() => '?').join(',')})`, allRelatedIds);
+                                    // Enterprise Level 8: Chunking to avoid D1 "too many SQL variables" limit
+                                    const relatedObjects: any[] = [];
+                                    const CHUNK_SIZE = 80;
+                                    for (let i = 0; i < allRelatedIds.length; i += CHUNK_SIZE) {
+                                        const chunk = allRelatedIds.slice(i, i + CHUNK_SIZE);
+                                        const chunkResults = await db.query(`SELECT * FROM "${resolveCollection(targetEntity, registry)}" WHERE "${targetPk}" IN (${chunk.map(() => '?').join(',')})`, chunk);
+                                        relatedObjects.push(...chunkResults);
+                                    }
                                     const objectMap = new Map(relatedObjects.map((obj: any) => [String(obj[targetPk] || obj.id || obj), deepParse(obj)]));
                                     
                                     for (const item of results) {
@@ -3216,7 +3502,29 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 }
 
                 if (!item) {
-                   console.log(`[BRAIN-DB] Item not found: collection=${collection}, id=${id}`);
+                   console.log(`[BRAIN-DB] Item not found by ID: collection=${collection}, id=${id}. Trying alternative lookups...`);
+                   
+                   // Enterprise Level 8: Self-Healing ID Lookup
+                   // If a lookup by primary key fails, we try common unique/identity fields (userId, accountId, email)
+                   // matching the requested ID. This resolves 404s from role-based or alias-based lookups.
+                   const altFields = ['userId', 'accountId', 'email', 'name'];
+                   const table = resolveCollection(collection, registry);
+                   const validCols = await (db as any).getTableColumns?.(collection).catch(() => []) || [];
+                   
+                   for (const field of altFields) {
+                       if (validCols.length > 0 && !validCols.includes(field)) continue;
+                       
+                       const results = await db.query(`SELECT * FROM "${table}" WHERE "${field}" = ? LIMIT 1`, [id]).catch(() => []);
+                       if (results && results[0]) {
+                           item = results[0];
+                           console.log(`[BRAIN-DB-RECOVER] Found ${collection} record using field '${field}' for ID: ${id}`);
+                           break;
+                       }
+                   }
+                }
+
+                if (!item) {
+                   console.log(`[BRAIN-DB] 404 Item not found: collection=${collection}, id=${id}`);
                    return error("Not found", 404);
                 }
                 
@@ -3228,7 +3536,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
                     // Resilient field iteration for single record population
                     const allFields = Array.isArray(entityDef.fields) 
-                        ? entityDef.fields.map(f => [f.name || f.id, f])
+                        ? entityDef.fields.map((f: any) => [f.name || f.id, f])
                         : Object.entries(entityDef.fields);
 
                     for (const [rawFieldName, fieldDef] of allFields) {
@@ -3242,7 +3550,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                             const isMany = def.type === 'relation-many' || def.type === 'tag' || def.type === 'multi-select' || def.multiple === true;
                             
                             if (isMany) {
-                                const assignments = await db.query("SELECT tagId FROM tag_assignment WHERE entityType = ? AND entityId = ? AND (fieldName = ? OR fieldName IS NULL)", [collection, itemId, fieldName]).catch(() => []);
+                                const assignments = await db.query("SELECT targetId as tagId FROM entity_relation_many WHERE sourceType = ? AND sourceId = ? AND (fieldName = ? OR fieldName IS NULL)", [collection, itemId, fieldName]).catch(() => []);
                                 const tagIds = assignments.map((a: any) => String(a.tagId));
                                 
                                 // Also check internal column for IDs (Case-insensitive)
@@ -3270,7 +3578,14 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                                 }
 
                                 if (tagIds.length > 0) {
-                                    const relObjects = await db.query(`SELECT * FROM "${resolveCollection(target, registry)}" WHERE "${targetPk}" IN (${tagIds.map(() => '?').join(', ')})`, tagIds).catch(() => []);
+                                    // Enterprise Level 8: Chunking to avoid D1 "too many SQL variables" limit
+                                    const relObjects: any[] = [];
+                                    const CHUNK_SIZE = 80;
+                                    for (let i = 0; i < tagIds.length; i += CHUNK_SIZE) {
+                                        const chunk = tagIds.slice(i, i + CHUNK_SIZE);
+                                        const chunkResults = await db.query(`SELECT * FROM "${resolveCollection(target, registry)}" WHERE "${targetPk}" IN (${chunk.map(() => '?').join(', ')})`, chunk).catch(() => []);
+                                        relObjects.push(...chunkResults);
+                                    }
                                     item[fieldName] = relObjects.map(deepParse);
                                 } else {
                                     item[fieldName] = [];
@@ -3313,7 +3628,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         }
 
         // POST (Create)
-        if (method === 'POST' && !id) {
+        if (method === 'POST' && (!id || id === 'new' || id === 'create')) {
             // Check if body is provided
             if (!body || Object.keys(body).length === 0) {
                 // Use request instead of ctx (fix ReferenceError)
@@ -3324,6 +3639,12 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
             
             const data: any = { ...deepStringify(body), createdBy: user.id };
+            
+            // Enterprise Level 8: Default role for contacts (Guest = No Permissions)
+            if (collection === 'contact' && !data.role) {
+                data.role = 'guest';
+            }
+
             const isGlobal = isGlobalEntity(collection, registry);
             if (!isGlobal) data.workspaceId = effectiveWorkspaceId;
             
@@ -3355,7 +3676,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 // Enterprise Level 8: Ultra-resilient field iteration
                 // Handles both the Map-based fields (Legacy/Registry) and Array-based fields (Builder/D1)
                 const fieldsToValidate = Array.isArray(entityDef.fields) 
-                    ? entityDef.fields.map(f => [f.name || f.id, f])
+                    ? entityDef.fields.map((f: any) => [f.name || f.id, f])
                     : Object.entries(entityDef.fields);
 
                 for (const [rawFieldName, fieldDef] of fieldsToValidate) {
@@ -3396,8 +3717,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     const isRelMany = def.type === 'relation-many' || def.type === 'tag' || def.type === 'multi-select';
                     if (isRelMany && data[def.name]) {
                         relationManyFields[def.name] = data[def.name];
-                        // Only delete if it's NOT a column in the actual table 
-                        // Actually, for simplicity, we move ALL to tag_assignment 
+                        // Actually, for simplicity, we move ALL to entity_relation_many (Universal)
                         // and store them as comma-separated in the column too if it exists.
                         // But let's follow the established pattern.
                         delete data[def.name]; 
@@ -3406,6 +3726,29 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
             
             await db.create(collection, data);
+
+            // Level 8 Audit (POST) - INDUSTRIAL STRENGTH
+            if (!registry?.CONSTANT?.auditExclusion?.includes(collection)) {
+                try {
+                    const createdRecord = await db.get(collection, data[pk]);
+                    const displayValue = getDisplayValue(createdRecord || data, entityDef);
+                    
+                    await db.create('audit_log', {
+                        id: crypto.randomUUID(),
+                        workspaceId: data.workspaceId || user.workspaceId || 'system',
+                        entityType: collection,
+                        entityId: String(data[pk]),
+                        action: 'create',
+                        snapshot_after: JSON.stringify(createdRecord || data),
+                        display_value: displayValue,
+                        user: user.email || user.id || 'system',
+                        userId: user.id || 'system',
+                        createdAt: new Date().toISOString()
+                    });
+                } catch (auditErr: any) {
+                    console.warn(`[AUDIT-POST-FAILED] ${collection}:`, auditErr.message);
+                }
+            }
             
             // Create relation-many assignments
             for (const [fieldName, value] of Object.entries(relationManyFields)) {
@@ -3420,13 +3763,16 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     // Enterprise Level 8 Optimization: Batch preparation for relationships
                     // Instead of waiting for each DB call, we could use db.batch if the proxy supports it.
                     // For now, we continue with parallel-friendly awaits or serial safe ones.
+                    const fieldDef = (Array.isArray(entityDef.fields) ? entityDef.fields : Object.values(entityDef.fields)).find((f: any) => (f.name === fieldName || f.id === fieldName)) as any;
+                    const targetEntity = fieldDef?.relation?.target || (fieldDef?.type === 'tag' ? 'tag' : 'unknown');
                     for (const relatedId of ids) {
-                        await db.create('tag_assignment', {
+                        await db.create('entity_relation_many', {
                             id: crypto.randomUUID(),
                             workspaceId: data.workspaceId || effectiveWorkspaceId || 'system',
-                            tagId: relatedId,
-                            entityType: collection,
-                            entityId: data.id,
+                            targetId: relatedId,
+                            targetType: targetEntity,
+                            sourceType: collection,
+                            sourceId: data.id,
                             fieldName: fieldName
                         }).catch((e: any) => console.warn(`[BRAIN-DB] Failed to create ${fieldName} assignment:`, e.message));
                     }
@@ -3483,7 +3829,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             if (entityDef && entityDef.fields) {
                 // Enterprise Level 8: Ultra-resilient field iteration for Updates
                 const fieldsToValidate = Array.isArray(entityDef.fields) 
-                    ? entityDef.fields.map(f => [f.name || f.id, f])
+                    ? entityDef.fields.map((f: any) => [f.name || f.id, f])
                     : Object.entries(entityDef.fields);
 
                 for (const [rawFieldName, fieldDef] of fieldsToValidate) {
@@ -3530,13 +3876,48 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 delete updates.workspaceId;
             }
 
+            // Level 8 Snapshot (BEFORE UPDATE)
+            let snapshotBefore = null;
+            if (!registry?.CONSTANT?.auditExclusion?.includes(collection)) {
+                snapshotBefore = await db.get(collection, id).catch(() => null);
+            }
+
             await db.update(collection, id, updates);
+
+            // Level 8 Audit (UPDATE) - INDUSTRIAL STRENGTH
+            if (!registry?.CONSTANT?.auditExclusion?.includes(collection)) {
+                try {
+                    const snapshotAfter = await db.get(collection, id).catch(() => null);
+                    const displayValue = getDisplayValue(snapshotAfter || updates, entityDef);
+                    
+                    await db.create('audit_log', {
+                        id: crypto.randomUUID(),
+                        workspaceId: user.workspaceId || 'system',
+                        entityType: collection,
+                        entityId: String(id),
+                        action: 'update',
+                        snapshot_before: snapshotBefore ? JSON.stringify(snapshotBefore) : null,
+                        snapshot_after: JSON.stringify(snapshotAfter || updates),
+                        display_value: displayValue,
+                        user: user.email || user.id || 'system',
+                        userId: user.id || 'system',
+                        createdAt: new Date().toISOString()
+                    });
+                } catch (auditErr: any) {
+                    console.warn(`[AUDIT-UPDATE-FAILED] ${collection}:`, auditErr.message);
+                }
+            }
             
+            // Level 8: Check if status changed to trigger workflow actions
+            if (updates.status) {
+                await triggerFlowActions(db, collection, id, updates.status, registry, user, env);
+            }
+
             // Update relation-many assignments
             for (const [fieldName, value] of Object.entries(relationManyFields)) {
-                // Enterprise Level 8: Field-Specific Many-to-Many Sync
+                // Enterprise Level 8: Field-Specific Many-to-Many Sync (Universal)
                 // We clean up existing assignments ONLY for this specific field.
-                await db.query("DELETE FROM tag_assignment WHERE entityType = ? AND entityId = ? AND (fieldName = ? OR fieldName IS NULL)", [collection, id, fieldName]).catch(() => {});
+                await db.query("DELETE FROM entity_relation_many WHERE sourceType = ? AND sourceId = ? AND (fieldName = ? OR fieldName IS NULL)", [collection, id, fieldName]).catch(() => {});
 
                 // Create new assignments
                 let ids: string[] = [];
@@ -3546,13 +3927,18 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                     ids = value.split(',').map((id: string) => id.trim()).filter((id: string) => id);
                 }
 
+                // Find field def to get targetType
+                const fieldDef = (Array.isArray(entityDef.fields) ? entityDef.fields : Object.values(entityDef.fields)).find((f: any) => f.name === fieldName) as any;
+                const targetEntity = fieldDef?.relation?.target || (fieldDef?.type === 'tag' ? 'tag' : 'unknown');
+
                 for (const relatedId of ids) {
-                    await db.create('tag_assignment', {
+                    await db.create('entity_relation_many', {
                         id: crypto.randomUUID(),
                         workspaceId: effectiveWorkspaceId || 'system',
-                        tagId: relatedId,
-                        entityType: collection,
-                        entityId: id,
+                        targetId: relatedId,
+                        targetType: targetEntity,
+                        sourceType: collection,
+                        sourceId: id,
                         fieldName: fieldName
                     }).catch((e: any) => console.warn(`[BRAIN-DB] Failed to create ${fieldName} assignment:`, e.message));
                 }
@@ -3582,6 +3968,13 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         // DELETE
         if (method === 'DELETE' && id) {
             console.log(`[BRAIN-DB-DELETE] Attempting to delete ${collection}/${id}. SoftDelete: ${entityDef?.features?.softDelete}`);
+            
+            // Level 8 Snapshot (BEFORE DELETE)
+            let snapshotBefore = null;
+            if (!registry?.CONSTANT?.auditExclusion?.includes(collection)) {
+                snapshotBefore = await db.get(collection, id).catch(() => null);
+            }
+
             // Enterprise Level 8: Core Entity Definition Protection
             // We only block if the user tries to delete the DEFINITION of a core entity from entity_definition table.
             // Records within those entities (like a specific contact) should be deletable if permissions allow.
@@ -3626,6 +4019,27 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
                 await db.update(collection, id, updateData);
 
+                // Level 8 Audit (DELETE - Soft) - INDUSTRIAL STRENGTH
+                if (!registry?.CONSTANT?.auditExclusion?.includes(collection)) {
+                    try {
+                        const displayValue = getDisplayValue(snapshotBefore, entityDef);
+                        await db.create('audit_log', {
+                            id: crypto.randomUUID(),
+                            workspaceId: user.workspaceId || 'system',
+                            entityType: collection,
+                            entityId: String(id),
+                            action: 'delete',
+                            snapshot_before: snapshotBefore ? JSON.stringify(snapshotBefore) : null,
+                            display_value: displayValue,
+                            user: user.email || user.id || 'system',
+                            userId: user.id || 'system',
+                            createdAt: new Date().toISOString()
+                        });
+                    } catch (auditErr: any) {
+                        console.warn(`[AUDIT-DELETE-FAILED] ${collection}:`, auditErr.message);
+                    }
+                }
+
                 // Special Case: If deleting a contact, also deactivate the corresponding auth user
                 if (collection === 'contact') {
                     await clearUserPermsCache(env, id);
@@ -3636,10 +4050,31 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             }
             
             console.log(`[BRAIN-DB-DELETE] Performing HARD-DELETE for ${collection}/${id}`);
-            // Delete relation-many assignments before deleting the main record
-            await db.query("DELETE FROM tag_assignment WHERE entityType = ? AND entityId = ?", [collection, id]).catch(() => {});
+            // Delete polymorphic relation assignments before deleting the main record
+            await db.query("DELETE FROM entity_relation_many WHERE sourceType = ? AND sourceId = ?", [collection, id]).catch(() => {});
             
             await db.delete(collection, id);
+
+            // Level 8 Audit (DELETE - Hard) - INDUSTRIAL STRENGTH
+            if (!registry?.CONSTANT?.auditExclusion?.includes(collection)) {
+                try {
+                    const displayValue = getDisplayValue(snapshotBefore, entityDef);
+                    await db.create('audit_log', {
+                        id: crypto.randomUUID(),
+                        workspaceId: user.workspaceId || 'system',
+                        entityType: collection,
+                        entityId: String(id),
+                        action: 'delete',
+                        snapshot_before: snapshotBefore ? JSON.stringify(snapshotBefore) : null,
+                        display_value: displayValue,
+                        user: user.email || user.id || 'system',
+                        userId: user.id || 'system',
+                        createdAt: new Date().toISOString()
+                    });
+                } catch (auditErr: any) {
+                    console.warn(`[AUDIT-DELETE-FAILED] ${collection}:`, auditErr.message);
+                }
+            }
 
             // Special Case: If deleting a contact, also remove from auth user table
             if (collection === 'contact') {
@@ -3663,205 +4098,7 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
 
         return error("Operation not allowed", 405);
     },
-    ai: async ({ op, parts, db, user, body, env }: any) => {
-        const registry = await getRegistry(db);
-        const workspaceId = user.workspaceId;
-        
-        // Load workspace-specific AI overrides if they exist
-        let workspaceAiConfig: any = {};
-        if (workspaceId) {
-            const ws = await db.get('workspace', workspaceId);
-            if (ws) {
-                // Check dedicated AI column first, then fallback to settings JSON
-                if (ws.ai) {
-                    workspaceAiConfig = typeof ws.ai === 'string' ? JSON.parse(ws.ai) : ws.ai;
-                } else if (ws.settings) {
-                    const wsSettings = typeof ws.settings === 'string' ? JSON.parse(ws.settings) : ws.settings;
-                    workspaceAiConfig = wsSettings.ai || {};
-                }
-            }
-        }
-
-        const aiConfig = { ...registry.AI_CONFIG, ...workspaceAiConfig };
-        const ai = new AiService(env, { ai_config: aiConfig, db });
-
-        if (op === "architect" || body.action === "architect") {
-            const { prompt, provider, model } = body;
-            if (!prompt) return error("Prompt required");
-            
-            const entities = Object.entries(registry.ENTITY_CONFIG || {}).map(([id, cfg]: [any, any]) => ({ id, label: cfg.label }));
-            
-            const promptContext = await ai.getPrompt(db, 'entity_architect', { 
-                userPrompt: prompt, 
-                currentEntities: JSON.stringify(entities),
-                appName: registry.appName,
-                language: registry.language 
-            });
-
-            const response = await ai.chat(promptContext.prompt, [], {
-                systemPrompt: promptContext.systemPrompt,
-                provider: provider || aiConfig.active_provider,
-                model: promptContext.model || model || aiConfig.model || aiConfig.preferredModel,
-                response_mime_type: 'application/json'
-            });
-            
-            const result = (ai as any).engine.extractJson(response);
-
-            // Level 8 Audit
-            await db.create('audit_log', {
-                id: crypto.randomUUID(),
-                action: 'ai-architect',
-                entityType: 'ai',
-                details: JSON.stringify({ prompt: prompt.substring(0, 100) }),
-                user: user?.email || user?.id || 'system',
-                workspaceId: user?.workspaceId || 'system',
-                createdAt: new Date().toISOString()
-            });
-
-            return result ? success(result) : success({ rawResponse: response });
-        }
-
-        if (op === "get-prompt" || body.action === "get-prompt") {
-            const { name, context = {} } = body || {};
-            if (!name) return error("Prompt name required");
-            return success(await ai.getPrompt(db, name, context));
-        }
-
-        if (op === "chat" || body.action === "chat") {
-            const { message, history = [], role, lang = registry.language, context = {} } = body || {};
-            if (!message) return error("Message required");
-
-            const languageName = (registry.I18N_CONFIG?.supportedLanguages as any)?.[lang]?.name || registry.language || 'Romanian';
-            const promptContext = await ai.getPrompt(db, role || 'chat', { 
-                message, 
-                workspaceId, 
-                lang, 
-                language: languageName, 
-                appName: registry.appName,
-                workspace_prompt: workspaceAiConfig.customPrompts || [],
-                ...context 
-            });
-            
-            // Add language constraints from registry template if not already in system prompt
-            let systemPrompt = promptContext.systemPrompt;
-            if (!systemPrompt.includes(languageName) && registry.AI_PROMPT.language_instruction) {
-                systemPrompt += "\n\n" + registry.AI_PROMPT.language_instruction.replace('{{language}}', languageName);
-            }
-
-            // Apply Personality from Workspace or Context
-            const activePersonality = context.personality || aiConfig.personality || 'professional';
-            const personalityInstruction = {
-                professional: "Maintain a professional, concise and business-oriented tone.",
-                creative: "Be creative, expressive and inspirational. Feel free to use metaphors.",
-                technical: "Be highly technical and precise. Use industry-specific terminology where appropriate.",
-                friendly: "Be warm, friendly and supportive. Use approachable language.",
-                analytical: "Be data-driven and analytical. Structure responses with logic and facts."
-            }[activePersonality as string] || "";
-
-            if (personalityInstruction) {
-                systemPrompt += "\n\nPersonality: " + personalityInstruction;
-            }
-            
-            const response = await ai.chat(promptContext.prompt, history, { 
-                provider: aiConfig.active_provider, 
-                model: promptContext.model || body.model || aiConfig.preferredModel || aiConfig.model, 
-                temperature: aiConfig.temperature,
-                maxTokens: aiConfig.maxTokens,
-                systemPrompt 
-            });
-
-            // Level 8 Audit
-            await db.create('audit_log', {
-                id: crypto.randomUUID(),
-                action: 'ai-chat',
-                entityType: 'ai',
-                details: JSON.stringify({ message: message.substring(0, 100) }),
-                user: user?.email || user?.id || 'system',
-                workspaceId: user?.workspaceId || 'system',
-                createdAt: new Date().toISOString()
-            });
-
-            return json({ success: true, response });
-        }
-
-        if (op === "import-ai" || body.action === "import-ai") {
-            const registry = await getRegistry(db);
-            const { text, schema = {}, entityName = 'items', lang = registry.language } = body || {};
-            if (!text) return error("Text required");
-            
-            try {
-                const promptConfig = await ai.getPrompt(db, 'ENTITY_EXTRACTION', { entityName, workspaceId, lang });
-                const aiConfig = registry.AI_CONFIG;
-
-                const result = await ai.extractEntities(text, schema, entityName, {
-                    customPromptTemplate: promptConfig.prompt,
-                    systemPrompt: promptConfig.systemPrompt,
-                    lang,
-                    provider: aiConfig.active_provider,
-                    model: aiConfig.model
-                });
-
-                // Level 8 Audit
-                await db.create('audit_log', {
-                    id: crypto.randomUUID(),
-                    action: 'ai-import',
-                    entityType: 'ai',
-                    details: JSON.stringify({ entityName, textLength: text.length }),
-                    user: user?.email || user?.id || 'system',
-                    workspaceId: user?.workspaceId || 'system',
-                    createdAt: new Date().toISOString()
-                });
-
-                return success(result);
-            } catch (e: any) {
-                return error(`AI import failed: ${e.message}`, 500);
-            }
-        }
-
-        if (op === "generate" || body.action === "generate") {
-            const { prompt, model, data, temperature, personality } = body;
-            if (!prompt) return error("Missing prompt");
-
-            try {
-                let finalPrompt = prompt;
-                if (data && typeof data === 'object') {
-                    Object.entries(data).forEach(([key, val]) => {
-                        finalPrompt = finalPrompt.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g'), String(val || ''));
-                    });
-                }
-
-                // Inject personality instruction if provided or from workspace config
-                const activePersonality = personality || aiConfig.personality || 'professional';
-                const personalityMap: any = {
-                    professional: "Maintain a professional, concise and business-oriented tone.",
-                    creative: "Be creative, expressive and inspirational. Feel free to use metaphors.",
-                    technical: "Be highly technical and precise. Use industry-specific terminology where appropriate.",
-                    friendly: "Be warm, friendly and supportive. Use approachable language.",
-                    analytical: "Be data-driven and analytical. Structure responses with logic and facts."
-                };
-                
-                const systemPrompt = personalityMap[activePersonality] || "You are a helpful AI assistant.";
-
-                const response = await ai.chat(finalPrompt, [], { 
-                    provider: aiConfig.active_provider,
-                    model: model || aiConfig.preferredModel || aiConfig.model,
-                    temperature: temperature ?? aiConfig.temperature,
-                    systemPrompt
-                });
-
-                return success(response);
-            } catch (e: any) {
-                return error(`AI Generation Error: ${e.message}`);
-            }
-        }
-        
-        if (parts[1] === "prompt") {
-            if (body.action === "save") return success(await db.set("_ai_prompt", body.id || crypto.randomUUID(), { ...deepStringify(body), workspaceId, updatedAt: new Date().toISOString() }));
-            return success((await db.list("_ai_prompt", { workspaceId })).map(deepParse));
-        }
-
-        return error("AI operation not found", 404);
-    },
+    ai: handleAiRequest,
     action: async (ctx: any) => {
         const { op, parts, db, user, body, url, method } = ctx;
         const registry = await getRegistry(db);
@@ -4006,23 +4243,40 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
         return error("Action not found", 404);
     },
     tag: async ({ op, parts, db, user, body, method }: any) => {
-        const table = 'tag', relationTable = 'tag_assignment';
+        const table = 'tag', relationTable = 'entity_relation_many';
         if (method === 'GET') {
             if (op === "results") {
-                const assignments = await db.list(relationTable, { tagId: parts[2], workspaceId: user.workspaceId || 'system' });
+                const assignments = await db.list(relationTable, { targetId: parts[2], targetType: 'tag', workspaceId: user.workspaceId || 'system' });
                 const res = [];
                 for (const a of assignments) {
-                        const rec = await db.get(a.entityType, a.entityId);
-                    if (rec) res.push({ ...deepParse(rec), _entity: a.entityType });
+                        const rec = await db.get(a.sourceType, a.sourceId);
+                    if (rec) res.push({ ...deepParse(rec), _entity: a.sourceType });
                 }
                 return success(res);
             }
             return success((await db.list(table, { workspaceId: user.workspaceId || 'system' })).map(deepParse));
         }
         if (op === "create") return success(await db.create(table, { id: crypto.randomUUID(), ...body, workspaceId: user.workspaceId || 'system' }));
-        if (op === "assign") return success(await db.create(relationTable, { id: crypto.randomUUID(), ...body, workspaceId: user.workspaceId || 'system' }));
+        if (op === "assign") {
+             // Universalized assignment for tags
+             return success(await db.create(relationTable, { 
+                id: crypto.randomUUID(), 
+                ...body, 
+                sourceId: body.entityId, 
+                sourceType: body.entityType, 
+                targetId: body.tagId,
+                targetType: 'tag',
+                workspaceId: user.workspaceId || 'system' 
+             }));
+        }
         if (op === "remove") {
-            const ex = await db.list(relationTable, { tagId: body.tagId, entityId: body.entityId, workspaceId: user.workspaceId || 'system' });
+            const ex = await db.list(relationTable, { 
+                targetId: body.tagId, 
+                sourceId: body.entityId, 
+                sourceType: body.entityType,
+                targetType: 'tag',
+                workspaceId: user.workspaceId || 'system' 
+            });
             for (const item of ex) await db.delete(relationTable, item.id);
             return success();
         }
@@ -4198,6 +4452,9 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
                 status: toStatus,
                 updatedAt: new Date().toISOString()
             });
+
+            // Level 8: Trigger side-effects based on flowRules
+            await triggerFlowActions(db, entityType, entityId, toStatus, registry, user, env);
             
             // Audit log
             await db.create('audit_log', {
@@ -4383,54 +4640,65 @@ const HANDLERS: Record<string, (ctx: any) => Promise<Response>> = {
             return error(`Failed to fetch users: ${e.message}`, 500);
         }
     },
-    help: async ({ url, db, env }: any) => {
-        const registry = await getRegistry(db);
-        const id = url.searchParams.get("id"), lang = url.searchParams.get("lang") || registry.language;
-        if (!id) return error("Missing ID");
-        
-        try {
-            const cached = await db.get("_help_content");
-            if (cached) return success(deepParse(cached));
-
-            const ai = new AiService(env, { ai_config: registry.AI_CONFIG, db });
-            const text = await ai.chat(`Create help for section: ${id}. Language: ${lang}.`, [], { 
-                systemPrompt: "Return JSON: { \"title\": \"...\", \"content\": \"...\", \"description\": \"...\" }" 
-            });
-            
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            const result = JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
-            
-            if (result.title) {
-                await db.set("_help_content", { ...result, updatedAt: new Date().toISOString() });
-            }
-            return success(result);
-        } catch (e: any) {
-            console.error("[BRAIN-HELP] Error:", e.message);
-            return success({ 
-                title: id.charAt(0).toUpperCase() + id.slice(1), 
-                content: "Documentation is being generated or is temporarily unavailable.", 
-                description: "Help Content" 
-            });
-        }
-    },
+    help: handleHelpRequest,
     upload: async ({ db, user, body, env }: any) => {
         const storage = (body instanceof FormData ? body.get('storage') : body.storage) || 'local-inbox';
-        const file = body instanceof FormData ? body.get('file') : null;
+        const file = (body instanceof FormData ? body.get('file') : body?.file) || null;
         
-        if (!file) return error("No file provided");
+        if (!file) {
+            console.error('[BRAIN-UPLOAD] No file found in body. Body keys:', Object.keys(body || {}));
+            return error("No file provided");
+        }
 
         // 1. Audit Log 
         await db.create('audit_log', {
             id: crypto.randomUUID(),
             action: 'upload',
             entityType: 'file',
-            details: JSON.stringify({ name: (file as any).name, size: (file as any).size, storage }),
+            details: JSON.stringify({ name: (file as any).name || 'unknown', size: (file as any).size || 0, storage }),
             user: user?.email || user?.id || 'system',
             workspaceId: user?.workspaceId || 'system',
             createdAt: new Date().toISOString()
         });
 
         // 2. Route based on storage type
+        if (storage === 'r2' || (env.STORAGE && storage === 'auto')) {
+            try {
+                if (!env.STORAGE) return error("R2 Storage not configured on this environment", 500);
+                
+                const fileObj = file as any;
+                const key = `${user?.workspaceId || 'system'}/${crypto.randomUUID()}-${fileObj.name}`;
+                
+                // Put object into R2
+                await env.STORAGE.put(key, await fileObj.arrayBuffer(), {
+                    httpMetadata: { contentType: fileObj.type },
+                    customMetadata: {
+                        originalName: fileObj.name,
+                        userId: user?.id || 'system',
+                        workspaceId: user?.workspaceId || 'system'
+                    }
+                });
+
+                // Generate URL (for local dev miniflare, this usually works via /api/file/r2/key)
+                // In production, this would be a public bucket URL or a signed URL
+                // Encode each part of the path separately to preserve slashes but escape spaces
+                const encodedKey = key.split('/').map(part => encodeURIComponent(part)).join('/');
+                const url = `/api/file/raw/${encodedKey}`;
+                
+                return success({
+                    key,
+                    url,
+                    name: fileObj.name,
+                    size: fileObj.size,
+                    type: fileObj.type,
+                    provider: 'r2'
+                });
+            } catch (e: any) {
+                console.error(`[BRAIN-UPLOAD-R2] ${e.message}`);
+                return error(`R2 Upload failed: ${e.message}`, 500);
+            }
+        }
+
         if (storage === 'local-inbox') {
             const registry = await getRegistry(db);
             
@@ -4641,11 +4909,69 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any, preP
         const url = new URL(req.url); 
         const path = url.pathname.replace(/^\/api/, '').replace(/^\//, '').replace(/\/$/, '');
         
-        // Basic Lang Detection
+        // Basic Lang Detection (Enterprise Level 8)
         const urlParts = url.pathname.split('/');
-        const selectedLang = (urlParts[1] === 'ro' || urlParts[1] === 'en') ? urlParts[1] : 'ro';
+        const queryLang = url.searchParams.get('lang');
+        let selectedLang = (urlParts[1] === 'ro' || urlParts[1] === 'en') ? urlParts[1] : 'ro';
+
+        // Support explicit lang override via query parameter
+        if (queryLang === 'ro' || queryLang === 'en') {
+            selectedLang = queryLang;
+        }
         
-        if (path === "health") return success({ status: "ok" });
+        if (path === "health" || path === "system/health") return success({ status: "ok", service: "brain" });
+
+        // R2 Raw File Fetch Fast-Path
+        if (path.startsWith('file/raw/')) {
+            if (!env.STORAGE) return error("Storage not configured", 500);
+            
+            // Decodare key pentru a suporta spații și caractere speciale în numele fișierelor
+            const encodedKey = path.replace('file/raw/', '');
+            const key = decodeURIComponent(encodedKey);
+            
+            console.log(`[BRAIN-R2-GET] Fetching key: ${key}`);
+            const object = await env.STORAGE.get(key);
+            
+            if (!object) {
+                console.warn(`[BRAIN-R2-GET] File not found: ${key}`);
+                return error("File not found", 404);
+            }
+            
+            const headers = new Headers();
+            object.writeHttpMetadata(headers);
+            headers.set('etag', object.httpEtag);
+            
+            // Forțare cache pe 1 oră în dev pentru performanță
+            headers.set('cache-control', 'public, max-age=3600');
+            
+            // Securitate HTTP & Dev: Asigurăm că imaginea este servită cu atribute care permit afișarea
+            headers.set('Access-Control-Allow-Origin', '*');
+            headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+            
+            // Securitate: Prevenire sniffing și asigurare Content-Type corect
+            if (!headers.has('content-type')) {
+                const ext = key.split('.').pop()?.toLowerCase();
+                const mimeMap: Record<string, string> = {
+                    'png': 'image/png',
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'gif': 'image/gif',
+                    'webp': 'image/webp',
+                    'svg': 'image/svg+xml',
+                    'pdf': 'application/pdf'
+                };
+                if (ext && mimeMap[ext]) headers.set('content-type', mimeMap[ext]);
+            }
+            
+            // Performanță: Stream body direct pentru a evita overhead-ul de memorie
+            // și pentru a păstra integritatea datelor binare pe HTTP
+            const stream = object.body;
+            
+            return new Response(stream, { 
+                status: 200,
+                headers 
+            });
+        }
 
         const bodyKeys = (body && typeof body === 'object') ? Object.keys(body) : [];
         const bodyType = Array.isArray(body) ? 'array' : typeof body;
@@ -4653,6 +4979,16 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any, preP
         
         if (path === "auth/local-token" || path === "local-token") {
             return success({ token: env.API_KEY || "dev-token" });
+        }
+
+        // FAST-PATH: check-admin from KV (Blazing fast for "Checking session...")
+        if (path === "auth/check-admin" || path === "check-admin") {
+            if (env?.KV) {
+                try {
+                    const cached = await env.KV.get('admin_exists');
+                    if (cached === 'true') return success({ exists: true });
+                } catch (e) {}
+            }
         }
 
         // 2. DATABASE INITIALIZATION (LEVEL 8)
@@ -4738,20 +5074,19 @@ async function _handleBrainRequest(request: Request, env: any, cfCtx?: any, preP
                 throw err; // Re-throw for top-level catch to handle response formatting
             }
             
-            // Enterprise Level 8: Apply Translation Transformer to JSON responses
+            // Enterprise Level 8: Apply Translation Transformer to ALL JSON responses
             if (handlerResponse.headers.get('content-type')?.includes('application/json')) {
                 try {
                     // Clone before parsing JSON to avoid consuming original response body
                     const data: any = await handlerResponse.clone().json();
                     
-                    // Transform multilingual fields in response data
-                    if (data.data) {
-                        data.data = transformTranslations(data.data, selectedLang);
-                    } else if (Array.isArray(data)) {
-                        return Response.json(transformTranslations(data, selectedLang), { status: handlerResponse.status });
-                    }
+                    // Transform multilingual fields recursively through the entire object tree
+                    const transformed = transformTranslations(data, selectedLang);
                     
-                    return Response.json(data, { status: handlerResponse.status, headers: handlerResponse.headers });
+                    return Response.json(transformed, { 
+                        status: handlerResponse.status, 
+                        headers: handlerResponse.headers 
+                    });
                 } catch (e) {
                     // If JSON parsing fails, return original response
                     return handlerResponse;
@@ -4801,10 +5136,15 @@ export async function handleBrainRequest(request: Request, env: any, cfCtx?: any
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Accept, Origin, X-API-Key",
         "Access-Control-Allow-Credentials": "true",
+        "Cross-Origin-Resource-Policy": "cross-origin",
+        "Cross-Origin-Embedder-Policy": "credentialless"
     };
 
     if (origin) {
         corsHeaders["Access-Control-Allow-Origin"] = isAllowed ? origin : "https://service.aemdpc.ro";
+    } else {
+        // Fallback pentru request-uri simple de tip img src care nu trimit header-ul Origin pe HTTP
+        corsHeaders["Access-Control-Allow-Origin"] = "*";
     }
 
     if (request.method === "OPTIONS") {
@@ -4844,11 +5184,17 @@ export async function handleBrainRequest(request: Request, env: any, cfCtx?: any
     if (isMutation) {
         const url = new URL(request.url);
         // Include body summary to avoid collisions between different records on same endpoint
-        // Prefer Content-Length as a high-speed "tag" before we even read the stream
+        // Enterprise Level 8: Precision Tagging (Size + Preview)
         const contentLength = request.headers.get("content-length") || "0";
-        const bodyTag = bodyToUse 
-            ? (typeof bodyToUse === 'string' ? bodyToUse.length : JSON.stringify(bodyToUse).length) 
-            : contentLength;
+        let bodyTag = contentLength;
+        
+        if (bodyToUse) {
+            const strBody = typeof bodyToUse === 'string' ? bodyToUse : JSON.stringify(bodyToUse);
+            // We use length + start + end to create a unique enough signature (Enterprise Level 8)
+            const start = strBody.substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+            const end = strBody.substring(strBody.length - 10).replace(/[^a-zA-Z0-9]/g, '');
+            bodyTag = `${strBody.length}_${start}_${end}`;
+        }
             
         mutationKey = `${request.method}:${url.pathname}:${bodyTag}`;
         
@@ -4934,6 +5280,23 @@ export async function handleBrainRequest(request: Request, env: any, cfCtx?: any
 
     try {
         const result = await _handleBrainRequest(request, env, cfCtx, bodyToUse);
+        
+        // Enterprise Level 8: Binary/Stream Fast-Path
+        // If the response is already a Response object with a non-json content type
+        // (like images from R2), we return it as is but with CORS headers applied.
+        const contentType = result.headers.get("content-type") || "";
+        const isBinary = contentType && !contentType.includes("application/json") && !contentType.includes("text/plain");
+
+        if (isBinary) {
+            const finalHeaders = new Headers(result.headers);
+            Object.entries(corsHeaders).forEach(([k, v]) => {
+                finalHeaders.set(k, v);
+            });
+            return new Response(result.body, {
+                status: result.status,
+                headers: finalHeaders
+            });
+        }
         
         // If it wasn't a mutation, we still need to apply CORS headers to the result
         const finalHeaders = new Headers(result.headers);

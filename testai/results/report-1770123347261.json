@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-02-03T12:55:47.261Z",
+  "total": 8,
+  "passed": 0,
+  "failed": 8,
+  "results": [
+    {
+      "type": "single-turn",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "success": false,
+      "error": "history is not defined"
+    },
+    {
+      "type": "single-turn",
+      "provider": "gemini",
+      "model": "gemini-1.5-flash",
+      "success": false,
+      "error": "history is not defined"
+    },
+    {
+      "type": "single-turn",
+      "provider": "cloudflare",
+      "model": "@cf/meta/llama-3.1-8b-instruct",
+      "success": false,
+      "error": "history is not defined"
+    },
+    {
+      "type": "single-turn",
+      "provider": "github",
+      "model": "Meta-Llama-3.1-70B-Instruct",
+      "success": false,
+      "error": "history is not defined"
+    },
+    {
+      "type": "single-turn",
+      "provider": "groq",
+      "model": "llama-3.1-8b-instant",
+      "success": false,
+      "error": "history is not defined"
+    },
+    {
+      "type": "multi-turn",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "success": false,
+      "error": "history is not defined"
+    },
+    {
+      "type": "multi-turn",
+      "provider": "gemini",
+      "model": "gemini-1.5-flash",
+      "success": false,
+      "error": "history is not defined"
+    },
+    {
+      "type": "multi-turn",
+      "provider": "github",
+      "model": "Meta-Llama-3.1-70B-Instruct",
+      "success": false,
+      "error": "history is not defined"
+    }
+  ]
+}

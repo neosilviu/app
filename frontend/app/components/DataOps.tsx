@@ -209,7 +209,7 @@ export function DataManagementActions({
                 <Dialog open={isBulkUpdateOpen} onOpenChange={setIsBulkUpdateOpen}>
                     <DialogTrigger asChild>
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 gap-1.5 uppercase tracking-tight">
-                        <Settings2 size={12} /> {t('common:edit') || 'Modifică'}
+                        <Settings2 size={12} /> {t('common:edit')}
                     </Button>
                     </DialogTrigger>
                     <DialogContent>
@@ -247,7 +247,7 @@ export function DataManagementActions({
                                     value={bulkValue}
                                     onChange={(e) => setBulkValue(e.target.value)}
                                 >
-                                    <option value="">-- {t('common:select') || 'Select'} --</option>
+                                    <option value="">-- {t('common:select')} --</option>
                                     {field.options?.map((o: any) => (
                                     <option key={o.value} value={o.value}>{renderString(o.label)}</option>
                                     ))}
@@ -281,7 +281,7 @@ export function DataManagementActions({
                 </Dialog>
                 )}
                 {canBulkDelete && (
-                <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px] font-bold text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 gap-1.5 uppercase tracking-tight" onClick={() => { if (confirm(t('entity:bulk_delete_confirm', { count: selectedCount }))) onBulkDelete(); }}>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px] font-bold text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 gap-1.5 uppercase tracking-tight" onClick={() => { if (confirm(t('entity:bulk_delete_confirm', { count: selectedCount }))) onBulkDelete(); }}>
                     <Trash2 size={12} /> {t('common:delete')}
                 </Button>
                 )}

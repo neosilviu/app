@@ -54,6 +54,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
     } = useEntity(entityId, { 
         includeArchived: showArchived,
         skipFetch: !!config.mockup,
+        pageSize: config.uiConfig?.list?.itemsPerPage || 100,
         sortBy: searchParams.get('sortBy') || undefined,
         sortOrder: (searchParams.get('sortOrder')?.toUpperCase() as any) || undefined
     });
@@ -73,9 +74,11 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
 
     const data = config.mockup ? (config.data || []) : realData;
 
+    // Enterprise Level 8: Normalize entity once for consumption
+    const normalized = React.useMemo(() => normalizeEntity(config), [config]);
+
     // Normalize fields & Apply Security Visibility (Enterprise Level 8)
     const fieldsList = React.useMemo(() => {
-        const normalized = normalizeEntity(config);
         const AUDIT_FIELDS = ['workspaceId', 'createdBy', 'updatedBy', 'archived', 'archivedAt', 'deletedAt', 'password', 'secret'];
         
         const rawFields = normalized.fields;
@@ -122,12 +125,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
 
             for (const rel of relations) {
                 // target detection logic
-                let target = (rel.relationEntity || rel.relation?.target || (rel.type === 'tag' ? 'tag' : ''))?.toLowerCase();
-                
-                // Fallback: if field is named 'tag' or ends in _tag, assume tag entity
-                if (!target && (rel.name === 'tag' || rel.name.endsWith('_tag'))) {
-                    target = 'tag';
-                }
+                const target = (rel.relationEntity || rel.relation?.target || (rel.type === 'tag' ? 'tag' : ''))?.toLowerCase();
 
                 if (target && relatedData[target] === undefined) {
                     try {
@@ -136,18 +134,12 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                         let fetchedData = Array.isArray(res) ? res : (res?.data || []);
                         
                         if (res && (res.success || Array.isArray(res))) {
-                            // Enterprise Level 8: Normalize related data to handle casing consistency (ID vs id)
-                            const targetEntityDef = systemConfig?.entity[target];
+                            // Enterprise Level 8: Normalize related data based on its definition
+                            const targetEntityDef = (systemConfig?.entity as any)?.[target];
+
                             if (targetEntityDef) {
                                 fetchedData = fetchedData.map((item: any) => normalizeFormData(item, targetEntityDef.fields));
-                            } else {
-                                // Fallback: manual normalization for ID/Name if no config found
-                                fetchedData = fetchedData.map((item: any) => ({
-                                    ...item,
-                                    id: item.id || item.ID || item.uuid,
-                                    name: item.name || item.Name || item.label || item.Label
-                                }));
-                            }
+                            } 
 
                             newRelatedData[target] = fetchedData;
                             hasNew = true;
@@ -166,11 +158,33 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
     }, [fieldsList, relatedData, realData.length, authLoading]); // Added authLoading/realData.length to prevent race
 
     const renderCell = (val: any, field: FieldDefinition) => {
-        const target = (field.relationEntity || field.relation?.target || (field.name === 'tag' ? 'tag' : ''))?.toLowerCase();
+        const target = (field.relationEntity || field.relation?.target || (field.type === 'tag' ? 'tag' : ''))?.toLowerCase();
         
-        // Enterprise Level 8: Improved Display Field Selection
+        // Enterprise Level 8: Strict Display Field Selection
         const targetDef = target ? (systemConfig?.entity as any)?.[target] : null;
-        const displayField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
+            
+        // Priority: 1. Field specific displayField, 2. Field specific relation.field, 3. Target Entity displayField, 4. 'id' (Strict)
+        const displayField = field.displayField || field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'id';
+
+        // Enterprise Level 8: STRCIT Case-Insensitive Label Resolution
+        const getLabel = (item: any, preferred: string, fallbackId: any) => {
+            if (!item) return fallbackId;
+            if (typeof item !== 'object') return String(item);
+            
+            // Priority 1: Exact match for strictly requested field
+            if (item[preferred]) return item[preferred];
+            
+            // Priority 2: Case-insensitive match for strictly requested field
+            const keys = Object.keys(item);
+            const foundKey = keys.find(k => k.toLowerCase() === preferred.toLowerCase());
+            if (foundKey && item[foundKey]) return item[foundKey];
+            
+            // Priority 3: Fallback ONLY to ID if the requested field is missing
+            return item.id || item.ID || item.uuid || fallbackId;
+        };
+
+        const currentValIsObject = typeof val === 'object' && val !== null && !Array.isArray(val);
+        const resolvedId = currentValIsObject ? (val.id || val.ID || val.uuid || val.key) : val;
 
         // --- RELATION MANY (Tags, Categories, etc.) ---
         // Enterprise Level 8: Include 'tag' and 'multi-select'
@@ -222,7 +236,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                         const localItem = richItems.find((v: any) => String(v.id || v.ID || v).toLowerCase() === sid);
                         const item = itemsList.find(item => String(item.id || item.ID || '').toLowerCase() === sid) || localItem;
 
-                        let label = item ? (item[displayField] || item.name || item.label || id) : id;
+                        let label = getLabel(item, displayField, id);
                         
                         // Check options for multi-select
                         if (!item && field.options) {
@@ -256,20 +270,29 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
         }
 
         // --- SINGLE RELATION (Workspace, Owner, etc.) ---
+        // Enterprise Level 8: Improved single-relation rendering with rich-object support
         if ((field.type === 'relation' || field.type === 'entity_relation') && val) {
-            const sid = String(val).toLowerCase();
+            const sid = String(resolvedId || '').toLowerCase();
             
-            if (target && relatedData[target]) {
-                const item = relatedData[target].find(item => String(item.id || item.ID).toLowerCase() === sid);
+            if (target && relatedData[target] && sid) {
+                const item = relatedData[target].find(item => String(item.id || item.ID || '').toLowerCase() === sid);
                 if (item) {
-                    const label = item[displayField] || item.name || item.label || item.id;
-                    return <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none rounded-md font-bold text-[10px]">{String(label)}</Badge>;
+                    const label = getLabel(item, displayField, resolvedId);
+                    return (
+                        <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none rounded-md font-bold text-[10px] truncate max-w-[150px]">
+                            {renderString(label, lang)}
+                        </Badge>
+                    );
                 }
             }
             
-            if (typeof val === 'object' && val !== null) {
-                const label = val[displayField] || val.name || val.label || val.id;
-                return <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none rounded-md font-bold text-[10px]">{String(label)}</Badge>;
+            if (currentValIsObject) {
+                const label = getLabel(val, displayField, resolvedId || JSON.stringify(val));
+                return (
+                    <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none rounded-md font-bold text-[10px] truncate max-w-[150px]">
+                        {renderString(label, lang)}
+                    </Badge>
+                );
             }
         }
         
@@ -455,7 +478,11 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                                             </div>
                                         </TableHead>
                                     ))}
-                                    <TableHead className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Actions</TableHead>
+                                    {normalized.uiConfig?.list?.showActions === true && (
+                                        <TableHead className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                            {renderString(t('common:actions'), lang)}
+                                        </TableHead>
+                                    )}
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -479,33 +506,35 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                                                 {renderCell(item[f.name || f.key], f)}
                                             </TableCell>
                                         ))}
-                                        <TableCell className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Button 
-                                                    variant="ghost" 
-                                                    size="icon" 
-                                                    className="h-8 w-8 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-800"
-                                                    onClick={(e) => { e.stopPropagation(); navigate(String(item.id)); }}
-                                                >
-                                                    {features.editable !== false ? <Edit2 size={14} className="text-slate-600 dark:text-slate-400" /> : <Layers size={14} className="text-slate-400" />}
-                                                </Button>
-                                                {features.deletable !== false && (
+                                        {normalized.uiConfig?.list?.showActions === true && (
+                                            <TableCell className="px-6 py-4 text-right">
+                                                <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <Button 
                                                         variant="ghost" 
                                                         size="icon" 
-                                                        className="h-8 w-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 text-red-500"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if(confirm('Are you sure?')) {
-                                                                submit({ id: item.id }, { method: "delete" });
-                                                            }
-                                                        }}
+                                                        className="h-8 w-8 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-800"
+                                                        onClick={(e) => { e.stopPropagation(); navigate(String(item.id)); }}
                                                     >
-                                                        <Trash2 size={14} />
+                                                        {features.editable !== false ? <Edit2 size={14} className="text-slate-600 dark:text-slate-400" /> : <Layers size={14} className="text-slate-400" />}
                                                     </Button>
-                                                )}
-                                            </div>
-                                        </TableCell>
+                                                    {features.deletable !== false && (
+                                                        <Button 
+                                                            variant="ghost" 
+                                                            size="icon" 
+                                                            className="h-8 w-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 text-red-500"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if(confirm(t('common:are_you_sure'))) {
+                                                                    handleDelete(item.id);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                        )}
                                     </TableRow>
                                 ))}
                             </TableBody>

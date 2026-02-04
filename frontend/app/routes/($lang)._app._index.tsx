@@ -124,7 +124,13 @@ export default function Dashboard() {
 
   const dashboardWidgets = Object.entries(configMap || {})
     .map(([name, def]) => normalizeEntity({ ...def, name }))
-    .filter(ent => ent.dashboardConfig?.enabled !== false && ent.dashboardConfig?.showInDashboard !== false)
+    .filter(ent => {
+      // Enterprise Level 8: Widget must be enabled. 
+      // showInDashboard is an optional secondary override (defaulting to true if enabled)
+      const isEnabled = ent.dashboardConfig?.enabled !== false;
+      const isVisibilityOverridden = ent.dashboardConfig?.showInDashboard === false;
+      return isEnabled && !isVisibilityOverridden;
+    })
     .sort((a, b) => (a.dashboardConfig?.priority ?? 99) - (b.dashboardConfig?.priority ?? 99));
 
   return (

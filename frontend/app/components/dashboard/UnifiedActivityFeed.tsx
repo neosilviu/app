@@ -4,11 +4,12 @@ import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { IconMap } from '~/lib/icons';
-import { cn, api, getThemeClasses } from '~/lib/core';
+import { cn, api, getThemeClasses, renderString } from '~/lib/core';
 import { normalizeEntity } from '~/lib/entity-engine';
 import { useConfig } from '~/hooks/useConfig';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 interface ActivityLog {
   id: string;
@@ -24,19 +25,21 @@ interface ActivityLog {
 export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], loading: boolean }) {
   const { entity, constants } = useConfig();
   const { lang = 'ro' } = useParams();
+  const navigate = useNavigate();
+  const { t } = useTranslation(['common', 'dashboard', 'entity']);
   const [filter, setFilter] = React.useState<string>('all');
 
   const handleUndo = async (logId: string) => {
     try {
       const res = await api.brain.post(`action/undo/${logId}`);
       if (res.success) {
-        toast.success("Operațiune anulată cu succes!");
+        toast.success(t('dashboard:undo_success'));
         window.location.reload();
       } else {
-        toast.error("Eroare la undo: " + res.error);
+        toast.error(t('dashboard:undo_error') + res.error);
       }
     } catch (e: any) {
-      toast.error("Eroare conexiune: " + e.message);
+      toast.error(t('dashboard:connection_error') + e.message);
     }
   };
 
@@ -49,10 +52,10 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
         <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2">
                <Activity className="w-4 h-4 text-indigo-500" />
-               <CardTitle className="text-base font-black uppercase italic tracking-tight">Flux Activitate Uniformizat</CardTitle>
+               <CardTitle className="text-base font-black uppercase italic tracking-tight">{t('dashboard:unified_activity_feed')}</CardTitle>
             </div>
             <Link to={`/${lang}/audit_log`} className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-500 hover:underline">
-              Vezi tot auditul
+              {t('dashboard:view_all_audit')}
             </Link>
         </div>
 
@@ -65,7 +68,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
                 className="h-6 px-3 rounded-full text-[8px] font-black uppercase tracking-widest transition-all"
                 onClick={() => setFilter('all')}
             >
-                Toate
+                {t('common:all')}
             </Button>
             {activeEntities.map(ent => {
                 const def = entity[ent] || { label: ent };
@@ -77,7 +80,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
                         className="h-6 px-3 rounded-full text-[8px] font-black uppercase tracking-widest transition-all"
                         onClick={() => setFilter(ent)}
                     >
-                        {def.label || ent}
+                        {renderString(def.label || ent, lang)}
                     </Button>
                 );
             })}
@@ -100,7 +103,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
         ) : filteredLogs.length === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center text-slate-300">
             <Activity className="w-12 h-12 opacity-10 mb-2" />
-            <p className="text-[10px] font-bold uppercase tracking-widest">Nicio activitate recentă</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest">{t('dashboard:no_activity')}</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-50 dark:divide-white/5">
@@ -118,7 +121,14 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
               };
 
               return (
-                <div key={log.id} className="p-4 hover:bg-slate-50/50 dark:hover:bg-white/5 transition-all group">
+                <div 
+                  key={log.id} 
+                  className="p-4 hover:bg-slate-50/50 dark:hover:bg-white/5 transition-all group cursor-pointer"
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest('button, a')) return;
+                    navigate(`/${lang}/${entityDef.name}/${log.entityId}`);
+                  }}
+                >
                   <div className="flex gap-4">
                     <div className={cn(
                       "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
@@ -131,7 +141,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          {entityDef.label}
+                          {renderString(entityDef.label, lang)}
                         </span>
                         <span className="text-[9px] font-medium text-slate-400 flex items-center gap-1">
                           <Clock size={10} />
@@ -144,7 +154,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
                           "px-1.5 py-0 h-4 text-[7px] font-black uppercase tracking-tighter border-none",
                           actionColors[log.action] || 'bg-slate-100 text-slate-500'
                         )}>
-                          {log.action}
+                          {t(`common:action_${log.action}`)}
                         </Badge>
                         <span className="text-xs font-bold text-slate-900 dark:text-white truncate max-w-[200px]">
                           {log.display_value || log.entityId}
@@ -166,7 +176,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
                              className="h-7 px-2 text-[8px] font-black uppercase tracking-widest text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg gap-1"
                              onClick={() => handleUndo(log.id)}
                            >
-                             <RotateCcw size={10} /> Undo
+                             <RotateCcw size={10} /> {t('common:undo')}
                            </Button>
                            <Button 
                              size="sm" 
@@ -175,7 +185,7 @@ export function UnifiedActivityFeed({ logs, loading }: { logs: ActivityLog[], lo
                              asChild
                            >
                              <Link to={`/${lang}/${entityDef.name}/${log.entityId}`}>
-                               Detalii <ArrowRight size={10} className="ml-1" />
+                               {t('common:view_item')} <ArrowRight size={10} className="ml-1" />
                              </Link>
                            </Button>
                          </div>

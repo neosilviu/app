@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Outlet, useParams, Link } from 'react-router';
-import { cn, api, socket, getLocalizedPath, socketRequest, type NavItem, renderString, resolveIcon } from '~/lib/core';
+import { cn, api, socket, getLocalizedPath, socketRequest, type NavItem, renderString, resolveIcon, normalizeEntity } from '~/lib/core';
 import { assertRenderable } from '~/lib/utils';
+
+interface BuildInfo {
+  hash: string;
+  version: string;
+  date: string | number | Date;
+}
 import { useAuth } from '~/hooks/useAuth';
 import { AiFloatingAgent } from '../AiSystemUI';
 import { useTranslation } from 'react-i18next';
-import { IconMap } from '~/lib/icons';
 import { useSettings } from '~/hooks/useSettings';
 import { Menu, Plus, History, Palette, Sparkles, Activity, ChevronRight, X, Command, HardDrive, HelpCircle, ShieldCheck, Database, LayoutDashboard, Users as UsersIcon, Briefcase as BriefcaseIcon, Shield as ShieldIcon, Tag as TagIcon, Check as CheckIcon, Bug as BugIcon, LogOut, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -104,7 +109,11 @@ function QuickCreateMenu({ entities, lang, variant = 'pill' }: { entities: any[]
 // USER MENU CONTENT
 // ============================================================================
 
-function UserMenuContent({ onClose, onOpenChangelog, onOpenThemeEditor }: { onClose: () => void, onOpenChangelog?: () => void, onOpenThemeEditor?: () => void }) {
+function UserMenuContent({ onClose, onOpenThemeEditor, onOpenChangelog }: { 
+    onClose: () => void, 
+    onOpenThemeEditor?: () => void,
+    onOpenChangelog?: () => void 
+}) {
   const { user, hasPermission, hasPageAccess, logout } = useAuth();
   const { lang, ...params } = useParams();
   const location = useLocation();
@@ -133,12 +142,8 @@ function UserMenuContent({ onClose, onOpenChangelog, onOpenThemeEditor }: { onCl
                 if (item.hidden) return false;
                 
                 // Enterprise Level 8: Unified Page Permission Check
-                // Profile is allowed for everyone as a basic requirement.
-                // Settings and others must strictly follow registry permissions.
-                if (item.id && !hasPageAccess(item.id)) {
-                    const isCore = ['profile'].includes(item.id);
-                    if (!isCore) return false;
-                }
+                // Profile is allowed for everyone as a basic requirement via hasPageAccess bypass.
+                if (item.id && !hasPageAccess(item.id)) return false;
 
                 if (item.permission && !hasPermission(item.permission)) return false;
                 return true;
@@ -166,14 +171,20 @@ function UserMenuContent({ onClose, onOpenChangelog, onOpenThemeEditor }: { onCl
                 <Palette size={18} /> {renderString(t('sidebar:theme_editor'), lang)}
             </button>
 
+            {onOpenChangelog && (
+                <button 
+                onClick={() => { onOpenChangelog?.(); onClose(); }}
+                className="w-full flex items-center gap-4 px-4 py-3 text-xs font-bold rounded-2xl text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:text-blue-600 transition-all text-left"
+                >
+                <History size={18} /> {renderString(t('common:changelog'), lang)}
+                </button>
+            )}
+
             <div className="md:hidden space-y-1 pt-4 border-t border-slate-50 dark:border-slate-900 mt-4 px-2">
                 <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{renderString(t('sidebar:system_tools'), lang)}</p>
                 <div className="grid grid-cols-2 gap-2">
-                   <Button variant="ghost" className="justify-start gap-3 h-12 rounded-2xl font-bold text-xs" onClick={() => { onClose(); if (onOpenChangelog) onOpenChangelog(); }}>
-                      <History size={16} className="text-indigo-500" /> {renderString(t('common:whats_new'), lang)}
-                   </Button>
                    <HelpDialog id={params.id || location.pathname} onOpen={onClose} trigger={
-                      <Button variant="ghost" className="justify-start gap-3 h-12 rounded-2xl font-bold text-xs">
+                      <Button variant="ghost" className="justify-start gap-3 h-12 rounded-2xl font-bold text-xs w-full">
                         <HelpCircle size={16} className="text-blue-500" /> {renderString(t('common:help'), lang)}
                       </Button>
                    } />
@@ -182,13 +193,6 @@ function UserMenuContent({ onClose, onOpenChangelog, onOpenThemeEditor }: { onCl
             </div>
 
             <div className="h-px bg-slate-50 dark:bg-slate-900 mx-4 my-2" />
-
-            <button 
-                onClick={() => { logout(); onClose(); }}
-                className="w-full flex items-center gap-4 px-4 py-3 text-xs font-bold rounded-2xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all text-left"
-            >
-                <LogOut size={18} /> {renderString(t('sidebar:logout'), lang)}
-            </button>
         </div>
 
         {/* ThemeEditor is rendered by parent to avoid unmount when closing this menu */}
@@ -729,18 +733,22 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, isMobile = false, setIsMobil
         </div>
 
         {/* Build & Version Card */}
-        <div className={cn(
-            "p-3 rounded-2xl transition-all",
+        <div 
+          className={cn(
+            "p-3 rounded-2xl transition-all cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/50 group/version",
             (isSidebarOpen || isMobile) ? "bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800" : ""
-        )}>
+          )}
+          onClick={() => onOpenChangelog?.()}
+          title={renderString(t('common:whats_new'), lang)}
+        >
             <div className={cn("flex flex-col", (!isSidebarOpen && !isMobile) && "items-center")}>
                 {(isSidebarOpen || isMobile) ? (
                     <div className="flex flex-col space-y-1">
                         <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black text-slate-400 font-mono tracking-widest uppercase italic">
+                            <span className="text-[10px] font-black text-slate-400 font-mono tracking-widest uppercase italic group-hover/version:text-indigo-500 transition-colors">
                                 {buildInfo ? buildInfo.hash : config?.constants?.BUILD_DATE}
                             </span>
-                            <span className="text-[10px] font-black text-slate-900 dark:text-white uppercase">
+                            <span className="text-[10px] font-black text-slate-900 dark:text-white uppercase px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700 shadow-sm group-hover/version:border-indigo-500 transition-colors">
                                 v{buildInfo ? buildInfo.version : config?.constants?.VERSION}
                             </span>
                         </div>
@@ -751,7 +759,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, isMobile = false, setIsMobil
                         )}
                     </div>
                 ) : (
-                    <div className="text-[8px] font-black text-slate-400 uppercase leading-none italic">
+                    <div className="text-[8px] font-black text-slate-400 uppercase leading-none italic group-hover/version:text-indigo-500 transition-colors">
                         {buildInfo ? buildInfo.version : config?.constants?.VERSION_SHORT}
                     </div>
                 )}
@@ -972,7 +980,6 @@ function Header({
                         <div className="absolute right-0 mt-4 w-72 bg-white/95 dark:bg-slate-950/95 backdrop-blur-2xl border border-slate-100 dark:border-slate-800 rounded-[2.5rem] shadow-2xl py-4 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
                             <UserMenuContent 
                         onClose={() => setIsUserMenuOpen(false)} 
-                        onOpenChangelog={() => setIsChangelogOpen(true)}
                           onOpenThemeEditor={onOpenThemeEditor}
                             />
                         </div>
@@ -1092,6 +1099,9 @@ export default function DashboardLayout({ children, title }: { children?: React.
                    (user?.role && (config?.constants?.SYSTEM_ROLE as any)?.[user.role]?.permission?.includes('*'));
     
     return Object.entries(entities).filter(([id, entityDef]: [string, any]) => {
+        // Use normalized entity to ensure we have default menuConfig and features
+        const cfg = normalizeEntity(entityDef);
+        
         const canCreate = isSuper || 
                          hasPermission(`${id}:create`) || 
                          hasPermission(`${id}:*`) || 
@@ -1099,15 +1109,14 @@ export default function DashboardLayout({ children, title }: { children?: React.
                          
         if (!canCreate) return false;
         
-        const cfg = entityDef as any;
-        // Don't show entities explicitly marked as not creatable
+        // Rule 1: Don't show entities explicitly marked as not creatable
         if (cfg.features?.creatable === false) return false;
         
-        // Hide administrative entities from the main "New" menu unless SuperAdmin
-        if (!isSuper && cfg.menuConfig?.category === 'administration') return false;
+        // Rule 2: Check explicit menu visibility override
+        if ((cfg.menuConfig as any)?.showInNewMenu === false) return false;
         
-        // Check explicit menu visibility override
-        if (cfg.menuConfig?.showInNewMenu === false) return false;
+        // Rule 3: Hide administrative entities from the main "New" menu for non-admins
+        if (!isSuper && cfg.menuConfig?.category === 'administration') return false;
         
         return true;
     }).sort((a, b) => ((a[1] as any).menuConfig?.priority || 50) - ((b[1] as any).menuConfig?.priority || 50));
@@ -1189,6 +1198,24 @@ export default function DashboardLayout({ children, title }: { children?: React.
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
+      {/* ENTERPRISE LEVEL 8: GLOBAL BLOCKING LOADER */}
+      {loading && (
+        <div className="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-md flex flex-col items-center justify-center gap-4 animate-in fade-in duration-300">
+           <div className="relative">
+              <div className="w-16 h-16 rounded-3xl bg-indigo-600 flex items-center justify-center shadow-2xl shadow-indigo-500/50">
+                <Sparkles size={32} className="text-white animate-pulse" />
+              </div>
+              <div className="absolute -inset-2 border-4 border-indigo-500/20 rounded-[2rem] animate-spin duration-[3000ms]" />
+           </div>
+           <div className="flex flex-col items-center">
+              <p className="text-white font-black uppercase tracking-[0.3em] text-xs">Studio App V2</p>
+              <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-widest mt-1 animate-pulse">
+                {renderString(t('common:switching_workspace'), lang) || "Sincronizare Workspace..."}
+              </p>
+           </div>
+        </div>
+      )}
+
       {/* Desktop Sidebar */}
       <aside 
         className={cn(
@@ -1257,7 +1284,7 @@ export default function DashboardLayout({ children, title }: { children?: React.
           >
             {/* Enterprise Level 8: Ensuring context is passed even through children wrapper */}
             {children ? (
-                 React.isValidElement(children) ? React.cloneElement(children as React.ReactElement, { context: { setDynamicTitle, dynamicTitle } }) : children
+                 React.isValidElement(children) ? React.cloneElement(children as any, { context: { setDynamicTitle, dynamicTitle } }) : children
             ) : (
                 <Outlet context={{ setDynamicTitle, dynamicTitle }} />
             )}

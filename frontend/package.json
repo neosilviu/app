@@ -81,7 +81,7 @@
     "typescript": "^5.9.2",
     "vite": "^7.1.7",
     "vite-tsconfig-paths": "^6.0.4",
-    "wrangler": "^4.61.1"
+    "wrangler": "^4.62.0"
   },
   "overrides": {
     "tar": "^7.4.3"

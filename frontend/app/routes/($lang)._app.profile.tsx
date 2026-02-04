@@ -267,7 +267,7 @@ export default function ProfilePage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("common:role_label") || "Rol"}</Label>
+                      <Label>{t("common:role_label")}</Label>
                       <div className="pt-2 flex gap-2">
                         <Badge variant="outline" className="capitalize">
                           <Shield className="h-3 w-3 mr-1" />
@@ -286,7 +286,7 @@ export default function ProfilePage() {
                     <Globe className="h-5 w-5" />
                     {t("common:preferences")}
                   </CardTitle>
-                  <CardDescription>{t("common:preferences_desc") || "Setările personale pentru limbă și notificări."}</CardDescription>
+                  <CardDescription>{t("common:preferences_desc")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -294,10 +294,10 @@ export default function ProfilePage() {
                     <div className="space-y-4">
                       <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                         <Languages className="h-4 w-4" />
-                        {t("common:localization") || "Localizare"}
+                        {t("common:localization")}
                       </div>
                       <div className="space-y-2">
-                        <Label>{t("common:language") || "Limbă"}</Label>
+                        <Label>{t("common:language")}</Label>
                         <Select 
                           value={profileData.language} 
                           onValueChange={(val) => setProfileData(prev => ({ ...prev, language: val }))}
@@ -312,13 +312,13 @@ export default function ProfilePage() {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>{t("common:timezone") || "Fus Orar"}</Label>
+                        <Label>{t("common:timezone")}</Label>
                         <Select 
                           value={profileData.timezone} 
                           onValueChange={(val) => setProfileData(prev => ({ ...prev, timezone: val }))}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Selectează fus orar" />
+                            <SelectValue placeholder={t("common:select_timezone")} />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="Europe/Bucharest">(GMT+02:00) Bucharest</SelectItem>
@@ -333,13 +333,13 @@ export default function ProfilePage() {
                     <div className="space-y-4">
                       <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                         <Bell className="h-4 w-4" />
-                        {t("common:notifications") || "Notificări"}
+                        {t("common:notifications")}
                       </div>
                       <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
                         <div className="space-y-0.5">
-                          <Label className="text-base">{t("common:browser_notifications") || "Notificări Browser"}</Label>
+                          <Label className="text-base">{t("common:browser_notifications")}</Label>
                           <p className="text-xs text-muted-foreground">
-                            {t("common:browser_notifications_desc") || "Primește alerte în timp real pe desktop."}
+                            {t("common:browser_notifications_desc")}
                           </p>
                         </div>
                         <Switch 
