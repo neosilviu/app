@@ -33,9 +33,15 @@ if (!canRun) {
   process.exit(0);
 }
 
+const hasWrangler = (() => {
+  try { return spawnSync('wrangler', ['--version'], { encoding: 'utf8' }).status === 0; } catch { return false; }
+})();
+
 const hasNpx = (() => {
   try { return spawnSync('npx', ['--version'], { encoding: 'utf8' }).status === 0; } catch { return false; }
 })();
+
+const runWrangler = (args, opts) => hasWrangler ? spawn('wrangler', args, opts) : spawn('npx', ['wrangler', ...args], opts);
 
 // Prefer static Pages dev on Windows (avoids known esbuild/wrk async assertion on Win).
 // Allow opt-in override via DEV_WRANGLER_FORCE_PROXY to force proxy-mode on Windows.
@@ -45,16 +51,16 @@ const preferStaticOnWin = isWin && !forceProxy;
 if (isWin && forceProxy) console.info('[dev-wrangler] DEV_WRANGLER_FORCE_PROXY=true — forcing proxy-mode on Windows (opt-in).');
 if (preferStaticOnWin) {
   console.info('[dev-wrangler] Running Pages static dev on Windows (proxy-mode disabled to avoid bundler issues).');
-  if (!hasNpx) {
-    console.info('[dev-wrangler] `npx` not available — skipping Pages static fallback. To enable proxy/static Pages dev, ensure `npx` is in PATH or set CLOUDFLARE_API_TOKEN and use `wrangler` directly.');
+  if (!hasNpx && !hasWrangler) {
+    console.info('[dev-wrangler] `wrangler`/`npx` not available — skipping Pages static fallback. To enable proxy/static Pages dev, install `wrangler` or ensure `npx` is in PATH, or set CLOUDFLARE_API_TOKEN.');
     process.exit(0);
   }
-  const fallback = spawn('npx', ['wrangler', 'pages', 'dev', './build/client'], { stdio: 'inherit' });
+  const fallback = runWrangler(['pages', 'dev', './build/client'], { stdio: 'inherit' });
   fallback.on('exit', fc => process.exit(fc ?? 0));
   fallback.on('error', err => { console.error('[dev-wrangler] Static fallback failed:', err); process.exit(1); });
 } else {
   console.info('[dev-wrangler] Attempting `wrangler pages dev --proxy 5173` (will fallback to static build on failure).');
-  let proxyCmd = spawn('npx', ['wrangler', 'pages', 'dev', '--proxy', '5173'], { stdio: 'inherit' });
+  let proxyCmd = runWrangler(['pages', 'dev', '--proxy', '5173'], { stdio: 'inherit' });
 
 proxyCmd.on('exit', (code) => {
   if (code === 0) return process.exit(0);
@@ -76,7 +82,7 @@ proxyCmd.on('exit', (code) => {
       return process.exit(0);
     }
 
-    const fallback = spawn('npx', ['wrangler', 'pages', 'dev', './build/client'], { stdio: 'inherit' });
+    const fallback = runWrangler(['pages', 'dev', './build/client'], { stdio: 'inherit' });
     fallback.on('exit', fc => process.exit(fc ?? 0));
     fallback.on('error', err => { console.error('[dev-wrangler] Fallback failed:', err); process.exit(1); });
   } catch (err) {
