@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "axios": "^1.6.7",
-    "concurrently": "^8.2.2",
+    "concurrently": "^9.2.1",
     "dotenv": "^16.4.5",
     "hono": "^4.11.9",
     "hono-cli": "^3.0.0",
