@@ -622,7 +622,7 @@ export class SocketManager {
         if (typeof callback !== 'function') return;
         try {
           const db = DatabaseDriver.getInstance();
-          const logs = await db.query('SELECT * FROM "changelog" ORDER BY createdAt DESC');
+          const logs = await db.query('SELECT * FROM "changelog" ORDER BY createdAt DESC LIMIT 500');
           
           // Group by module/version for UI (mapping to expectations)
           const grouped: Record<string, any[]> = {};

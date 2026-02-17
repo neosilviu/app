@@ -3,25 +3,44 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "node .dev/scripts/launcher.js dev",
+    "dev:cleanup": "npx kill-port 5173 8788 || true",
+    "predev:frontend": "npx kill-port 5173 || true",
+    "predev:hono": "npx kill-port 8788 || true",
+    "dev": "npm run dev:cleanup && concurrently \"npm run dev:frontend\" \"npm run dev:wrangler --prefix frontend\" \"npm run dev:hono\"",
+    "dev:hono": "npx tsx frontend/app/hono-dev.ts",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:backend": "npm run dev --prefix backend-v2",
+    "start:hono": "node dist-hono/frontend/app/hono-dev.js",
     "prod:start": "npm run prod --prefix backend-v2",
     "prod:stop": "pm2 stop studio-backend-v2",
     "prod:logs": "pm2 logs studio-backend-v2",
     "prod:status": "pm2 status",
-    "build": "node .dev/scripts/fixer.js && npm run build --prefix frontend",
+    "build": "node .dev/scripts/fixer.js && npm run build:registry && npm run build --prefix frontend",
+    "build:registry": "ts-node scripts/compile-entities-to-json.ts",
     "fix": "node .dev/scripts/fixer.js",
     "deploy": "node .dev/scripts/fixer.js && npm run doctor -- --skip-agent && npm run deploy --prefix frontend",
     "db:migrate:local": "npm run db:migrate:local --prefix frontend",
     "db:migrate:remote": "npm run db:migrate:remote --prefix frontend",
     "typecheck": "npm run typecheck --prefix frontend",
     "doctor": "node .dev/scripts/doctor.js",
+    "doctor:auth": "node scripts/doctor-auth.js",
     "clean": "node scripts/nuke-dev-state.js",
     "check-d1": "node scripts/check-d1-superadmin.js",
-    "infra:setup": "node scripts/setup-db.mjs studio-db ../frontend/wrangler.production.toml"
+    "infra:setup": "node scripts/setup-db.mjs studio-db ../frontend/wrangler.production.toml",
+    "test:v3": "vitest run core/entities"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.9",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "axios": "^1.6.7",
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.4.5",
+    "hono": "^4.11.9",
+    "hono-cli": "^3.0.0",
+    "ts-node": "^10.9.0",
+    "tsx": "^3.14.0",
+    "vitest": "^1.2.0"
   }
-
 }

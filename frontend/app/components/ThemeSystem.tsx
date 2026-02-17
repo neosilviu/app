@@ -349,10 +349,10 @@ export function ThemeEditor({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 </div>
 
                 <div className="pt-4 border-t border-gray-100 dark:border-slate-800">
-                  <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 font-bold">{renderString({ ro: 'Efecte Sidebar', en: 'Sidebar Effects' }, lang)}</h3>
+                  <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 font-bold">{t('settings:sidebar_effects')}</h3>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase">{renderString({ ro: 'Efect Sticlă', en: 'Glass Effect' }, lang)}</label>
+                      <label className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase">{t('settings:glass_effect')}</label>
                       <button 
                         onClick={() => setTheme({...theme, sidebarGlass: !theme.sidebarGlass})}
                         className={`w-8 h-4 rounded-full transition-colors relative ${theme.sidebarGlass ? 'bg-blue-600' : 'bg-gray-200 dark:bg-slate-700'}`}
@@ -391,8 +391,8 @@ export function ThemeEditor({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 <div className="pt-4 border-t border-gray-100 dark:border-slate-800 text-black">
                   <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4 font-bold">{t('settings:scrollbar')}</h3>
                   <div className="grid grid-cols-1 gap-4">
-                    <ColorInput label={renderString({ ro: 'Glisor', en: 'Thumb' }, lang)} value={theme.scrollbarThumb || ''} onChange={v => setTheme({...theme, scrollbarThumb: v})} />
-                    <ColorInput label={renderString({ ro: 'Cale', en: 'Track' }, lang)} value={theme.scrollbarTrack || ''} onChange={v => setTheme({...theme, scrollbarTrack: v})} />
+                    <ColorInput label={t('settings:thumb')} value={theme.scrollbarThumb || ''} onChange={v => setTheme({...theme, scrollbarThumb: v})} />
+                    <ColorInput label={t('settings:track')} value={theme.scrollbarTrack || ''} onChange={v => setTheme({...theme, scrollbarTrack: v})} />
                   </div>
                 </div>
               </div>
@@ -418,13 +418,13 @@ export function ThemeEditor({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               <div className="space-y-8 h-full flex flex-col">
                 <div>
                   <h3 className="text-sm font-bold text-gray-800 dark:text-white mb-1 font-bold">{t('settings:theme_shortcuts')}</h3>
-                  <p className="text-[10px] text-gray-500 mb-4">{renderString({ ro: 'Aceste scurtături folosesc tasta CTRL + tasta definită.', en: 'These shortcuts use the CTRL key + the defined key.' }, lang)}</p>
+                  <p className="text-[10px] text-gray-500 mb-4">{t('settings:shortcuts_desc')}</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {(theme.shortcuts || uiConfig.shortcuts || []).length === 0 ? (
                       <div className="col-span-full py-20 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-100 dark:border-slate-800 rounded-2xl bg-gray-50/50 dark:bg-slate-950/20">
                           <Keyboard size={40} className="mb-4 opacity-20" />
-                          <p className="text-sm font-medium">{renderString({ ro: 'Nicio scurtătură configurată.', en: 'No shortcuts configured.'}, lang)}</p>
-                          <p className="text-[10px] mt-1">{renderString({ ro: 'Acestea se încarcă din setările globale.', en: 'These are loaded from global settings.' }, lang)}</p>
+                          <p className="text-sm font-medium">{t('settings:no_shortcuts')}</p>
+                          <p className="text-[10px] mt-1">{t('settings:shortcuts_global_notice')}</p>
                       </div>
                     ) : (
                       (theme.shortcuts || uiConfig.shortcuts || []).map((s: any) => (

@@ -1,11 +1,12 @@
 ﻿/**
  * CORE UTILITIES - SSOT Ã®n Frontend
- * Registry injection la bootstrap - ZERO hardcoding
+ * Registry-driven logic - ZERO hardcoding
  */
 
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { IconMap, resolveIcon } from './icons';
+import { getRegistry } from './registry';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -13,14 +14,8 @@ export function cn(...inputs: ClassValue[]) {
 
 export { resolveIcon };
 
-let _registry: any = null;
-
-export function initRegistry(registry: any) {
-  _registry = registry;
-}
-
 export function generateId(prefix = ''): string {
-  // Enterprise Level 8: Standardized UUID v4 for all entities
+  // Enterprise Level 10: Standardized UUID v4 for all entities
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
   }
@@ -30,18 +25,33 @@ export function generateId(prefix = ''): string {
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return '';
   const d = typeof date === 'string' ? new Date(date) : date;
-  const locale = _registry?.LANGUAGE_LOCALE || 'ro-RO';
+  if (isNaN(d.getTime())) return String(date);
+
+  const registry = getRegistry();
+  const defaultLang = registry?.I18N_CONFIG?.defaultLanguage || 'ro';
+  
   if (typeof Intl !== 'undefined') {
-    return new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(d);
+    try {
+      return new Intl.DateTimeFormat(defaultLang, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).format(d);
+    } catch (e) {
+      console.warn("[UTILS] Intl format failed, falling back to toLocaleString", e);
+      return d.toLocaleString();
+    }
   }
   return d.toISOString();
 }
+
+/**
+ * Legacy support for manual injection (to be removed)
+ */
+export function initRegistry(registry: any) {}
 
 export function deepClone<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
@@ -107,11 +117,15 @@ export function debounce<T extends (...args: any[]) => any>(
 /**
  * Extracts a string from an i18n object or returns the string directly.
  * Handles: string | { [lang: string]: string } | null | undefined
- * Enterprise Level 8: Recursive & Bulletproof
+ * Enterprise Level 10: Recursive & Bulletproof
  */
-export function renderString(value: any, lang: string = 'ro'): string {
+export function renderString(value: any, lang?: string): string {
     if (value === null || value === undefined || value === 'undefined') return '';
     
+    const registry = getRegistry();
+    const defaultLang = registry?.I18N_CONFIG?.defaultLanguage || 'en';
+    const activeLang = lang || defaultLang;
+
     // 1. Handle Strings
     if (typeof value === 'string') {
         // Anti-corruption: NEVER return "[object Object]" or "undefined"
@@ -121,7 +135,7 @@ export function renderString(value: any, lang: string = 'ro'): string {
         if (value.startsWith('{') || value.startsWith('[')) {
             try {
                 const parsed = JSON.parse(value);
-                return renderString(parsed, lang);
+                return renderString(parsed, activeLang);
             } catch (e) {
                 return value;
             }
@@ -131,27 +145,27 @@ export function renderString(value: any, lang: string = 'ro'): string {
 
     // 2. Handle Objects
     if (typeof value === 'object') {
-        const baseLang = lang.split('-')[0].toLowerCase();
+        const baseLang = activeLang.split('-')[0].toLowerCase();
 
         // Priority A: Direct language match or base language match
-        if (value[lang] !== undefined) {
-            const val = value[lang];
+        if (value[activeLang] !== undefined) {
+            const val = value[activeLang];
             if (typeof val === 'string') return val;
-            return renderString(val, lang);
+            return renderString(val, activeLang);
         }
         if (value[baseLang] !== undefined) {
             const val = value[baseLang];
             if (typeof val === 'string') return val;
-            return renderString(val, lang);
+            return renderString(val, activeLang);
         }
 
-        // Priority B: Fallback to base system languages
-        const fallbacks = ['ro', 'en'];
+        // Priority B: Fallback to system languages from Registry
+        const fallbacks = registry?.I18N_CONFIG?.languages || ['en'];
         for (const f of fallbacks) {
             if (value[f] !== undefined) {
                 const val = value[f];
                 if (typeof val === 'string') return val;
-                return renderString(val, lang);
+                return renderString(val, activeLang);
             }
         }
 
@@ -180,23 +194,6 @@ export function renderString(value: any, lang: string = 'ro'): string {
     // 3. Fallback for primitives
     const final = String(value);
     return final === '[object Object]' ? '' : final;
-}
-
-/**
- * Safe render for short descriptions/messages used in UI components.
- * Prefer `renderString` for i18n-aware values, but fall back to extracting
- * common identity fields or JSON-stringifying objects to avoid React errors.
- */
-export function safeRender(value: any): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string' || typeof value === 'number') return String(value);
-  if (typeof value === 'object') {
-    if (value.label) return renderString(value.label);
-    if (value.message) return renderString(value.message);
-    if (value.text) return renderString(value.text);
-    try { return JSON.stringify(value); } catch (e) { return renderString(value); }
-  }
-  return renderString(value);
 }
 
 /**
@@ -336,31 +333,34 @@ export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-export function sanitizeFilename(n: string | any): string {
-  return String(n || 'file')
-    .replace(/[<>:"/\\|?*\x00-\x1F]+/g, '_')
-    .trim();
-}
-
-export function getRomanianTime(date: Date = new Date()) {
-  const timezone = _registry?.TIMEZONE || 'Europe/Bucharest';
+/**
+ * Get the current time adjusted to the system's timezone from Registry.
+ */
+export function getSystemTime(date: Date = new Date()) {
+  const registry = getRegistry();
+  const timezone = registry?.timezone || registry?.I18N_CONFIG?.timezone?.default || 'UTC';
+  
   if (typeof Intl !== 'undefined') {
-    const roDateStr = date.toLocaleString('en-US', { timeZone: timezone });
-    const roDate = new Date(roDateStr);
-    return {
-      date: roDate,
-      hours: roDate.getHours(),
-      minutes: roDate.getMinutes(),
-      dayOfWeek: roDate.getDay(),
-      day: roDate.getDate(),
-      month: roDate.getMonth(),
-      year: roDate.getFullYear(),
-    };
+    try {
+      const localeDateStr = date.toLocaleString('en-US', { timeZone: timezone });
+      const localeDate = new Date(localeDateStr);
+      return {
+        date: localeDate,
+        hours: localeDate.getHours(),
+        minutes: localeDate.getMinutes(),
+        dayOfWeek: localeDate.getDay(),
+        day: localeDate.getDate(),
+        month: localeDate.getMonth(),
+        year: localeDate.getFullYear(),
+      };
+    } catch (e) {
+      console.warn(`[UTILS] Invalid timezone ${timezone}, falling back to UTC`, e);
+    }
   }
-  const hours = date.getUTCHours() + 2;
+
   return {
     date,
-    hours: hours % 24,
+    hours: date.getUTCHours(),
     minutes: date.getUTCMinutes(),
     dayOfWeek: date.getUTCDay(),
     day: date.getUTCDate(),
@@ -369,21 +369,59 @@ export function getRomanianTime(date: Date = new Date()) {
   };
 }
 
+/**
+ * Deeply parse JSON strings within an object hierarchy.
+ */
+export const deepParse = (obj: any): any => {
+  if (typeof obj === 'string' && (obj.startsWith('{') || obj.startsWith('['))) {
+      try {
+          return deepParse(JSON.parse(obj));
+      } catch (e) {
+          return obj; 
+      }
+  }
+  if (!obj || typeof obj !== 'object') return obj;
+  const result = Array.isArray(obj) ? [...obj] : { ...obj };
+  for (const key in result) (result as any)[key] = deepParse((result as any)[key]);
+  return result;
+};
+
+/**
+ * Deeply stringify nested objects into JSON strings within an object.
+ */
+export const deepStringify = (obj: any): any => {
+  if (!obj || typeof obj !== 'object') return obj;
+  const isArr = Array.isArray(obj);
+  const result: any = isArr ? [] : {};
+  
+  for (const [k, v] of Object.entries(obj)) {
+      if (v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+          result[k] = JSON.stringify(v);
+      } else if (Array.isArray(v)) {
+          result[k] = v; 
+      } else {
+          result[k] = v;
+      }
+  }
+  return result;
+};
+
 export function checkIsWorkingHours(date: Date = new Date()): boolean {
-  const roTime = getRomanianTime(date);
-  const hours = _registry?.WORKING_HOURS_DEFAULT || { days: [1, 2, 3, 4, 5], start: 9, end: 18 };
+  const sysTime = getSystemTime(date);
+  const registry = getRegistry();
+  const hours = registry?.CONSTANT?.workingHours || { days: [1, 2, 3, 4, 5], start: 9, end: 18 };
 
-  if (!hours.days.includes(roTime.dayOfWeek)) return false;
+  if (!hours.days.includes(sysTime.dayOfWeek)) return false;
 
-  const holidays = _registry?.ROMANIAN_HOLIDAYS || [];
+  const holidays = registry?.CONSTANT?.holidays || [];
   const isHoliday = holidays.some(
     (h: any) =>
-      (h.m === roTime.month && h.d === roTime.day) ||
-      (h.month === roTime.month && h.day === roTime.day)
+      (h.m === sysTime.month && h.d === sysTime.day) ||
+      (h.month === sysTime.month && h.day === sysTime.day)
   );
   if (isHoliday) return false;
 
-  return roTime.hours >= hours.start && roTime.hours < hours.end;
+  return sysTime.hours >= hours.start && sysTime.hours < hours.end;
 }
 
 /**

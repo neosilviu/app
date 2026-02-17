@@ -1,7 +1,8 @@
-import { AiService, getRegistry, renderString } from './core';
+import { AiService, deepParse, deepStringify, getRegistry, renderString } from './core';
+import { mergeRegistryWithD1 } from './registry-service.server';
 
 /**
- * AI CORE SERVER - Enterprise Level 8
+ * AI CORE SERVER - Enterprise Level 10
  * Separate domain handler for all AI-related operations.
  * 100% Registry-Driven, No Hardcoded Fallbacks.
  */
@@ -24,37 +25,6 @@ const error = (msg: any, status = 400, reason?: string) => {
         error: errorMsg,
         reason: reason || (typeof msg === 'string' ? msg : undefined)
     }, status);
-};
-
-const deepParse = (obj: any): any => {
-    if (typeof obj === 'string' && (obj.startsWith('{') || obj.startsWith('['))) {
-        try {
-            return deepParse(JSON.parse(obj));
-        } catch (e) {
-            return obj; 
-        }
-    }
-    if (!obj || typeof obj !== 'object') return obj;
-    const result = Array.isArray(obj) ? [...obj] : { ...obj };
-    for (const key in result) result[key] = deepParse(result[key]);
-    return result;
-};
-
-const deepStringify = (obj: any): any => {
-    if (!obj || typeof obj !== 'object') return obj;
-    const isArr = Array.isArray(obj);
-    const result: any = isArr ? [] : {};
-    
-    for (const [k, v] of Object.entries(obj)) {
-        if (v && typeof v === 'object' && !Array.isArray(v)) {
-            result[k] = JSON.stringify(v);
-        } else if (Array.isArray(v)) {
-            result[k] = v; 
-        } else {
-            result[k] = v;
-        }
-    }
-    return result;
 };
 
 /**
@@ -110,7 +80,7 @@ export const handleAiRequest = async (ctx: any) => {
         const timestamp = new Date().toISOString();
 
         const updateStore = async (key: string, data: any) => {
-            const existing = await db.query("SELECT id FROM system_setting WHERE key = ?", [key]);
+            const existing = await db.query("SELECT id FROM system_setting WHERE key = ? LIMIT 1", [key]);
             if (existing && existing.length > 0) {
                 await db.update('system_setting', existing[0].id, { 
                     value: JSON.stringify(data), 
@@ -159,7 +129,7 @@ export const handleAiRequest = async (ctx: any) => {
                     const capabilities = ['chat'];
                     if (m.properties?.find((p: any) => p.property_id === 'function_calling')?.value === 'true') capabilities.push('function-calling', 'agentic');
                     
-                    // Level 8: Unified Universal Inference (Deep Logic)
+                    // Enterprise Level 10: Unified Universal Inference (Deep Logic)
                     const lid = id.toLowerCase();
                     const tags = new Set(capabilities);
                     if (lid.includes('vision') || lid.includes('multimodal') || lid.includes('llava')) tags.add('vision');
@@ -217,7 +187,7 @@ export const handleAiRequest = async (ctx: any) => {
                         });
                     }
                     
-                    // Level 8: Unified Universal Inference (Deep Logic)
+                    // Enterprise Level 10: Unified Universal Inference (Deep Logic)
                     const lid = id.toLowerCase();
                     if (lid.includes('vision') || lid.includes('multimodal')) tags.add('vision');
                     if (lid.includes('flash') || lid.includes('mini') || lid.includes('lite')) tags.add('fast');
@@ -259,7 +229,7 @@ export const handleAiRequest = async (ctx: any) => {
                    const id = m.id || m.model_id || m.name;
                    let name = m.name || m.friendly_name || id;
                    
-                   // Level 8: Improved labeling for GitHub/Azure models
+                   // Enterprise Level 10: Improved labeling for GitHub/Azure models
                    if (targetProvider === 'github' || id.startsWith('azureml://')) {
                        const match = id.match(/\/models\/([^/]+)/);
                        if (match) {
@@ -282,7 +252,7 @@ export const handleAiRequest = async (ctx: any) => {
 
                    const contextWindow = (m as any).context_window || (m as any).contextWindow || 4096;
 
-                   // Level 8: Universal Inference & Capability Mapping
+                   // Enterprise Level 10: Universal Inference & Capability Mapping
                    const lid = id.toLowerCase();
                    const rawCaps = (m as any).capabilities;
                    const tags = new Set(['chat']);
@@ -333,7 +303,7 @@ export const handleAiRequest = async (ctx: any) => {
             if (Array.isArray(discovered)) {
                 discovered.forEach((m: any) => {
                     const existing = map.get(m.id);
-                    // Level 8: Smart Merge. Baseline capabilities (Registry) always trump generic 'chat' from Discovery.
+                    // Enterprise Level 10: Model Capability Reconciliation (Registry trumps Discovery)
                     const capabilities = (m.capabilities?.length > 1) ? m.capabilities : (existing?.capabilities || m.capabilities || ['chat']);
                     map.set(m.id, { 
                         ...existing, 
@@ -361,9 +331,9 @@ export const handleAiRequest = async (ctx: any) => {
         const { message, history: providedHistory = [], role, lang = registry.language, context = {}, image, file, fileName, fileType, threadId, contactId } = body || {};
         if (!message) return error("Message required");
 
-        // Level 8 Memory Engine: Resolve contact for history & interaction tracking
-        // 1. Priority: Explicit contactId passed from UI (Level 8 Hybrid)
-        // 2. Fallback: Lookup by current session user (common for internal chat)
+        // Enterprise Level 10 Unified Memory: Identity resolution for contextual continuity
+        // 1. Priority: Explicit contactId passed from UI (Level 10 Master)
+        // 2. Fallback: Precise lookup by session user identity
         let resolvedContactId = contactId;
         
         if (!resolvedContactId || resolvedContactId === 'undefined') {
@@ -373,7 +343,7 @@ export const handleAiRequest = async (ctx: any) => {
             ).then((res: any) => res[0]?.id).catch(() => null);
         }
 
-        // Level 8: Auto-Context Loading (Hybrid Strategy)
+        // Enterprise Level 10: Interaction History Hydration (Sliding Window Strategy)
         let processedHistory = providedHistory;
         if (!processedHistory || processedHistory.length === 0) {
             const lastMessages = await db.query(
@@ -405,7 +375,7 @@ export const handleAiRequest = async (ctx: any) => {
 
         if (personalityInstruction) systemPrompt += "\n\nPersonality: " + personalityInstruction;
         
-        // Level 8 Memory Enhancement: RAG Augmentation (Search memory if context allows)
+        // Enterprise Level 10 Knowledge Injection: Neural RAG Augmentation
         let ragContext = "";
         if (env.AI && env.VECTOR_INDEX && !image && processedHistory.length <= 2) {
             try {
@@ -424,7 +394,7 @@ export const handleAiRequest = async (ctx: any) => {
         try {
             const finalPrompt = ragContext ? `${ragContext}\n\nUser Question: ${promptContext.prompt}` : promptContext.prompt;
             
-            // Priority Model Resolution (Enterprise Level 8)
+            // Priority Model Resolution (Enterprise Level 10 Master)
             // 1. Explicit body.model
             // 2. Specialized chat_model override (D1)
             // 3. Prompt-defined model
@@ -445,7 +415,7 @@ export const handleAiRequest = async (ctx: any) => {
                 fileType
             });
 
-            // Level 8: Multi-Layer Persistence (Interaction + Audit)
+            // Enterprise Level 10: Multi-Layer Distributed Persistence (Interaction Ledger)
             const messageId = crypto.randomUUID();
             const responseId = crypto.randomUUID();
 
@@ -595,7 +565,7 @@ export const handleAiRequest = async (ctx: any) => {
             let processed = 0;
 
             // 1. Sync Articles
-            const articles = await db.query("SELECT id, title, content FROM article WHERE (archived = 0 OR archived IS NULL)");
+            const articles = await db.query("SELECT id, title, content FROM article WHERE (archived = 0 OR archived IS NULL) LIMIT 5000");
             if (articles && articles.length > 0) {
                 const batchSize = 25;
                 for (let i = 0; i < articles.length; i += batchSize) {
@@ -633,36 +603,19 @@ export const handleAiRequest = async (ctx: any) => {
     }
 
     if (op === "architect" || body?.action === "architect") {
-        const { prompt: userPrompt, provider, model } = body || {};
-        const entities = Object.entries(registry.ENTITY_CONFIG || {}).map(([id, cfg]: [any, any]) => ({ id, label: cfg.label }));
-        const promptContext = await ai.getPrompt(db, 'entity_architect', { userPrompt, message: userPrompt, currentEntities: JSON.stringify(entities) });
-
-        try {
-            const response = await ai.chat(promptContext.prompt, [], {
-                systemPrompt: promptContext.systemPrompt,
-                provider: provider || aiConfig.active_provider,
-                model: promptContext.model || model || aiConfig.model,
-                response_mime_type: 'application/json'
-            });
-            const result = (ai as any).engine.extractJson(response);
-            return success(result || { raw: response });
-        } catch (err: any) {
-            return error(`Architect failed: ${err.message}`, 500);
-        }
+        const { AVAILABLE_V3_ENTITIES, discoverEntities } = await import('../../../core/entities/index.ts');
+        await discoverEntities();
+        const ai_prompt = AVAILABLE_V3_ENTITIES.ai_prompt;
+        if (!ai_prompt) return error("ai_prompt entity not found in discovery", 404);
+        return await ai_prompt.actions?.find((a: any) => a.id === 'architect')?.handler({ ...ctx, ai }, body);
     }
 
     if (op === "auto-fill" || body?.action === "auto-fill") {
-        const { entityType, currentData, schema = {} } = body || {};
-        const systemPromptObj = registry.AI_PROMPT.system.find((p: any) => p.id === 'magic_fill');
-        const systemPrompt = systemPromptObj?.content;
-        const userPrompt = `Entity: ${entityType}\nData: ${JSON.stringify(currentData)}\nSchema: ${JSON.stringify(schema)}`;
-
-        try {
-            const response = await ai.chat(userPrompt, [], { systemPrompt, response_mime_type: 'application/json' });
-            return success((ai as any).engine.extractJson(response));
-        } catch (e: any) {
-            return error(`Auto-fill failed: ${e.message}`, 500);
-        }
+        const { AVAILABLE_V3_ENTITIES, discoverEntities } = await import('../../../core/entities/index.ts');
+        await discoverEntities();
+        const ai_prompt = AVAILABLE_V3_ENTITIES.ai_prompt;
+        if (!ai_prompt) return error("ai_prompt entity not found in discovery", 404);
+        return await ai_prompt.actions?.find((a: any) => a.id === 'magic-fill')?.handler({ ...ctx, ai }, body);
     }
 
     if (parts[1] === "prompt") {
@@ -670,14 +623,14 @@ export const handleAiRequest = async (ctx: any) => {
         return success((await db.list("_ai_prompt", { workspaceId })).map(deepParse));
     }
 
-    // --- Enterprise Level 8: AI Inventory Management ---
+    // --- Enterprise Level 10: AI Resource Orchestration & Inventory ---
     if (op === "update-catalog" || body?.action === "update-catalog") {
         const models = body?.models || [];
         if (!Array.isArray(models)) return error("Invalid models format. Expected array.");
 
         try {
             // Load existing overrides
-            const existing = await db.query("SELECT id, value FROM system_setting WHERE key = ?", ['ai_inventory_overrides']);
+            const existing = await db.query("SELECT id, value FROM system_setting WHERE key = ? LIMIT 1", ['ai_inventory_overrides']);
             let overrides: Record<string, any> = {};
             let settingId = crypto.randomUUID();
 
@@ -721,7 +674,7 @@ export const handleAiRequest = async (ctx: any) => {
         }
     }
 
-    // --- Enterprise Level 8: Test Connection ---
+    // --- Enterprise Level 10: Infrastructure Health Verification ---
     if (op === "test-connection" || body?.action === "test-connection") {
         const targetProvider = body?.provider || url.searchParams.get('provider') || aiConfig.active_provider;
         if (!targetProvider) return error("No provider specified for connection test");
@@ -733,7 +686,7 @@ export const handleAiRequest = async (ctx: any) => {
             if (result.success) {
                 return success({ message: "connection_success", details: result.details });
             } else {
-                // Enterprise Level 8: Return 200 with success: false for predictable UI handling
+                // Enterprise Level 10: Predictable Error Protocol (Normalize to 200 with success:false)
                 return json({ success: false, error: result.message || "connection_failed" }, 200);
             }
         } catch (e: any) {
@@ -746,8 +699,8 @@ export const handleAiRequest = async (ctx: any) => {
 };
 
 /**
- * Level 9: Self-Healing Intelligence
- * Analyzes performance logs and applies optimizations automatically.
+ * Enterprise Level 10: Autonomous Self-Healing Infrastructure
+ * Proactively analyzes performance telemetry and implements schema optimizations (D1/D3).
  */
 export async function handleSelfHealing(db: any, registry: any, env: any) {
     console.log("[AI-SERVER] Starting Self-Healing analysis...");
@@ -819,7 +772,7 @@ export async function handleSelfHealing(db: any, registry: any, env: any) {
 }
 
 /**
- * Level 8: Help Content Generation
+ * Enterprise Level 10: Dynamic Help & Documentation Synthesis
  */
 export async function handleHelpRequest(ctx: any) {
     const { url, db, env, selectedLang, registry: ctxRegistry } = ctx;
@@ -834,7 +787,7 @@ export async function handleHelpRequest(ctx: any) {
         }
 
         // Use registry from context if available, else fetch it
-        const registry = ctxRegistry || await getRegistry(db);
+        const registry = ctxRegistry || await mergeRegistryWithD1(db);
         const aiConfig = registry?.AI_CONFIG || {};
         const prompts = registry?.AI_PROMPT?.system || [];
         
@@ -842,7 +795,7 @@ export async function handleHelpRequest(ctx: any) {
         const helpPrompt = prompts.find((p: any) => p.id === 'HELP_GENERATOR');
         const systemPrompt = helpPrompt?.content || "";
         
-        // Priority AI Config resolution for documentation (Enterprise Level 8 Specialized)
+        // Priority AI Config resolution for documentation (Level 10 Global Inheritance)
         const provider = (aiConfig.help_provider && aiConfig.help_provider !== '__inherit__') ? aiConfig.help_provider : aiConfig.default_provider;
         const model = (aiConfig.help_model && aiConfig.help_model !== '__inherit__') ? aiConfig.help_model : aiConfig.model;
         
@@ -872,7 +825,7 @@ Instruction: Follow the structure and style defined in system prompt. Return ONL
         
         let result = (ai as any).engine.extractJson(text);
         
-        // Level 8: Recursive Fallback - If JSON extraction fails, wrap the text in a valid structure
+        // Enterprise Level 10 Resilience: Recursive extraction fallback
         if (!result && text && text.length > 20) {
             console.warn(`[HELP-GEN] JSON extraction failed for ${id}, using raw text fallback.`);
             result = {

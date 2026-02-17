@@ -4,7 +4,7 @@ import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '~/components/ui/card';
 import { IconMap } from '~/lib/icons';
-import { Plus, Trash, Save, Sparkles, Settings as SettingsIcon, Database, Shield, Layout, ChevronRight, Menu as MenuIcon, User, Users, Briefcase, CheckCircle2, PlusCircle, RefreshCw, Activity, Search, Box, Eye, ExternalLink, Layers, ArrowDownUp, HelpCircle, Type, Zap, Trash2, Image as ImageIcon, Cloud, HardDrive, File, DollarSign, Percent, List, Tag, AlignLeft, Clock, Calendar, ToggleRight, Mail, Phone, Music, Palette, Star, FileCode, Code2, MapPin, Calculator, Handshake, Edit3, QrCode, Rocket, ShieldAlert, Bug } from 'lucide-react';
+import { Plus, Trash, Save, Sparkles, Settings as SettingsIcon, Database, Shield, Layout, ChevronRight, Menu as MenuIcon, User, Users, Briefcase, CheckCircle2, PlusCircle, RefreshCw, Activity, Search, Box, Eye, ExternalLink, Layers, ArrowDownUp, HelpCircle, Type, Zap, Trash2, Image as ImageIcon, Cloud, HardDrive, File, DollarSign, Percent, List, Tag, AlignLeft, Clock, Calendar, ToggleRight, Mail, Phone, Music, Palette, Star, FileCode, Code2, MapPin, Calculator, Handshake, Edit3, QrCode, Rocket, ShieldAlert, Bug, Lock } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Badge } from '~/components/ui/badge';
 import { GlassCard } from '~/components/ui/GlassCard';
@@ -42,10 +42,12 @@ import { useTranslation } from 'react-i18next';
 import { AiSettingsPanel } from '~/components/AiSettingsPanel';
 import { RegistrySettingsPanel } from '~/components/RegistrySettingsPanel';
 import { EntityDefinitionsPanel } from '~/components/EntityDefinitionsPanel';
+import { ActionRbacPanel } from '~/components/ActionRbacPanel';
 import { AiArchitectSandbox } from '~/components/AiArchitectSandbox';
 import { EntityDevTools } from '~/components/EntityDevTools';
 import { useAuth } from '~/hooks/useAuth';
 import { useSmartBack } from '~/hooks/useSmartBack';
+import { useActionV3 } from '~/hooks/useActionV3';
 
 const getIconComponent = (name: any) => {
     if (!name || typeof name !== 'string') return Box;
@@ -62,6 +64,7 @@ export default function SuperadminPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const { user, switchWorkspace, hasPageAccess } = useAuth();
     const goBack = useSmartBack();
+    const action = useActionV3('ai_prompt', 'architect');
 
     // Tab Sync Logic
     const currentTab = searchParams.get('tab') || 'ai-architect';
@@ -110,8 +113,7 @@ export default function SuperadminPage() {
         if (!aiPrompt) return;
         setIsAiGenerating(true);
         try {
-            const res = await api.brain.post('ai', {
-                action: 'architect',
+            const res = await action.execute({
                 prompt: aiPrompt,
                 provider: constants.AI_CONFIG?.active_provider,
                 model: constants.AI_CONFIG?.model
@@ -173,7 +175,7 @@ export default function SuperadminPage() {
         try {
             const res = await api.brain.post('entity', { action: 'install', template });
             if (res.success) {
-                toast.success(`Template "${template.name}" installed in Cloud!`);
+                toast.success(`Template "${renderString(template.solutionTitle || template.name, lang)}" installed in Cloud!`);
                 refreshConfig(true);
             } else {
                 throw new Error(res.error);
@@ -182,7 +184,7 @@ export default function SuperadminPage() {
             console.warn("[SUPERADMIN] Cloud install failed, trying Local Socket fallback...");
             socket.emit('entity:builder:install-template', { template }, (response: any) => {
                 if (response.success) {
-                    toast.success(`Template "${template.name}" installed locally!`);
+                    toast.success(`Template "${renderString(template.solutionTitle || template.name, lang)}" installed locally!`);
                     refreshConfig(true);
                 } else {
                     toast.error(`Failed: ${response.error}`);
@@ -205,7 +207,7 @@ export default function SuperadminPage() {
         <div className="flex flex-col gap-6 p-4 md:p-8 animate-in fade-in duration-500 text-slate-900 dark:text-white">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
                 <div className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/50 p-2 backdrop-blur-xl dark:bg-slate-900/50">
-                    <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 bg-transparent">
+                    <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-2 bg-transparent">
                         <TabsTrigger value="ai-architect" className="rounded-xl font-black italic uppercase text-[10px] tracking-widest data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
                             <Sparkles className="mr-2 h-4 w-4" />
                             {renderString(t('superadmin:tabs.ai_architect'), lang)}
@@ -225,6 +227,10 @@ export default function SuperadminPage() {
                         <TabsTrigger value="builder" className="rounded-xl font-black italic uppercase text-[10px] tracking-widest data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
                             <Box className="mr-2 h-4 w-4" />
                             Entity Builder
+                        </TabsTrigger>
+                        <TabsTrigger value="rbac" className="rounded-xl font-black italic uppercase text-[10px] tracking-widest data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
+                            <Lock className="mr-2 h-4 w-4" />
+                            Permissions
                         </TabsTrigger>
                         <TabsTrigger value="inspector" className="rounded-xl font-black italic uppercase text-[10px] tracking-widest data-[state=active]:bg-rose-600 data-[state=active]:text-white">
                             <Bug className="mr-2 h-4 w-4" />
@@ -269,7 +275,7 @@ export default function SuperadminPage() {
                                             </div>
                                             <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest">{template.entity?.length || 0} Entities</Badge>
                                         </div>
-                                        <CardTitle className="text-lg font-black italic uppercase tracking-tighter">{renderString(template.name, lang)}</CardTitle>
+                                        <CardTitle className="text-lg font-black italic uppercase tracking-tighter">{renderString(template.solutionTitle || template.name, lang)}</CardTitle>
                                         <CardDescription className="line-clamp-2 text-xs font-medium">{renderString(template.description, lang)}</CardDescription>
                                     </CardHeader>
                                     <CardContent className="flex-1">
@@ -349,6 +355,10 @@ export default function SuperadminPage() {
 
                 <TabsContent value="builder" className="mt-0 focus-visible:outline-none">
                     <EntityDefinitionsPanel />
+                </TabsContent>
+
+                <TabsContent value="rbac" className="mt-0 focus-visible:outline-none">
+                    <ActionRbacPanel />
                 </TabsContent>
             </Tabs>
         </div>

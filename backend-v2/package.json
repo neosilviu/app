@@ -1,5 +1,6 @@
 {
   "name": "studio-backend-v2",
+  "type": "commonjs",
   "version": "2.0.0",
   "description": "Enterprise Level 8 Registry-Driven Backend",
   "main": "dist/index.js",
@@ -33,7 +34,8 @@
     "systeminformation": "^5.30.00",
     "uuid": "^13.0.0",
     "whatsapp-web.js": "https://github.com/pedroslopez/whatsapp-web.js",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

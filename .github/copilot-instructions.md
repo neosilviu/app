@@ -1,77 +1,57 @@
-# Studio App v2 - Instrucțiuni de Codare AI
+# Studio App v3 - Instrucțiuni de Codare AI (Modular Agent Architecture)
 
-Instrucțiuni experte pentru dezvoltarea în workspace-ul Studio App v2 (Enterprise Level 8).
+Instrucțiuni experte pentru dezvoltarea în workspace-ul Studio App v3 (Enterprise Level 10).
 
-## 🚨 **REGULA DE AUR: 100% REGISTRY-DRIVEN & NO-CODE ENGINE**
+## 🚨 **REGULA DE AUR: 100% REGISTRY-DRIVEN & MODULAR DNA**
 
 ### **REGULA ABSOLUTĂ - Nicio valoare hardcodată în cod!**
 - ❌ **INTERZIS**: String-uri, URL-uri, modele, prompt-uri, parametri hardcodați în cod.
 - ❌ **INTERZIS**: **Failsafe / Fallback strings** - Nu folosi al doilea argument în `t('key', 'default')`. Dacă cheia lipsește din registry, trebuie să rămână goală.
-- ❌ **INTERZIS**: **Silent Failsafes (Code)** - Nu folosi `try-catch` blocks care returnează seturi de date goale (`[]`, `null`) pentru a ascunde erori de DB sau Auth. Erorile trebuie sa fie vizibile!
-- ❌ **INTERZIS**: Definirea tabelelor SQL manual în cod sau în migrări statice pentru entitățile din Builder.
-- ✅ **OBLIGATORIU**: Totul vine din Registry (D1 + `registry-baseline.ts`).
-- ✅ **OBLIGATORIU**: **Singular Naming Convention** - Toate entitățile, tabelele și cheile din Registry trebuie să fie la **SINGULAR** (ex: `contact`, nu `contacts`).
-- ❌ **INTERZIS**: **Automatic Pluralization** - Nu folosi logici de pluralizare automată. Dacă un tabel în DB este la plural, acesta trebuie redenumit la singular pentru a respecta Registry-ul, NU invers.
-- ✅ **OBLIGATORIU**: SSOT ("Single Source of Truth") este baza de date D1 (tabelul `system_settings`) sincronizată cu `registry-baseline.ts`.
-- ✅ **OBLIGATORIU**: Metaprogramare + template engine pentru prompt-uri.
-- ✅ **OBLIGATORIU**: Folosire `useConfig()` (Frontend) și `getRegistry()` (Worker) pentru a încărca config.
+- ❌ **INTERZIS**: Definirea tabelelor SQL manual pentru entități. Schema se generează din Zod.
+- ✅ **OBLIGATORIU**: **Modular Architecture (v3)** - Fiecare entitate nouă (sau modul opțional precum `deal` sau `task`) trebuie să locuiască în propriul fișier sub `app/core/entities/*.ts`.
+- ✅ **OBLIGATORIU**: **Level 10 Master Model** - Toate entitățile moștenesc automat `BaseSchema` (id, workspaceId, createdAt, updatedAt, deletedAt). Nu le redifini manual!
+- ✅ **OBLIGATORIU**: **Zod-First Metadata** - Folosește `.describe('ui:width=6;label=Nume')` pe schemele Zod pentru a injecta metadate de UI.
+- ✅ **OBLIGATORIU**: **Singular Naming Convention** - Toate entitățile și tabelele la **SINGULAR**.
+- ✅ **OBLIGATORIU**: **Unified Action Protocol** - Orice logică de business complexă trebuie definită ca un obiect de tip `Action` cu input/handler clar.
 
 ### **STYLING & FORMATTING**
 - ✅ **OBLIGATORIU**: Importurile din `lucide-react` trebuie să fie întotdeauna pe **O SINGURĂ LINIE**, indiferent de numărul de iconițe importate. 
   - ❌ **INTERZIS**: Multi-line imports pentru iconițe.
   - ✅ **EXEMPLU**: `import { Activity, Shield, Settings, Zap, History, User } from 'lucide-react';`
 
-**Impact:** Orice schimbare de config/prompt/entitate se face DOAR din interfața SuperAdmin, fără redeploy!
+**Impact:** Arhitectura modulară permite agenților AI să opereze pe contexte mici și sigure.
 
 ---
 
-## 🏗️ Arhitectură: "Worker-First" (Cloud Native)
-Studio App v2 folosește o arhitectură orientată către Cloudflare:
-- **The Brain (Cloudflare Workers)**: `frontend/app/brain.server.ts` este inima aplicației. Gestionează logica de business, securitatea și **Metaprogramarea Database**.
-- **The Database (Cloudflare D1)**: Stocare relațională globală. Logica `syncEntityTable` din Worker gestionează DDL-ul (CREATE/ALTER) automat pe baza definițiilor din Registry.
-- **Enterprise Level 8 Core**:
-  - **Undo Engine**: Fiecare modificare semnificativă stochează `snapshot_before`/`snapshot_after` în `audit_log`.
-  - **Polymorphic Attachments**: Tabelul `entity_attachments` permite legarea fișierelor de ORICE entitate (Contacts, Deals, etc.) folosind `entity_type` și `entity_id`.
-  - **Flow State Machine**: Suport nativ pentru statusuri complexe și tranziții în entități.
-- **Local Agent (Node.js)**: Server Socket.IO pentru funcții hardware (WhatsApp, Printing) și proxy local.
+## 🏗️ Arhitectură: "Modular & Agent-First"
+Studio App v3 este optimizat pentru operare autonomă de către agenți AI:
+- **Core Entities (`app/core/entities/`)**: Module independente care definesc datele, validările și acțiunile locale.
+- **The Brain (Cloudflare Workers)**: `frontend/app/brain.server.ts`. Inima logică care orchestrează normalizarea entităților v3 și sincronizarea lor cu D1.
+- **D1 Self-Healing**: Baza de date se sincronizează automat cu definițiile din cod. Nu scrie fișiere de migrare SQL decât pentru logică de date complexă.
+- **Enterprise Level 10 Core**:
+  - **Structural Inheritance**: `normalizeEntity` injectează automat trăsăturile de sistem (Soft Delete, Audit, Workspace Isolation).
+  - **Action Protocol**: Agenții AI apelează acțiuni predefinite (ex: `send-wa`) în loc să modifice handlere de rute.
+  - **Module Service**: Permite activarea/dezactivarea la runtime a feature-urilor (ex: modulul de CRM/Vânzări).
 
-## 🎨 Frontend: No-Code UI (React Router v7)
-- **Dynamic Entities**: Interfața este generată complet din definițiile din `Registry`.
-- **Entity Builder**: UI în SuperAdmin care permite adăugarea de câmpuri, relații și validări fără a scrie cod.
-- **Styling**: Tailwind CSS v4 + Shadcn/UI (shadcn-v4).
-- **Core Hooks**: 
-  - `useConfig()`: Acces la toate entitățile, constantele și setările sistemului.
-  - `useSocket()`: Comunicare în timp real cu Local Agent.
+## 🎨 Frontend: Schema-Driven UI
+- **Dynamic Forms/Lists**: UI-ul se randează automat pe baza specificațiilor din schema Zod a entității.
+- **V3 Bridge**: Entitățile noi sunt translate automat în formatul legacy pentru compatibilitate prin `getV3EntitiesAsLegacy()`.
 
-## ⚙️ Logic Layer (The Brain)
-- **Metaprogramare**: Când un utilizator adaugă un câmp nou în Builder, Worker-ul execută `ALTER TABLE` pe D1 automat.
-- **Security Logic**: RBAC-ul este definit în Registry și verificat în `brain.server.ts`.
-- **AI Integration**: Prompt-urile și modelele sunt injectate din Registry. NU scrie prompt-uri în cod.
-
-## 🤖 **AI SYSTEM - 100% Registry-Driven**
-- **Prompts**: Stocate în registry sub `aiPrompts`. Folosește `{{ variable }}` pentru substituție.
-- **Models**: Configurate în `system_settings` (Cloudflare AI, Gemini, Claude).
-- **Settings UI**: SuperAdmin controlează tot: temperatură, model, format output, prompt-uri sistem.
-
-## 🌐 **I18n & Traduceri (Hybrid Strategy)**
-- ✅ **Registry (`const I18N`)**: Exclusiv pentru "Cuvintele de Control" și arhitectură.
-    - Navigare, Sidebar, Butoane Core (`Save`, `Search`), Roluri, Entități.
-    - Avantaj: Hot-editing instant din SuperAdmin, performanță O(1).
-- ✅ **JSON Locales (`public/locales`)**: Doar pentru conținut static și informativ.
-    - Placeholder-e lungi, tutoriale, mesaje de ajutor module specific (ex: erori hardware WhatsApp).
-- ✅ **Regula de Aur**: Folosește obiecte `{ ro: '...', en: '...' }` pentru traducerile dinamice și utilitarul `renderString(val, lang)` pentru afișare.
+## 🤖 **AI SYSTEM - 100% Discoverable**
+- **Semantic Metadata**: Folosește `.describe()` în Zod pentru a explica agenților AI la ce servește fiecare câmp sau acțiune.
+- **Actions**: Definește `input` strict pe acțiuni pentru ca AI-ul să știe exact ce parametri să trimită.
 
 ## 🔒 Reguli de Securitate & Operare
-- **D1 First**: În producție, D1 este singura bază de date de încredere.
-- **Audit**: Înregistrează întotdeauna acțiunile de scriere în `audit_log` cu snapshot-uri pentru feature-ul de Undo.
-- **Sync**: `syncEntityTable` trebuie să fie idempotent. Nu șterge coloane fără backup/confirmare explicită.
-- **Excludere Folder OLD si backend**: 🚨 **INTERZISĂ** orice modificare, ștergere sau citire în afara contextului de backup a folderului `OLD`. Acest folder este rezervat exclusiv pentru copii de siguranță manuale și fișiere istorice ale utilizatorului. Nu muta fișiere acolo și nu rula scripturi în interiorul lui.
+- **Workspace Isolation**: Câmpul `workspaceId` este obligatoriu și gestionat automat de Master Model (Level 10).
+- **Audit Logging**: Automatizat prin `features: ['audit']`. Nu scrie logica de audit manual în servicii.
+- **Excludere Folder OLD**: 🚨 **INTERZISĂ** orice modificare sau citire din folderul `OLD`.
 
-## 🔍 Key Files
-- `frontend/app/brain.server.ts`: Central logic hub (The Brain).
-- `registry-baseline.ts`: Specificația de bază a sistemului (The DNA).
-- `frontend/app/lib/registry.ts`: Loader-ul pentru setări și constante.
-- `frontend/app/components/EntityDefinitionsPanel.tsx`: UI-ul de administrare a bazei de date.
+## 🔍 Key Files & Folders
+- `app/core/entities/`: Definițiile modulare de business (v3).
+- `app/core/schemas/base.ts`: Fișierul DNA care conține `BaseSchema`.
+- `app/core/services/`: Logica de business stateless (Audit, Module, Integration).
+- `registry-baseline.ts`: Registry-ul hibrid care integrează modulele v3 și setările globale.
+- `frontend/app/brain.server.ts`: Orchestratorul principal.
 
 ## 🛠️ D1 Production Ops (Maintenance)
 Folosește aceste comenzi pentru mentenanța bazei de date de producție (`studio-db`):

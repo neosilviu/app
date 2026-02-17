@@ -5,6 +5,11 @@
 import { resolveCollection, getPrimaryKey } from "./data";
 import { dbQueue } from "./db-queue.server";
 
+declare global {
+  var columnCache: Map<string, string[]>;
+  var pendingColumnFetches: Map<string, Promise<string[]>>;
+}
+
 async function executeWithRetry<T>(fn: () => Promise<T>, retry?: number, sqlForLog?: string, dbForCheckpoint?: any): Promise<T> {
   const isProd = typeof process === 'undefined' || process.env.NODE_ENV === 'production';
   const totalRetries = retry !== undefined ? retry : (isProd ? 3 : 15);
@@ -26,12 +31,12 @@ async function executeWithRetry<T>(fn: () => Promise<T>, retry?: number, sqlForL
     const shouldRetry = msg.includes('locked') || msg.includes('busy') || msg.includes('database is locked') || msg.includes('database is busy') || msg.includes('timeout');
     
      if (currentRetry > 0 && shouldRetry) {
-        const attempt = totalRetries - currentRetry;
-        const delay = isProd ? 500 : Math.min(3000, 200 + (attempt * 400) + (Math.random() * 300));
+        const attempt = totalRetries - currentRetry + 1;
+        const delay = isProd ? 500 : Math.min(3000, 150 + (attempt * 300) + (Math.random() * 200));
 
         // More verbose tracing for debugging lock sources
         const sqlSnippet = sqlForLog ? ` [SQL: ${sqlForLog.substring(0, 100)}...]` : "";
-        console.warn(`[D1][retry] ${new Date().toISOString()} - Database busy or locked, retrying in ${Math.round(delay)}ms... (${currentRetry} attempts left)${sqlSnippet}`);
+        console.warn(`[D1][RETRY][Attempt ${attempt}/${totalRetries}] ${new Date().toISOString()} - Database busy/locked, waiting ${Math.round(delay)}ms...${sqlSnippet}`);
 
         await new Promise(res => setTimeout(res, delay));
         return executeWithRetry(fn, currentRetry - 1, sqlForLog, dbForCheckpoint);
@@ -49,8 +54,10 @@ export function wrapD1Binding(db: any): any {
     if (!db || db.__isWrapped) return db;
 
     const wrapStatement = (stmt: any, sql: string) => {
-        // Level 8: Improved write detection
-        const isWrite = /^(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|REPLACE|PRAGMA)/i.test(sql.trim());
+        // Enterprise Level 10: Precision Syntax Analysis for Transactional Isolation
+        const upperSql = sql.trim().toUpperCase();
+        const isWrite = /^(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|REPLACE)/i.test(upperSql) || 
+                       (upperSql.startsWith('PRAGMA') && !upperSql.includes('TABLE_INFO') && !upperSql.includes('INDEX_LIST'));
         
         return new Proxy(stmt, {
             get(target, prop, receiver) {
@@ -113,8 +120,11 @@ export function wrapD1Binding(db: any): any {
     });
 }
 
-const columnCache = new Map<string, string[]>();
-const pendingColumnFetches = new Map<string, Promise<string[]>>();
+if (!globalThis.columnCache) globalThis.columnCache = new Map<string, string[]>();
+if (!globalThis.pendingColumnFetches) globalThis.pendingColumnFetches = new Map<string, Promise<string[]>>();
+
+const columnCache: Map<string, string[]> = globalThis.columnCache;
+const pendingColumnFetches: Map<string, Promise<string[]>> = globalThis.pendingColumnFetches;
 
 export function clearColumnCache(table?: string) {
     if (table) {
@@ -215,8 +225,12 @@ export class D1Driver {
         
         const duration = Date.now() - queryStart;
         
-        // Level 9: Performance Instrumented Logging
-        if (duration > 30 && !sql.includes('system_performance_log') && !sql.includes('PRAGMA')) {
+        // Enterprise Level 10: Performance Instrumentation & Telemetry
+        // Skip frequent performance logging in dev/Windows to avoid lock contention
+        const isWinDev = typeof process !== 'undefined' && (process.env.NODE_ENV === 'development' || process.platform === 'win32');
+        const shouldLogPerf = duration > 100 || (typeof process !== 'undefined' && process.env.DEBUG_SQL === 'true');
+        
+        if (shouldLogPerf && !isWinDev && !sql.includes('system_performance_log') && !sql.includes('PRAGMA')) {
             this._logPerformance(sql, duration).catch(() => {});
         }
 
@@ -309,7 +323,7 @@ export class D1Driver {
     try {
       if (queries.length === 0) return [];
       
-      // Level 8: Support both raw statements and {sql, params} objects
+      // Enterprise Level 10 Protocol: Unified support for prepared statements and direct SQL objects
       const isRawBatch = queries[0] && (typeof queries[0].bind === 'function' || queries[0].__rawStmt);
 
       // Queue batch operations during startup to prevent lock contention
@@ -374,13 +388,13 @@ export class D1Driver {
     const resolved = this.resolve(table);
     if (columnCache.has(resolved)) return columnCache.get(resolved)!;
     
-    // Level 8 Optimization: Coalesce parallel schema requests
+    // Enterprise Level 10 Optimization: Request Coalescing (Schema Discovery)
     if (pendingColumnFetches.has(resolved)) return pendingColumnFetches.get(resolved)!;
 
     const fetchPromise = (async () => {
         try {
             const result = await this.query(`PRAGMA table_info("${resolved}")`);
-            // Store original casing for SQL builders
+            // Enterprise Level 10: Metadata Synchronization (Original Casing Preservation)
             const columns = result.map((r: any) => r.name) || [];
             if (columns.length > 0) {
                 columnCache.set(resolved, columns);
@@ -426,7 +440,7 @@ export class D1Driver {
         if (filters.offset && !options.offset) options.offset = filters.offset;
         if (filters.sortBy && !options.sortBy) options.sortBy = filters.sortBy;
     } else if (filters.where && typeof filters.where === 'object') {
-        // Support MongoDB-style where object (Level 8 Polymorphic Support)
+        // Enterprise Level 10: Polymorphic Query DSL (Enhanced D1 Adapter)
         Object.entries(filters.where).forEach(([key, value]) => {
             if (value === undefined) return;
             const colIdx = validColsLower.indexOf(key.toLowerCase());
@@ -462,7 +476,7 @@ export class D1Driver {
             if (value === null) {
                 sql += ` AND "${colName}" IS NULL`;
             } else if (value && typeof value === 'object' && (value as any).$in && Array.isArray((value as any).$in)) {
-                // Enterprise Level 8: Support $in operator (used for hydration)
+                // Enterprise Level 10: Native Hydration Acceleration ($in operator)
                 const inPlaceholder = ((value as any).$in as any[]).map(() => '?').join(', ');
                 sql += ` AND "${colName}" IN (${inPlaceholder})`;
                 params.push(...(value as any).$in);
@@ -484,13 +498,15 @@ export class D1Driver {
       }
     }
 
-    if (options.limit) {
-      sql += ` LIMIT ? OFFSET ?`;
-      params.push(options.limit, options.offset || 0);
-    }
+    // Enterprise Level 11: Default LIMIT to prevent full table scans
+    // Using 1000 as default to allow sufficient data to display without full table scan
+    const finalLimit = options.limit || 1000;
+    sql += ` LIMIT ? OFFSET ?`;
+    params.push(finalLimit, options.offset || 0);
 
     try {
         const results = await this.query(sql, params);
+        console.log(`[D1.list] Query: ${sql.substring(0, 120)}... | Params: ${JSON.stringify(params.slice(0, 3))} | Results: ${results?.length || 0}`);
         return results || [];
     } catch (e: any) {
         if (e.message && e.message.includes('no such table')) {
@@ -515,6 +531,24 @@ export class D1Driver {
         const colName = validColumns.length > 0 ? validColumns[colIdx] : key;
         filteredData[colName] = val;
     });
+
+    // Enterprise Level 10 Domain Isolation: Inject system-workspace context for core entities
+    const wsIdx = validColsLower.indexOf('workspaceid');
+    if (wsIdx !== -1 && !filteredData['workspaceid'] && !filteredData['workspaceId']) {
+        const wsColName = validColumns[wsIdx];
+        filteredData[wsColName] = 'system';
+    }
+
+    // Enterprise Level 11: Timestamp & Audit Safety
+    const now = new Date().toISOString();
+    const createdIdx = validColsLower.indexOf('createdat');
+    if (createdIdx !== -1 && !filteredData['createdat'] && !filteredData['createdAt']) {
+        filteredData[validColumns[createdIdx]] = now;
+    }
+    const updatedIdx = validColsLower.indexOf('updatedat');
+    if (updatedIdx !== -1 && !filteredData['updatedat'] && !filteredData['updatedAt']) {
+        filteredData[validColumns[updatedIdx]] = now;
+    }
 
     const keys = Object.keys(filteredData);
     if (keys.length === 0) return data;
@@ -553,6 +587,12 @@ export class D1Driver {
         
         filteredData[colName] = val;
     });
+
+    // Enterprise Level 11: Auto-refresh updatedAt
+    const updatedIdx = validColsLower.indexOf('updatedat');
+    if (updatedIdx !== -1) {
+        filteredData[validColumns[updatedIdx]] = new Date().toISOString();
+    }
 
     const keys = Object.keys(filteredData);
     if (keys.length === 0) return data;
@@ -601,7 +641,7 @@ export class D1Driver {
   }
 
   /**
-   * Level 9: Private logging to bypass instrumentation recursion
+   * Enterprise Level 10: Private Telemetry Logging (recursion-shielded)
    */
   private async _logPerformance(sql: string, durationMs: number) {
     try {

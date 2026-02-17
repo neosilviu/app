@@ -3,10 +3,8 @@
  * NO HARDCODING - 100% baseline-driven
  */
 
-import { initRegistry as initData } from './data';
-import { initRegistry as initCoreUtils } from './utils';
-import { initRegistry as initBusinessLogic } from './logic';
-import { initRegistry as initServices } from './services';
+import * as v3Module from '../../../core/entities';
+import { REGISTRY_BASELINE as STATIC_BASELINE } from '../../../registry-baseline';
 
 let _registry: any = null;
 
@@ -14,27 +12,46 @@ let _registry: any = null;
  * Baseline source of truth
  */
 export async function loadBaseline() {
-    // Import TypeScript registry baseline explicitly with .ts to avoid .js conflicts
-    const module = await import('../../../registry-baseline.ts');
-    return module.REGISTRY_BASELINE || module.default || module;
+    // Enterprise Level 10: Fast-path for server-side usage
+    if (typeof globalThis !== 'undefined' && (globalThis as any).REGISTRY_BASELINE) {
+        const rb = (globalThis as any).REGISTRY_BASELINE;
+        if (rb.ENTITY_CONFIG && Object.keys(rb.ENTITY_CONFIG).length > 5) {
+            return rb;
+        }
+    }
+    
+    const baseline = STATIC_BASELINE;
+
+    // Enterprise Level 10: Merge V3 Modular Entities into Baseline
+    try {
+        if ((v3Module as any).discoverEntities) {
+            await (v3Module as any).discoverEntities();
+        }
+        const v3Legacy = (v3Module as any).getV3EntitiesAsLegacy ? (v3Module as any).getV3EntitiesAsLegacy() : {};
+        if (Object.keys(v3Legacy).length > 0) {
+            if (!baseline.ENTITY_CONFIG) baseline.ENTITY_CONFIG = {};
+            for (const [id, entity] of Object.entries(v3Legacy)) {
+                baseline.ENTITY_CONFIG[id] = {
+                    ... (entity as any),
+                    isV3: true 
+                };
+            }
+        }
+    } catch (e) {
+        console.warn("[REGISTRY] Failed to merge V3 entities:", e);
+    }
+
+    return baseline;
 }
 
 /**
- * Initialize all core modules with baseline
+ * Initialize registry
  */
-export async function initializeRegistry() {
+export async function initializeRegistry(providedBaseline?: any) {
     try {
-        const baseline = await loadBaseline();
-        // Level 8: Deep clone to prevent accidental pollution of the SSOT
+        const baseline = providedBaseline || await loadBaseline();
         _registry = JSON.parse(JSON.stringify(baseline));
-
-        // Inject into modules
-        initData(baseline);
-        initCoreUtils(baseline);
-        initBusinessLogic(baseline);
-        initServices(baseline);
-
-        return baseline;
+        return _registry;
     } catch (error) {
         console.error('[REGISTRY] Bootstrap FAILED:', error);
         throw error;
@@ -42,124 +59,28 @@ export async function initializeRegistry() {
 }
 
 /**
- * Get current registry instance
- * Supports optional DB merging for server-side usage
+ * Get current registry instance (SSOT)
  */
-export async function getRegistry(db?: any) {
-    if (!_registry) await initializeRegistry();
-    
-    // If DB is provided, we merge with SYSTEM_SETTING (Enterprise Level 8)
-    if (db) {
-        const dbSettings = await db.list('SYSTEM_SETTING');
-        const settingsObj: any = {};
-        
-        // Legacy Mappings (Enterprise Level 8 Standard)
-        const nsMap: Record<string, string> = _registry?.CONSTANT?.namespaceMapping || {};
-
-        dbSettings.forEach((s: any) => {
-            try {
-                const rawNs = (s.namespace || 'general').toLowerCase();
-                const targetNs = nsMap[rawNs] || s.namespace;
-                const key = s.key;
-                
-                if (!settingsObj[targetNs]) settingsObj[targetNs] = {};
-                
-                let value = s.value;
-                if (s.dataType === 'json' || (typeof s.value === 'string' && (s.value.startsWith('{') || s.value.startsWith('[')))) {
-                    try { value = JSON.parse(s.value); } catch { value = s.value; }
-                } else if (s.dataType === 'boolean' || s.value === 'true' || s.value === 'false') {
-                    value = s.value === 'true' || s.value === '1' || s.value === 1;
-                } else if (s.dataType === 'number') {
-                    value = Number(s.value);
-                } else if (typeof s.value === 'string') {
-                    // Auto-detection for simple types
-                    if (s.value === 'true') value = true;
-                    else if (s.value === 'false') value = false;
-                    else if (!isNaN(Number(s.value)) && s.value.trim() !== '') value = Number(s.value);
-                }
-                
-                settingsObj[targetNs][key] = value;
-            } catch (e) {
-                console.error(`[REGISTRY] Failed to parse setting ${s.key}:`, e);
-                // We keep going for other settings, but we log the error
-            }
-        });
-        
-        const merged = { 
-            ..._registry,
-            ENTITY_CONFIG: { ...(_registry.ENTITY_CONFIG || {}) }
-        };
-        for (const [ns, values] of Object.entries(settingsObj)) {
-            if (ns === 'GENERAL') {
-                Object.assign(merged, values as object);
-            } else if (typeof values === 'object' && values !== null && !Array.isArray(values)) {
-                merged[ns] = { ...(merged[ns] || {}), ...values };
-            } else {
-                merged[ns] = values;
-            }
-        }
-
-        // Level 8: AI Model Inventory Logic (SSOT Aggregation)
-        if (merged.SYSTEM_SETTING?.ai_inventory_overrides && merged.AI_CONFIG) {
-            const overrides = merged.SYSTEM_SETTING.ai_inventory_overrides;
-            let registryModels = Array.isArray(merged.AI_CONFIG.models) ? [...merged.AI_CONFIG.models] : [];
-
-            // 1. Process and filter existing registry models
-            registryModels = registryModels.map((m: any) => {
-                const ov = overrides[m.id];
-                if (ov) {
-                    return { 
-                        ...m, 
-                        enabled: ov.enabled !== undefined ? ov.enabled : true,
-                        name: ov.internalName || m.name 
-                    };
-                }
-                return { ...m, enabled: true };
-            });
-
-            // 2. Inject Dynamic Models that were enabled (Promotion)
-            Object.entries(overrides).forEach(([id, ov]: [string, any]) => {
-                if (ov.enabled && !registryModels.find(m => m.id === id)) {
-                    registryModels.push({
-                        id,
-                        name: ov.internalName || id,
-                        provider: ov.provider || 'unknown',
-                        capabilities: ov.capabilities || ['chat'],
-                        enabled: true,
-                        type: 'dynamic-promoted'
-                    });
-                }
-            });
-
-            // Update the registry with the final inventory
-            merged.AI_CONFIG.models = registryModels;
-        }
-
-        return merged;
+export function getRegistry() {
+    if (!_registry) {
+        // Synchronous fallback for basic structure
+        return STATIC_BASELINE;
     }
-    
-    return { 
-        ..._registry,
-        ENTITY_CONFIG: { ...(_registry.ENTITY_CONFIG || {}) }
-    };
+    return _registry;
 }
 
 /**
- * Clear registry cache to force reload
+ * Clear registry cache
  */
 export function clearRegistryCache() {
     _registry = null;
 }
 
 /**
- * RBAC Helper
+ * Legacy support for manual injection (to be removed)
  */
-export function hasPermission(role: string, requiredPermission: string): boolean {
-    if (!_registry) return false;
-    const roleDef = (_registry.SYSTEM_ROLE || {})[role];
-    if (!roleDef) return false;
-    const permissions = roleDef.permission || [];
-    return permissions.includes('*') || permissions.includes(requiredPermission);
+export function initRegistry(registry: any) {
+    _registry = registry;
 }
 
 /**

@@ -209,7 +209,7 @@ export const AITab: React.FC<AITabProps> = ({
 
     return (
         <div className="space-y-6">
-            {/* HIGH-DENSITY STATS - Level 8 Header (Synapse Identity) */}
+            {/* HIGH-DENSITY STATS - Enterprise Level 10 Header (Synapse Identity) */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card className="p-4 rounded-[2.5rem] bg-indigo-500 text-white border-none shadow-xl shadow-indigo-100 flex items-center justify-between">
                     <div className="space-y-1">

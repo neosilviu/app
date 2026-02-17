@@ -28,15 +28,56 @@ import { formatForRender } from '~/lib/utils';
 
 export const handle = {
   // In the handle export, we can add a i18n key with namespaces our route needs
-  i18n: ["common", "settings", "changelog", "audit"],
+  i18n: ["common", "settings", "changelog", "audit", "entity", "entities"],
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
   const locale = await i18next.getLocale(request);
-  return { locale };
+
+  // Server-side fast-path: fetch auth session during SSR so the client can hydrate
+  // immediately and avoid a long "Checking session..." cold start.
+  let initialSession: any = null;
+  try {
+    const sessionUrl = new URL('/api/auth/get-session', request.url).toString();
+    const res = await fetch(sessionUrl, { headers: request.headers });
+    if (res && res.ok) {
+      const payload = await res.json().catch(() => null);
+      initialSession = (payload as any)?.data ?? null;
+    }
+  } catch (err: any) {
+    // Rate-limit noisy SSR warnings: warn once per process, debug afterwards
+    const _errMsg = (err as any)?.message ?? String(err);
+    if (!(globalThis as any).__ROOT_LOADER_SESSION_WARNED) {
+      console.warn('[ROOT-LOADER] get-session failed during SSR:', _errMsg);
+      (globalThis as any).__ROOT_LOADER_SESSION_WARNED = true;
+    } else {
+      console.debug('[ROOT-LOADER] get-session failed during SSR (suppressed):', _errMsg);
+    }
+
+    // Dev fallback: if Worker proxy isn't available during dev, try local Hono API on 8788
+    try {
+      const isDev = (process.env.NODE_ENV === 'development') || request.url.includes('localhost');
+      if (isDev) {
+        const fallbackUrl = new URL('http://127.0.0.1:8788/api/auth/get-session').toString();
+        const fbRes = await fetch(fallbackUrl, { headers: request.headers });
+        if (fbRes && fbRes.ok) {
+          const fbPayload = await fbRes.json().catch(() => null);
+          initialSession = (fbPayload as any)?.data ?? initialSession;
+          if (initialSession) console.debug('[ROOT-LOADER] SSR: recovered session from local Hono fallback');
+        }
+      }
+    } catch (fbErr) {
+      // Silent - fallback best-effort only
+      const _fbMsg = (fbErr as any)?.message ?? String(fbErr);
+      console.debug('[ROOT-LOADER] local Hono fallback failed:', _fbMsg);
+    }
+  }
+
+  return { locale, initialSession };
 }
 
 export const links: Route.LinksFunction = () => [
+  { rel: "icon", href: "/favicon.png" },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",
@@ -55,14 +96,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   if (typeof window !== 'undefined') {
-    // Enterprise Level 8: Force diagnostic logging for the user
-    // console.log(`[STUDIO-V2] App Layout Mounting. Path: ${location.pathname} Locale: ${data?.locale}`);
+    // Enterprise Level 10: Force diagnostic logging for the user
+    // console.log(`[STUDIO-V3] App Layout Mounting. Path: ${location.pathname} Locale: ${data?.locale}`);
     if (location.pathname.startsWith('/api')) {
       console.error(`[ROOT-ROUTING-ERROR] API request fell through to Root Layout! Path: ${location.pathname}`);
     }
   }
 
-  // Enterprise Level 8: Global Error Reporting (Uncaught)
+  // Enterprise Level 10: Global Error Reporting (Uncaught)
   useEffect(() => {
     if (typeof window === 'undefined' || (typeof process !== 'undefined' && process.env.NODE_ENV === 'development')) return;
 
@@ -139,6 +180,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </SystemProvider>
           </AuthProvider>
         </ConfigProvider>
+        {/* Server-injected initial session (fast-path for auth) */}
+        {typeof window === 'undefined' && (data as any)?.initialSession && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `window.__INITIAL_SESSION__ = ${JSON.stringify((data as any).initialSession)};`
+            }}
+          />
+        )}
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -178,7 +227,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   // Ensure details is a safe string for rendering (use shared helper)
   const detailsStr = formatForRender(details, lang);
 
-  // Enterprise Level 8: Production Error Reporting
+  // Enterprise Level 10: Production Error Reporting
   useEffect(() => {
     const reportError = async () => {
       try {

@@ -8,5 +8,8 @@
   "d1_sync": "Cloudflare D1 synchronization is active.",
   "manage_todos": "Manage Tasks",
   "last_update": "Last update",
-  "all_done": "All tasks completed"
+  "all_done": "All tasks completed",
+  "workers_title": "Worker Status",
+  "no_workers": "No active workers",
+  "worker_updated": "Worker status updated!"
 }

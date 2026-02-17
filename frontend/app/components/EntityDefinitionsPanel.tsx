@@ -39,7 +39,7 @@ export function EntityDefinitionsPanel() {
     const [garbageDialog, setGarbageDialog] = useState<{ open: boolean, orphans: any[] }>({ open: false, orphans: [] });
     const [cleaning, setCleaning] = useState(false);
 
-    // Self-Healing (Level 9) state
+    // Enterprise Level 10: Self-Healing state
     const [healing, setHealing] = useState(false);
     const [healingDialog, setHealingDialog] = useState<{ open: boolean, report: any[] | null }>({ open: false, report: null });
 
@@ -65,7 +65,7 @@ export function EntityDefinitionsPanel() {
             const res = await api.brain.get('entity');
             
             if (res.success && Array.isArray(res.data)) {
-                // Enterprise Level 8: Normalize everything through the central lens
+                // Enterprise Level 10: Unified Normalization Lens
                 const normalized = res.data.map((e: any) => normalizeEntity(e));
                 setEntities(normalized);
             } else if (configEntities) {
@@ -86,7 +86,7 @@ export function EntityDefinitionsPanel() {
     useEffect(() => { fetchEntities(); }, [configEntities]);
 
     const handleSave = async () => {
-        if (!editingEntity.name) return toast.error("Înregistrarea are nevoie de un Nume de Sistem (Identifier)");
+        if (!editingEntity.name) return toast.error(t('superadmin:entity_builder.errors.id_required'));
         
         setSaving(true);
         console.log("[ENTITY-BUILDER] Saving entity:", editingEntity.name, editingEntity);
@@ -98,7 +98,7 @@ export function EntityDefinitionsPanel() {
             console.log("[ENTITY-BUILDER] Save result:", res);
 
             if (res.success || res.status === 'synced' || (Array.isArray(res) && res.length > 0)) {
-                toast.success(`Entitatea ${editingEntity.name} a fost salvată cu succes!`);
+                toast.success(t('superadmin:entity_builder.save_success_with_name', { name: editingEntity.name }));
                 setEditingEntity(null);
                 await fetchEntities();
                 
@@ -109,20 +109,20 @@ export function EntityDefinitionsPanel() {
                 // Broadcast change via Socket (Real-time sync for other tabs/users)
                 socket.emit('config:updated', { source: 'entity-builder', entity: editingEntity.name });
             } else {
-                const errorMsg = res.error || res.message || "Eroare necunoscută la salvare";
+                const errorMsg = res.error || res.message || t('superadmin:entity_builder.errors.unknown_error_save');
                 toast.error(`Eșec: ${errorMsg}`);
                 console.error("[ENTITY-BUILDER] Save failed:", res);
             }
         } catch (e: any) {
             console.error("[ENTITY-BUILDER] Critical save error:", e);
-            toast.error(`Eroare critică: ${e.message}`);
+            toast.error(t('superadmin:entity_builder.errors.critical_error', { error: e.message }));
         } finally {
             setSaving(false);
         }
     };
 
     const handleDryRun = async () => {
-        if (!editingEntity.name) return toast.error("Înregistrarea are nevoie de un Nume de Sistem (Identifier)");
+        if (!editingEntity.name) return toast.error(t('superadmin:entity_builder.errors.id_required'));
         
         setDryRunning(true);
         try {
@@ -134,11 +134,11 @@ export function EntityDefinitionsPanel() {
             if (res.success && res.data?.dryRun) {
                 setDryRunDialog({ open: true, results: res.data.dryRun });
             } else {
-                toast.error(res.error || "Eroare la simulare");
+                toast.error(res.error || t('superadmin:entity_builder.errors.dry_run_error'));
             }
         } catch (e: any) {
             console.error("[ENTITY-BUILDER] Dry run error:", e);
-            toast.error(`Eroare critică: ${e.message}`);
+            toast.error(t('superadmin:entity_builder.errors.critical_error', { error: e.message }));
         } finally {
             setDryRunning(false);
         }
@@ -151,10 +151,10 @@ export function EntityDefinitionsPanel() {
             if (res.success && res.data?.orphans) {
                 setGarbageDialog({ open: true, orphans: res.data.orphans });
             } else {
-                toast.error("Nu am putut analiza tabelele orfane");
+                toast.error(t('superadmin:entity_builder.errors.orphan_analysis_failed'));
             }
         } catch (e: any) {
-            toast.error(`Eroare: ${e.message}`);
+            toast.error(t('superadmin:entity_builder.errors.critical_error', { error: e.message }));
         } finally {
             setCleaning(false);
         }
@@ -179,7 +179,7 @@ export function EntityDefinitionsPanel() {
     };
 
     const deleteOrphanTable = async (tableName: string) => {
-        if (!confirm(`Ești sigur că vrei să ștergi tabelul "${tableName}"? Datele vor fi pierdute definitiv.`)) return;
+        if (!confirm(t('superadmin:entity_builder.errors.confirm_drop_table', { name: tableName }))) return;
         
         try {
             // Re-using delete endpoint but purely for DB drop
@@ -193,10 +193,10 @@ export function EntityDefinitionsPanel() {
             });
             
             if (res.success) {
-                toast.success(`Tabelul ${tableName} a fost șters.`);
+                toast.success(t('superadmin:entity_builder.errors.table_deleted', { name: tableName }));
                 setGarbageDialog(prev => ({ ...prev, orphans: prev.orphans.filter(o => o.name !== tableName) }));
             } else {
-                toast.error(res.error || "Ștergere eșuată");
+                toast.error(res.error || t('superadmin:entity_builder.errors.unknown_error_save'));
             }
         } catch (e: any) {
             toast.error(e.message);
@@ -363,7 +363,7 @@ export function EntityDefinitionsPanel() {
                     disabled={healing}
                 >
                     {healing ? <Zap className="mr-2 h-3 w-3 animate-spin text-primary" /> : <Sparkles className="mr-2 h-3 w-3 text-primary" />}
-                    Level 9 AI
+                    Enterprise Level 10 AI
                 </Button>
             </div>
 
@@ -579,7 +579,7 @@ export function EntityDefinitionsPanel() {
                                                     newLabel = { ro: lang === 'ro' ? val : currentLabel, en: lang === 'en' ? val : currentLabel };
                                                 }
 
-                                                // Level 8 Optimization: Auto-Pluralize if plural is missing or seems auto-generated
+                                                // Enterprise Level 10: Auto-Pluralize if plural is missing or seems auto-generated
                                                 const currentPluralStr = renderString(currentPlural, lang);
                                                 if (!currentPlural || currentPluralStr === '' || currentPluralStr === renderString(currentLabel, lang)) {
                                                     const autoPlural = val + (lang === 'ro' ? 'e' : 's');
@@ -652,7 +652,7 @@ export function EntityDefinitionsPanel() {
                                             value={editingEntity.icon}
                                             onChange={(val) => {
                                                 setEditingEntity({ ...editingEntity, icon: val });
-                                                // Enterprise Level 8: Propagate icon to Menu if not explicitly overridden
+                                                // Enterprise Level 10: Propagate icon to Menu if not explicitly overridden
                                                 if (!editingEntity.menuConfig?.icon) {
                                                     // This ensures immediate visual feedback in sidebar previews if any
                                                 }
@@ -868,7 +868,7 @@ export function EntityDefinitionsPanel() {
                                                                 const fieldName = editingEntity.fields[idx].name;
                                                                 const fields = editingEntity.fields.filter((_: any, i: number) => i !== idx);
 
-                                                                // Enterprise Level 8: Cascade delete from all references
+                                                                // Enterprise Level 10: Cascade delete from all references
                                                                 const uiConfig = { ...editingEntity.uiConfig };
                                                                 
                                                                 // 1. Remove from List Columns
@@ -918,7 +918,7 @@ export function EntityDefinitionsPanel() {
                                                                         const newName = e.target.value.toLowerCase().replace(/\s+/g, '_');
                                                                         fields[idx].name = newName;
 
-                                                                        // Enterprise Level 8: Cascade rename to all references
+                                                                        // Enterprise Level 10: Cascade rename to all references
                                                                         const uiConfig = { ...editingEntity.uiConfig };
                                                                         
                                                                         // 1. Update List Columns
@@ -1825,7 +1825,7 @@ export function EntityDefinitionsPanel() {
                                                             </select>
                                                         </div>
 
-                                                        {/* FIELD QUICK ACTIONS (Enterprise Level 8) */}
+                                                        {/* FIELD QUICK ACTIONS (Enterprise Level 10) */}
                                                         <div className="space-y-1.5 pt-2 border-t border-slate-50">
                                                             <Label className="text-[9px] font-black uppercase text-slate-400">Field Quick Actions</Label>
                                                             <div className="flex flex-wrap gap-2">
@@ -1906,7 +1906,7 @@ export function EntityDefinitionsPanel() {
                                                 <div className="space-y-1">
                                                     {Array.isArray(editingEntity.fields) && editingEntity.fields.map((field: any) => {
                                                         const currentCols = editingEntity.uiConfig?.list?.columns || [];
-                                                        // Enterprise Level 8: Improved checkbox logic. 
+                                                        // Enterprise Level 10: Improved checkbox logic. 
                                                         // If columns list is empty, we assume default baseline visibility (non-hidden)
                                                         const isChecked = currentCols.includes(field.name) || (currentCols.length === 0 && !field.hidden && !field.hideInTable);
                                                         
@@ -3006,14 +3006,14 @@ export function EntityDefinitionsPanel() {
                 </DialogContent>
             </Dialog>
 
-            {/* Level 9 Self-Healing Dialog */}
+            {/* Enterprise Level 10 Self-Healing Dialog */}
             <Dialog open={healingDialog.open} onOpenChange={(open) => setHealingDialog({ ...healingDialog, open })}>
                 <DialogContent className="max-w-2xl rounded-3xl border-slate-200/50">
                     <DialogHeader>
                         <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
                             <Sparkles className="h-6 w-6 text-primary" />
                         </div>
-                        <DialogTitle className="text-xl font-black italic uppercase tracking-tighter">Autonomous Intelligence Hub (Level 9)</DialogTitle>
+                        <DialogTitle className="text-xl font-black italic uppercase tracking-tighter">Autonomous Intelligence Hub (Enterprise Level 10)</DialogTitle>
                         <DialogDescription className="text-xs font-medium text-slate-500">
                             Analiza de performanță în timp real și optimizarea automată a bazei de date.
                         </DialogDescription>

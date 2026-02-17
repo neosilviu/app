@@ -7,8 +7,13 @@ import i18n from "./i18n";
 import i18next from "./i18next.server";
 import { I18nextProvider, initReactI18next } from "react-i18next";
 import Backend from "i18next-http-backend";
-import { initializeRegistry } from "./lib/core";
+import { REGISTRY_BASELINE as STATIC_REGISTRY } from "../../registry-baseline";
+import { initRegistry } from './lib/registry';
 import { EventEmitter } from "node:events";
+
+// CRITICAL: Initialize registry with static baseline BEFORE any async work
+// This prevents NAV Proxy errors on first request
+initRegistry(STATIC_REGISTRY);
 
 // Force increase EventEmitter limit in dev to stop MaxListenersExceededWarning
 if (process.env.NODE_ENV === "development") {
@@ -16,37 +21,10 @@ if (process.env.NODE_ENV === "development") {
   EventEmitter.defaultMaxListeners = 100;
 }
 
-// Initialize registry ONCE at startup, cache it globally
-let registryPromise: Promise<any> | null = null;
-let registryCache: any = null;
-
-function ensureRegistry() {
-  if (registryCache) return Promise.resolve(registryCache);
-  
-  if (!registryPromise) {
-    registryPromise = (async () => {
-      let retries = 0;
-      const maxRetries = 3;
-      while (retries < maxRetries) {
-        try {
-          const result = await initializeRegistry();
-          registryCache = result;  // Cache globally after first success
-          return result;
-        } catch (e: any) {
-          if (e.message?.includes('module runner has been closed')) {
-            retries++;
-            if (retries < maxRetries) {
-              console.warn(`[ENTRY-REGISTRY] Module runner closed, retrying (${retries}/${maxRetries})...`);
-              await new Promise(resolve => setTimeout(resolve, 300));
-              continue;
-            }
-          }
-          throw e;
-        }
-      }
-    })();
-  }
-  return registryPromise;
+// TURBO MODE: Return static registry immediately for SSR boot
+// D1 merge happens async in background handlers
+function getRegistry() {
+  return Promise.resolve(STATIC_REGISTRY);
 }
 
 export default async function handleRequest(
@@ -78,8 +56,8 @@ export default async function handleRequest(
     return response;
   }
   
-  // Ensure registry is ready before any rendering
-  await ensureRegistry();
+  // Ensure registry is ready before any rendering (instant with static baseline)
+  const REGISTRY_BASELINE = await getRegistry();
   
   const userAgent = request.headers.get("user-agent");
   const isBotRequest = userAgent ? isbot(userAgent) : false;
@@ -99,7 +77,6 @@ export default async function handleRequest(
     });
 
   // Inject registry resources into server instance
-  const REGISTRY_BASELINE = await initializeRegistry();
   if (REGISTRY_BASELINE.I18N) {
     Object.entries(REGISTRY_BASELINE.I18N).forEach(([lang, data]: [string, any]) => {
       if (!data || typeof data !== 'object') return;

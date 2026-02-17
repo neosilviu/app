@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, useParams, useOutletContext } from 'react-router';
-import { Save, ArrowLeft, Trash2, Shield, Clock, History, CheckCircle2, X, Plus, PlusCircle, ExternalLink, RefreshCw, MessageCircle, Phone, Send, Brain, Sparkles, Mail, HelpCircle, RotateCcw, Archive } from 'lucide-react';
+import { Save, ArrowLeft, Trash2, Shield, Clock, History, CheckCircle2, X, Plus, PlusCircle, ExternalLink, RefreshCw, MessageCircle, Phone, Send, Brain, Sparkles, Mail, HelpCircle, RotateCcw, Archive, Play, Settings2, MoreHorizontal, Zap } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
@@ -12,9 +12,17 @@ import { DatePicker } from '~/components/ui/DatePicker';
 import { FileUploader } from '~/components/ui/file-uploader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { Dialog, DialogContent, DialogHeader,  DialogTitle, DialogDescription, DialogFooter } from '~/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { GlassCard } from '~/components/ui/GlassCard';
 import { api, cn, socket, renderString, getLocalizedPath, resolveIcon } from '~/lib/core';
-import { normalizeEntity, normalizeFormData, formatFormValue } from '~/lib/entity-engine';
+import { normalizeEntity, normalizeFormData, formatFormValue, resolveRecordDisplay } from '~/lib/entity-engine';
 import { useTranslation } from 'react-i18next';
 import { useConfig } from '~/hooks/useConfig';
 import { useAuth } from '~/hooks/useAuth';
@@ -25,7 +33,7 @@ import { WorkflowWidget } from '~/components/entity/WorkflowWidget';
 import { ContactInteractions } from '~/components/entity/ContactInteractions';
 import { SubtaskManager } from '~/components/entity/SubtaskManager';
 
-// Global cache for workspace member fetches (Enterprise Level 8)
+// Global cache for workspace member fetches (Enterprise Level 10)
 const globalWorkspaceMemberCache = new Map<string, number>();
 
 interface DynamicEntityDetailProps {
@@ -43,13 +51,13 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const { user, hasPermission, loading: authLoading } = useAuth();
     const { setDynamicTitle } = useOutletContext<any>() || {};
     
-    // Enterprise Level 8: Ensure we have the latest entity definition on mount/when entityId changes
+    // Enterprise Level 10: Ensure we have the latest entity definition on mount/when entityId changes
     // This fixes the issue where new fields added to an entity don't appear in the edit form
     useEffect(() => {
         refreshConfig(true);
     }, [entityId, refreshConfig]);
     
-    // Normalize entity configuration (Enterprise Level 8)
+    // Normalize entity configuration (Enterprise Level 10)
     const normalizedConfig = React.useMemo(() => normalizeEntity(config), [config]);
     const fieldsList = normalizedConfig.fields;
     const finalConfig = normalizedConfig; // Use normalized version for UI logic
@@ -57,7 +65,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const isNew = recordId === 'new';
     const features = finalConfig.features || {};
     
-    // RBAC Permissions (Level 8)
+    // RBAC Permissions (Level 10)
     const canCreate = hasPermission(`${entityId}:create`) || hasPermission(`${entityId}:*`) || hasPermission('workspace:manage');
     const canUpdate = hasPermission(`${entityId}:update`) || hasPermission(`${entityId}:*`) || hasPermission('workspace:manage');
     const canDelete = hasPermission(`${entityId}:delete`) || hasPermission(`${entityId}:*`) || hasPermission('workspace:manage');
@@ -72,12 +80,58 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const [formData, setFormData] = useState<any>({});
     const [loading, setLoading] = useState(!isNew);
     const [saving, setSaving] = useState(false);
+    const [isActionRunning, setIsActionRunning] = useState<string | null>(null);
     const [isAiExtracting, setIsAiExtracting] = useState(false);
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const [extractionSource, setExtractionSource] = useState<'text' | 'file' | 'inbox'>('text');
     const [extractionText, setExtractionText] = useState('');
 
-    // Enterprise Level 8: Sync record name to Page Title
+    // Level 10: Dynamic Actions discovery and permission check
+    const availableActions = React.useMemo(() => {
+        if (isNew) return []; // Actions usually apply to existing records
+        const acts = Array.isArray(finalConfig.actions) ? finalConfig.actions : [];
+        return acts.filter((action: any) => {
+            // Check specific action permission or general manage permission
+            return hasPermission(`${entityId}:action:${action.id}`) || 
+                   hasPermission(`${entityId}:*`) || 
+                   hasPermission('workspace:manage');
+        });
+    }, [finalConfig.actions, entityId, isNew, hasPermission]);
+
+    const handleAction = async (actionId: string) => {
+        if (isActionRunning || isNew) return;
+        
+        const action = availableActions.find((a: any) => a.id === actionId);
+        if (!action) return;
+
+        setIsActionRunning(actionId);
+        toast.info(renderString(action.label, lang) + "...");
+
+        try {
+            const res = await api.brain.action(entityId, actionId, { id: recordId });
+            
+            if (res.success) {
+                toast.success(res.message || renderString({
+                    ro: "Acțiune finalizată cu succes!",
+                    en: "Action completed successfully!"
+                }, lang));
+                
+                // If the action returned data, we might want to refresh or update the record
+                if (res.refresh || res.data) {
+                    // Logic to refresh or merge data if needed
+                    window.location.reload(); // Simple approach for now
+                }
+            } else {
+                toast.error(res.error || "Action failed");
+            }
+        } catch (e: any) {
+            toast.error(getErrorMessage(e, "Action failed"));
+        } finally {
+            setIsActionRunning(null);
+        }
+    };
+
+    // Enterprise Level 10: Sync record name to Page Title
     useEffect(() => {
         if (!setDynamicTitle) return;
 
@@ -112,7 +166,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             });
 
             if (res.success && res.data) {
-                // Enterprise Level 8: Recursive merge to preserve existing data but overwrite with AI findings
+                // Enterprise Level 10: Recursive merge to preserve existing data but overwrite with AI findings
                 // Normalize AI data to prevent object rendering errors
                 const normalizedAiData = normalizeFormData(res.data, fieldsList);
                 setFormData((prev: any) => ({ ...prev, ...normalizedAiData }));
@@ -131,7 +185,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         }
     };
 
-    // Default values for new records (Enterprise Level 8)
+    // Default values for new records (Enterprise Level 10)
     useEffect(() => {
         if (isNew && fieldsList.length > 0) {
             const defaults: any = {};
@@ -173,16 +227,16 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         const cacheKey = `${entityId}-${recordId}`;
         if (fetchedRelatedDataRef.current === cacheKey) return; // Already fetched
         
-        // Enterprise Level 8: Include 'tag' and 'multi-select' in related data fetching
+        // Enterprise Level 10: Include 'tag' and 'multi-select' in related data fetching
         const relations = fieldsList.filter((f: any) => 
             (f.type === 'entity_relation' || f.type === 'relation' || f.type === 'relation-many' || f.type === 'tag' || f.type === 'multi-select' || f.relation) && 
             (f.relationEntity || f.relation?.target || (f.type === 'tag' ? 'tag' : null))
         );
 
-        // Enterprise Level 8: Always pass current workspace as context if not global
+        // Enterprise Level 10: Always pass current workspace as context if not global
         const workspaceBus = user?.workspaceId || 'system';
 
-        // Enterprise Level 8: Fetch Relations and Children in independent parallel tracks
+        // Enterprise Level 10: Fetch Relations and Children in independent parallel tracks
         // This prevents waterfalls and makes the UI feel much faster
         
         // 1. Relations Track
@@ -238,7 +292,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                     const res = await api.brain.get(endpoint);
                     if (res.success && res.data && res.data.length > 0) {
                         const normalizedChildren = res.data.map((item: any) => normalizeFormData(item, normalized.fields));
-                        // Enterprise Level 8: Type casting to ensure computed property safety
+                        // Enterprise Level 10: Type casting to ensure computed property safety
                         const childKey = String(normalized.name || normalized.id);
                         setChildrenRecords(prev => ({ ...prev, [childKey]: normalizedChildren }));
                         setChildDefinitions(prev => ({ ...prev, [childKey]: normalized }));
@@ -260,7 +314,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         if (!field.ui?.showIf && !field.showIf) return true;
         const condition = field.ui?.showIf || field.showIf;
         
-        // Handle Level 8 Object Condition
+        // Handle Enterprise Level 10 Object Condition
         if (typeof condition === 'object' && condition.field) {
             const { field: k, operator, value: v } = condition;
             const currentVal = formData[k];
@@ -326,16 +380,26 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 newErrors[f.name] = f.patternMessage || f.validation?.message || "Format invalid (Regex)";
             }
 
+            // Email Check
+            if (f.isEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(val))) {
+                newErrors[f.name] = "Adresa de email invalidă";
+            }
+
+            // URL Check
+            if (f.isUrl && !/^https?:\/\/.+/.test(String(val))) {
+                newErrors[f.name] = "URL invalid (trebuie să înceapă cu http:// sau https://)";
+            }
+
             // Min/Max Length or Value
             const min = f.validation?.min !== undefined ? f.validation.min : f.min;
             const max = f.validation?.max !== undefined ? f.validation.max : f.max;
 
             if (f.type === 'number' || f.type === 'currency') {
-                if (min !== undefined && Number(val) < min) newErrors[f.name] = `Valoarea minimă este ${min}`;
-                if (max !== undefined && Number(val) > max) newErrors[f.name] = `Valoarea maximă este ${max}`;
+                if (min !== undefined && Number(val) < min) newErrors[f.name] = t('validation:min_value', { count: min });
+                if (max !== undefined && Number(val) > max) newErrors[f.name] = t('validation:max_value', { count: max });
             } else if (typeof val === 'string') {
-                if (min !== undefined && val.length < min) newErrors[f.name] = `Lungimea minimă este ${min} caractere`;
-                if (max !== undefined && val.length > max) newErrors[f.name] = `Lungimea maximă este ${max} caractere`;
+                if (min !== undefined && val.length < min) newErrors[f.name] = t('validation:min_length', { count: min });
+                if (max !== undefined && val.length > max) newErrors[f.name] = t('validation:max_length', { count: max });
             }
         });
         setErrors(newErrors);
@@ -351,7 +415,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             return;
         }
 
-        // Enterprise Level 8: Concurrent Fetching
+        // Enterprise Level 10: Concurrent Fetching
         // We fetch the main record AND audit logs in parallel
         // We do NOT await fetchRelatedData here to avoid blocking the UI flow (feel-fast optimization)
         setLoading(true);
@@ -372,11 +436,11 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 // Set audit logs if available
                 if (auditRes.success) setAuditLogs(auditRes.data || []);
             } else {
-                toast.error("Record not found");
+                toast.error(t('common:record_not_found'));
                 navigate('..');
             }
         } catch (e: any) {
-            toast.error("Error loading record: " + e.message);
+            toast.error(t('common:error_loading_record') + ": " + e.message);
         } finally {
             setLoading(false);
         }
@@ -401,7 +465,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         }
         
         if (!validateForm()) {
-            toast.error("Vă rugăm să corectați erorile din formular");
+            toast.error(t('common:form_errors_toast'));
             return;
         }
         
@@ -424,7 +488,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 });
             }
 
-            // Enterprise Level 8: Flatten rich objects (relations) to IDs before sending to Brain
+            // Enterprise Level 10: Flatten rich objects (relations) to IDs before sending to Brain
             // This prevents "FOREIGN KEY constraint failed" from stringified JSON objects.
             Object.keys(dataToSend).forEach(key => {
                 const field = fieldsList.find(f => (f.name === key || f.id === key));
@@ -439,9 +503,9 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
             // console.log('[SAVE-RESPONSE]', { success: res.success, resId: res.data?.id });
             
             if (res.success) {
-                toast.success(isNew ? "Creat cu succes" : "Actualizat cu succes");
+                toast.success(isNew ? t('common:changes_saved') : t('common:changes_saved'));
                 if (isNew) {
-                    // Enterprise Level 8: Resilient ID Resolution
+                    // Enterprise Level 10: Resilient ID Resolution
                     const newId = res.data?.id || res.data?.ID || res.data?.uuid || res.data?.key || 
                                      (finalConfig.displayField ? res.data[finalConfig.displayField] : '');
                     
@@ -456,7 +520,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                     fetchRecord();
                 }
             } else {
-                toast.error("Salvare eșuată: " + res.error);
+                toast.error(t('common:save_failed') + ": " + res.error);
                 if (res.validationErrors) setErrors(res.validationErrors);
             }
         } catch (e: any) {
@@ -479,11 +543,11 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         console.log('[DELETE] Starting delete for', entityId, recordId);
         setSaving(true);
         try {
-            // Step 1: Attempt delete (Enterprise Level 8: uses DB collection endpoint)
+            // Step 1: Attempt delete (Enterprise Level 10: uses DB collection endpoint)
             let res = await api.brain.delete(`db/collection/${entityId}/item/${recordId}`);
             console.log('[DELETE] Delete response:', res);
 
-            // Step 2: Handle dependency check (Enterprise Level 8 Safety)
+            // Step 2: Handle dependency check (Enterprise Level 10 Safety)
             if (res.success && res.data?.hasDependencies) {
                 if (confirm(res.data.message)) {
                     // Step 3: Force delete if user confirms
@@ -520,7 +584,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
 
         setSaving(true);
         try {
-            // Enterprise Level 8: Efficient partial update for status change
+            // Enterprise Level 10: Efficient partial update for status change
             // We support both a dedicated 'archived' flag and a 'status' field
             const updatePayload: any = {
                 archived: isCurrentlyArchived ? 0 : 1,
@@ -550,7 +614,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const handleQuickCreate = async (targetEntity: string, fieldName: string, type: string) => {
         const entityLabel = renderString(entity[targetEntity]?.label || targetEntity, lang);
         
-        // Enterprise Level 8: Context-aware prompt labels
+        // Enterprise Level 10: Context-aware prompt labels
         const promptLabel = targetEntity === 'entity_note'
             ? { ro: 'Introdu conținutul notei', en: 'Enter note content' }
             : { ro: `Introdu numele pentru nou(a) ${entityLabel}`, en: `Enter name for the new ${entityLabel}` };
@@ -561,10 +625,10 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
 
         setSaving(true);
         try {
-            // Enterprise Level 8: Global Quick Create Service
+            // Enterprise Level 10: Global Quick Create Service
             const workspaceId = user?.workspaceId || 'system';
 
-            // Enterprise Level 8: Entity-specific requirement resolving
+            // Enterprise Level 10: Entity-specific requirement resolving
             // We automatically inject parent link (entityType/entityId) for polymorphic entities
             const additionalData: any = {};
             const targetDef = entity[targetEntity] ? normalizeEntity(entity[targetEntity]) : null;
@@ -650,16 +714,16 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
     const handleRollback = async (auditId: string) => {
         if (!confirm("Sigur doriți să restaurați această versiune? Datele actuale vor fi suprascrise.")) return;
         try {
-            // Enterprise Level 8: Unified Action Endpoint
+            // Enterprise Level 10: Unified Action Endpoint
             const res = await api.brain.post(`action/undo/${auditId}`);
             if (res.success) {
-                toast.success("Date restaurate cu succes!");
+                toast.success(t('common:changes_saved'));
                 fetchRecord();
             } else {
-                toast.error("Restauraore eșuată: " + res.error);
+                toast.error(t('common:restoration_failed') + ": " + res.error);
             }
         } catch (e: any) {
-            toast.error("Eroare la restaurare: " + e.message);
+            toast.error(t('common:restoration_failed') + ": " + e.message);
         }
     };
 
@@ -699,7 +763,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         
         const { name, type, label, description, registryKey, relationEntity, req, required, ui } = field;
 
-        // Respect Hidden Fields from Registry & Audit Field Protection (Enterprise Level 8)
+        // Respect Hidden Fields from Registry & Audit Field Protection (Enterprise Level 10)
         const AUDIT_FIELDS = ['id', 'ID', 'workspaceId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt', 'archived', 'archivedAt', 'deletedAt', 'password', 'secret', 'deletedBy'];
         const isAuditField = AUDIT_FIELDS.includes(name);
         
@@ -714,13 +778,13 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         const error = errors[name];
         const isRequired = req || required;
 
-        // Use centralized form value formatting (Enterprise Level 8)
+        // Use centralized form value formatting (Enterprise Level 10)
         const value = formatFormValue(rawValue, type);
 
-        // Protection Logic (Enterprise Level 8)
+        // Protection Logic (Enterprise Level 10)
         const isReadOnly = field.readonly || field.readOnly || isGlobalReadOnly || isAuditField || finalConfig.uiConfig?.form?.readOnlyFields?.includes(name) || (name === 'id' && !isNew);
 
-        // Dynamic Grid Span (Enterprise Level 8)
+        // Dynamic Grid Span (Enterprise Level 10)
         const totalCols = Number(forceCols || finalConfig.uiConfig?.form?.columns || 2);
         
         let width = ui?.width || field.width || (type === 'textarea' || type === 'richtext' || type === 'ai-text' ? 12 : 6);
@@ -734,7 +798,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         if (width >= 12) {
             colSpan = totalCols;
         } else {
-            // Enterprise Level 8: Precision Grid Calculation (Consistent with EntitySystem)
+            // Enterprise Level 10: Precision Grid Calculation (Consistent with EntitySystem)
             const ratio = (typeof width === 'number' ? width : parseInt(String(width))) / 12;
             colSpan = Math.max(1, Math.floor(ratio * totalCols + 0.05)); 
         }
@@ -763,7 +827,17 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
         };
 
         const targetEntity = relationEntity || field.relation?.target;
-        const helpText = ui?.helpText || field.helpText;
+        const baseHelpText = ui?.helpText || field.helpText || field.hint || ui?.hint;
+        
+        // Auto-generate technical hints from Zod metadata
+        let technicalHint = [];
+        if (field.min) technicalHint.push(`${type === 'number' ? 'Min' : 'Min length'}: ${field.min}`);
+        if (field.max) technicalHint.push(`${type === 'number' ? 'Max' : 'Max length'}: ${field.max}`);
+        if (field.pattern) technicalHint.push(`Format: ${field.pattern}`);
+        
+        const helpText = baseHelpText || (technicalHint.length > 0 ? technicalHint.join(' | ') : null);
+
+        const placeholder = ui?.placeholder || field.placeholder || (field.label ? `${renderString(t('common:enter'), lang)} ${renderString(field.label, lang)}...` : '');
 
         return (
             <div key={field.key || name} className={cn("space-y-2", colClass)}>
@@ -784,6 +858,26 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                     {renderString(helpText, lang)}
                                 </div>
                             </div>
+                        )}
+
+                        {/* Enterprise Level 9: Contextual Magic Fill Trigger */}
+                        {availableActions.some((a: any) => a.id === 'magic-fill') && !value && !isReadOnly && (
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className={cn(
+                                    "h-5 w-5 rounded-md text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all animate-in fade-in zoom-in duration-300",
+                                    isActionRunning === 'magic-fill' && "animate-pulse"
+                                )}
+                                onClick={() => handleAction('magic-fill')}
+                                title="Magic Fill"
+                            >
+                                {isActionRunning === 'magic-fill' ? (
+                                    <RefreshCw size={10} className="animate-spin" />
+                                ) : (
+                                    <Sparkles size={10} />
+                                )}
+                            </Button>
                         )}
                     </div>
                     
@@ -916,10 +1010,8 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                                         return !currentIds.includes(String(item.id || item.ID));
                                                     })
                                                     .map((item: any, idx) => {
-                                                        const resolvedT = type === 'tag' ? 'tag' : targetEntity;
-                                                        const targetDef = resolvedT ? (entity as any)?.[resolvedT] : null;
-                                                        const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
-                                                        const displayLabel = item[dispField] || item.name || item.id || item.ID;
+                                                        const resolvedT = type === 'tag' ? 'tag' : (targetEntity || '');
+                                                        const displayLabel = resolveRecordDisplay(item, resolvedT, { entity });
                                                         
                                                         return (
                                                             <SelectItem key={`${item.id || item.ID}-${idx}`} value={String(item.id || item.ID)} className="rounded-xl font-bold py-3">
@@ -958,9 +1050,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                         </SelectTrigger>
                                         <SelectContent className="rounded-2xl border-none shadow-2xl">
                                             {(relatedData[targetEntity] || []).map((item: any, idx) => {
-                                                const targetDef = entity[targetEntity];
-                                                const dispField = field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'name';
-                                                const displayLabel = item[dispField] || item.name || item.id;
+                                                const displayLabel = resolveRecordDisplay(item, targetEntity, { entity });
                                                 
                                                 return (
                                                     <SelectItem key={`${item.id}-${idx}`} value={String(item.id)} className="rounded-xl font-bold py-3">
@@ -1103,6 +1193,8 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         <textarea 
                             value={value ?? ''}
                             disabled={isReadOnly}
+                            minLength={field.min}
+                            maxLength={field.max}
                             onChange={(e) => handleChange(e.target.value)}
                             className={cn("w-full min-h-[120px] p-4 rounded-xl bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 font-medium text-sm", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 cursor-not-allowed")}
                             placeholder={ui?.placeholder ? renderString(ui.placeholder, lang) : `${renderString(t('common:enter'), lang)} ${renderString(label || name, lang)}...`}
@@ -1134,7 +1226,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 disabled={isReadOnly}
                                 onChange={(e) => handleChange(e.target.value)}
                                 className={cn("w-full min-h-[80px] p-4 rounded-xl bg-slate-50 border border-slate-200 border-dashed border-indigo-200 focus:border-indigo-500 font-medium text-sm", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 cursor-not-allowed")}
-                                placeholder={ui?.placeholder ? renderString(ui.placeholder, lang) : "AI will generate this based on your prompt..."}
+                                placeholder={placeholder || "AI will generate this based on your prompt..."}
                             />
                             {!isReadOnly && (
                                 <Button variant="ghost" size="sm" className="w-full h-8 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-100 gap-2 font-black uppercase italic tracking-widest text-[9px]">
@@ -1156,13 +1248,18 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 }
                             }}
                             className={cn("w-full min-h-[100px] p-4 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs", error && "border-rose-300 bg-rose-50/20", isReadOnly && "bg-slate-100 cursor-not-allowed")}
-                            placeholder='{ "key": "value" }'
+                            placeholder={placeholder || '{ "key": "value" }'}
                         />
                     ) : (
                         <div className="relative group/input">
                             <div className="relative overflow-hidden rounded-xl">
                                 <Input 
-                                    type={type === 'number' || type === 'currency' ? 'number' : (type === 'password' ? 'password' : 'text')}
+                                    type={
+                                        type === 'number' || type === 'currency' ? 'number' : 
+                                        field.isEmail ? 'email' :
+                                        field.isUrl ? 'url' :
+                                        type === 'password' ? 'password' : 'text'
+                                    }
                                     name={name}
                                     id={`field-${name}`}
                                     value={value ?? ''}
@@ -1174,8 +1271,13 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                         error && "border-rose-300 bg-rose-50/20", 
                                         isReadOnly && "bg-slate-100 cursor-not-allowed"
                                     )}
-                                    placeholder={ui?.placeholder ? renderString(ui.placeholder, lang) : `${renderString(t('common:enter'), lang)} ${renderString(label || name, lang)}...`}
+                                    placeholder={placeholder}
                                     step={type === 'currency' ? '0.01' : '1'}
+                                    min={type === 'number' || type === 'currency' ? field.min : undefined}
+                                    max={type === 'number' || type === 'currency' ? field.max : undefined}
+                                    minLength={type === 'string' || type === 'password' ? field.min : undefined}
+                                    maxLength={type === 'string' || type === 'password' ? field.max : undefined}
+                                    pattern={field.pattern}
                                 />
                             </div>
                             {type === 'currency' && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs pointer-events-none z-10">$</span>}
@@ -1243,8 +1345,8 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 </div>
             </div>
 
-            {/* Enterprise Level 8 Identity Header - Professional & Balanced */}
-            {/* Enterprise Level 8 Identity Header - Professional & Compact */}
+            {/* Enterprise Level 10 Identity Header - Professional & Balanced */}
+            {/* Enterprise Level 10 Identity Header - Professional & Compact */}
             <div className="flex flex-col md:flex-row md:items-center gap-4 p-4 md:p-5 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none animate-in fade-in slide-in-from-top-4 duration-700 relative overflow-hidden group">
                 {/* Decorative Background Glow */}
                 <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/5 blur-[100px] rounded-full pointer-events-none" />
@@ -1333,7 +1435,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                         const item = (relatedData[targetEntity] || []).find((i: any) => String(i.id || i.ID).toLowerCase() === String(itemId).toLowerCase());
                                         const labelKey = tagField.relation?.field || tagField.relation?.displayField || tagField.relation?.displayKey || 'name';
                                         
-                                        // Level 8: Ultra-Resilient Label Resolution
+                                        // Level 10: Ultra-Resilient Label Resolution
                                         const displayLabel = item 
                                             ? (item[labelKey] || item.label || item.name || item.title || item.ID || itemId) 
                                             : (typeof id === 'object' && id !== null ? (id[labelKey] || id.label || id.name || id.id || id.ID || itemId) : itemId);
@@ -1394,7 +1496,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                         </div>
                                     ))}
 
-                                    {/* Level 8: Catch-all for fields not assigned to any section */}
+                                    {/* Level 10: Catch-all for fields not assigned to any section */}
                                     {(() => {
                                         const AUDIT_FIELDS = ['id', 'ID', 'workspaceId', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt', 'archived', 'archivedAt', 'deletedAt', 'password', 'secret', '__v', '_id'];
                                         const showAudit = finalConfig.uiConfig?.form?.showTimestamps === true || finalConfig.uiConfig?.form?.showAuditFields === true;
@@ -1460,7 +1562,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         </div>
                     </GlassCard>
 
-                    {/* Related Children Entities (Level 8 Inbound Relations) */}
+                    {/* Related Children Entities (Enterprise Level 10 Inbound Relations) */}
                     {!isNew && finalConfig.uiConfig?.form?.showChildren !== false && Object.keys(childrenRecords).length > 0 && (
                         <div className="space-y-6">
                             {Object.entries(childrenRecords)
@@ -1533,7 +1635,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         </div>
                     )}
 
-                    {/* Meta Info Section (Audit Logs) - Level 8 Enterprise */}
+                    {/* Meta Info Section (Audit Logs) - Enterprise Level 10 */}
                     {!isNew && auditLogs.length > 0 && (
                         <GlassCard className="p-6 space-y-4 border-none shadow-sm bg-slate-50/30">
                             <h3 className="text-[10px] font-black uppercase italic tracking-widest text-slate-400 flex items-center gap-2">
@@ -1598,7 +1700,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         </GlassCard>
                     )}
 
-                    {/* Enterprise Level 8: Contact Interactions (WhatsApp, Email, Printing History) */}
+                    {/* Enterprise Level 10: Contact Interactions (WhatsApp, Email, Printing History) */}
                     {!isNew && entityId === 'contact' && (
                         <GlassCard className="p-8 border-none shadow-sm bg-white/40 dark:bg-slate-900/40">
                             <ContactInteractions contact={{ 
@@ -1610,7 +1712,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         </GlassCard>
                     )}
 
-                    {/* Enterprise Level 8: Subtasks for Task Entities */}
+                    {/* Enterprise Level 10: Subtasks for Task Entities */}
                     {!isNew && (entityId === 'todo' || entityId === 'task') && (
                         <GlassCard className="p-8 border-none shadow-sm bg-white/40 dark:bg-slate-900/40">
                             <SubtaskManager 
@@ -1635,7 +1737,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                                 </div>
                                 <div className="flex justify-between items-center text-[10px]">
                                     <span className="text-slate-400 font-bold uppercase tracking-widest">{renderString(t('common:access_rule'), lang)}</span>
-                                    <span className="text-slate-700 font-black italic">Enterprise Level 8 RBAC</span>
+                                    <span className="text-slate-700 font-black italic">Enterprise Level 10 RBAC</span>
                                 </div>
                             </div>
                         </div>
@@ -1677,7 +1779,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         )}
                     </GlassCard>
 
-                    {/* Enterprise Level 8: Undo Engine Widget */}
+                    {/* Enterprise Level 10: Undo Engine Widget */}
                     {!isNew && (
                         <EntityHistoryWidget 
                             entityType={entityId} 
@@ -1687,7 +1789,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         />
                     )}
 
-                    {/* Enterprise Level 8: Workflow State Machine */}
+                    {/* Enterprise Level 10: Workflow State Machine */}
                     {!isNew && formData.status && (
                         <WorkflowWidget 
                             entityType={entityId}
@@ -1829,7 +1931,7 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                 </DialogContent>
             </Dialog>
 
-            {/* FLOATING BOTTOM ACTION BAR - Enterprise Level 8 (Compact Style) */}
+            {/* FLOATING BOTTOM ACTION BAR - Enterprise Level 10 (Compact Style) */}
             <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 w-auto min-w-[300px] px-6 z-50 animate-in slide-in-from-bottom duration-500">
                 <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-800 p-2 md:p-3 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-between gap-4">
                     <div className="flex-1 hidden md:flex items-center gap-2 ml-4">
@@ -1840,6 +1942,61 @@ export function DynamicEntityDetail({ entityId, recordId, config }: DynamicEntit
                         )}
                     </div>
                     <div className="flex items-center gap-2 mr-1">
+                        {!isNew && availableActions.length > 0 && (
+                            <div className="flex items-center gap-1 border-r border-slate-200 dark:border-slate-800 pr-2 mr-1">
+                                {availableActions.length <= 2 ? (
+                                    // Show as buttons if 1 or 2 actions
+                                    availableActions.map((action: any) => (
+                                        <Button
+                                            key={action.id}
+                                            variant="ghost"
+                                            size="sm"
+                                            disabled={!!isActionRunning}
+                                            onClick={() => handleAction(action.id)}
+                                            className="h-10 rounded-full px-4 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 font-black uppercase italic tracking-widest text-[10px] gap-2"
+                                        >
+                                            {isActionRunning === action.id ? <RefreshCw className="animate-spin h-3 w-3" /> : (action.icon ? resolveIcon(action.icon, { size: 14 }) : <Zap size={14} />)}
+                                            {renderString(action.label, lang)}
+                                        </Button>
+                                    ))
+                                ) : (
+                                    // Show as dropdown if more than 2
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button 
+                                                variant="ghost" 
+                                                size="sm" 
+                                                className="h-10 rounded-full px-4 text-indigo-600 hover:bg-indigo-50 font-black uppercase italic tracking-widest text-[10px] gap-2"
+                                            >
+                                                <Zap size={14} /> {renderString(t('common:actions'), lang)}
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="rounded-2xl border-slate-200 shadow-xl min-w-[200px]">
+                                            <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-slate-400 p-3">{renderString(t('common:available_actions'), lang)}</DropdownMenuLabel>
+                                            <DropdownMenuSeparator />
+                                            {availableActions.map((action: any) => (
+                                                <DropdownMenuItem 
+                                                    key={action.id}
+                                                    onClick={() => handleAction(action.id)}
+                                                    className="p-3 cursor-pointer focus:bg-indigo-50 focus:text-indigo-600 rounded-xl m-1 transition-colors"
+                                                >
+                                                    <div className="flex items-center gap-3 w-full">
+                                                        <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                                                            {action.icon ? resolveIcon(action.icon, { size: 16 }) : <Zap size={16} />}
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <p className="text-xs font-black uppercase italic tracking-tighter">{renderString(action.label, lang)}</p>
+                                                            {action.description && <p className="text-[9px] font-medium text-slate-400 line-clamp-1">{renderString(action.description, lang)}</p>}
+                                                        </div>
+                                                        {isActionRunning === action.id && <RefreshCw className="animate-spin h-4 w-4 text-indigo-400" />}
+                                                    </div>
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                )}
+                            </div>
+                        )}
                         {!isGlobalReadOnly && (
                             <Button 
                                 onClick={handleSave}

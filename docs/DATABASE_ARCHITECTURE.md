@@ -1,4 +1,4 @@
-# Arhitectura Bazei de Date (Enterprise Level 8)
+# Arhitectura Bazei de Date (Enterprise Level 10)
 
 Studio App v2 utilizeaza un model **Worker-Master** unde Cloudflare D1 este autoritatea suprema, iar baza de date locala SQLite serveste doar ca cache sau stocare pentru Local Agent.
 

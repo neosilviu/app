@@ -37,13 +37,13 @@ export async function action() {
 
 export default function EntityPage() {
   const { entity: id, lang } = useParams<{ entity: string; lang: string }>();
-  const { t } = useTranslation(['common', 'entity']);
+  const { t } = useTranslation(['common', 'entity', 'entities']);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { entity: configMap, loading: configLoading } = useConfig();
   const { hasPermission } = useAuth();
   
-  // Enterprise Level 8: Case-Insensitive Lookup
+  // Enterprise Level 10: Case-Insensitive Identity Resolution (Registry-Driven)
   const entityType = (id || '').toLowerCase();
   
   // Find config by matching name case-insensitively

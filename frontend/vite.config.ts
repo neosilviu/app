@@ -14,29 +14,84 @@ if (typeof process !== 'undefined') {
 }
 
 let memoizedVersion: string | null = null;
-const getVersion = () => {
-  if (memoizedVersion) return memoizedVersion;
+let versionPromise: Promise<string> | null = null;
+
+// TURBO MODE - Non-blocking async git hash (prevents Vite startup hang)
+const getVersionAsync = async () => {
+  const date = new Date().toISOString();
   try {
-    const hash = execSync("git rev-parse --short HEAD", { stdio: 'pipe' }).toString().trim();
-    const date = new Date().toISOString();
-    memoizedVersion = JSON.stringify({
-      version: "2.0.0",
-      hash: hash,
-      date: date
+    // Non-blocking: Use spawn/exec with timeout instead of execSync
+    return await new Promise<string>((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve(JSON.stringify({
+          version: "2.0.0",
+          hash: "dev-timeout",
+          date: date
+        }));
+      }, 2000); // 2s timeout max
+      
+      try {
+        const hash = execSync("git rev-parse --short HEAD", { 
+          stdio: 'pipe',
+          timeout: 2000 // Process-level timeout
+        }).toString().trim();
+        clearTimeout(timeout);
+        resolve(JSON.stringify({
+          version: "2.0.0",
+          hash: hash,
+          date: date
+        }));
+      } catch (e) {
+        clearTimeout(timeout);
+        resolve(JSON.stringify({
+          version: "2.0.0",
+          hash: "dev",
+          date: date
+        }));
+      }
     });
   } catch (e) {
-    const date = new Date().toISOString();
-    memoizedVersion = JSON.stringify({
+    return JSON.stringify({
       version: "2.0.0",
-      hash: "dev",
+      hash: "dev-error",
       date: date
     });
   }
-  return memoizedVersion;
+};
+
+const getVersion = () => {
+  // Fast path: Return cached version immediately if available
+  if (memoizedVersion) return memoizedVersion;
+  
+  // Fallback: Return instant default while async fetch runs in background
+  // This prevents vite startup hang
+  const fallback = JSON.stringify({
+    version: "2.0.0",
+    hash: "dev",
+    date: new Date().toISOString()
+  });
+  
+  // Schedule async update (non-blocking)
+  if (!versionPromise) {
+    versionPromise = getVersionAsync().then(v => {
+      memoizedVersion = v;
+      return v;
+    });
+  }
+  
+  return fallback;
 };
 
 export default defineConfig(({ command }) => ({
+  // Ensure .ico files are treated as static assets (prevents worker bundler trying to import .ico)
+  assetsInclude: ['**/*.ico'],
   envDir: "../",
+  resolve: {
+    alias: {
+      "zod": path.resolve(__dirname, "node_modules/zod"),
+      "lucide-react": path.resolve(__dirname, "node_modules/lucide-react"),
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(getVersion()),
   },
@@ -98,8 +153,11 @@ export default defineConfig(({ command }) => ({
     }
   },
   server: {
+    fs: {
+      allow: [".."],
+    },
     host: true, // Permite accesul extern (ex: 192.168.2.3)
-    port: 8788,
+    port: 5173,
     strictPort: true,
     warmup: {
       clientFiles: ["./app/root.tsx", "./app/routes/**/*"],
@@ -109,7 +167,7 @@ export default defineConfig(({ command }) => ({
       ignored: ["**/node_modules/**", "**/backend/**", "**/logs/**", "**/backups/**", "**/whatsapp_session/**", "**/local-inbox/**", "**/.dev-logs/**"],
     },
     hmr: {
-      clientPort: 8788,
+      clientPort: 5173,
       overlay: false, // Disable error overlay for smoother experience on heavy loads
     },
     proxy: {

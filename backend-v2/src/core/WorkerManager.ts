@@ -4,6 +4,7 @@ import { WhatsAppWorker } from '../workers/WhatsAppWorker';
 import { GmailWorker } from '../workers/GmailWorker';
 import { InboxWorker } from '../workers/InboxWorker';
 import { TaskWorker } from '../workers/TaskWorker';
+import { AiWorker } from '../workers/AiWorker';
 
 const logger = winston.createLogger({
   level: 'info',
@@ -18,6 +19,7 @@ export class WorkerManager {
   private gmailWorker: GmailWorker | null = null;
   private inboxWorker: InboxWorker | null = null;
   private taskWorker: TaskWorker | null = null;
+  private aiWorker: AiWorker | null = null;
 
   private constructor() {}
 
@@ -90,6 +92,18 @@ export class WorkerManager {
         this.inboxWorker = null;
         logger.info('  - Inbox Worker stopped.');
       }
+
+      // AI Orchestrator (Full Control)
+      const aiEnabled = enableWorkers && (registry.get('system.ai_agent_enabled') !== false);
+      if (aiEnabled && !this.aiWorker) {
+        this.aiWorker = new AiWorker();
+        this.aiWorker.start().catch(err => logger.error('AI Worker Start error', err));
+        logger.info('  - AI Autonomous Worker started.');
+      } else if (!aiEnabled && this.aiWorker) {
+        this.aiWorker.stop();
+        this.aiWorker = null;
+        logger.info('  - AI Autonomous Worker stopped.');
+      }
     }
   }
 
@@ -98,7 +112,8 @@ export class WorkerManager {
       whatsapp: this.whatsappWorker ? 'RUNNING' : 'STOPPED',
       gmail: this.gmailWorker ? 'RUNNING' : 'STOPPED',
       inbox: this.inboxWorker ? 'RUNNING' : 'STOPPED',
-      task: this.taskWorker ? 'RUNNING' : 'STOPPED'
+      task: this.taskWorker ? 'RUNNING' : 'STOPPED',
+      ai: this.aiWorker ? 'RUNNING' : 'STOPPED'
     };
   }
 }

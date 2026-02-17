@@ -78,7 +78,7 @@ async function callProvider(providerName: string, config: any, model: string, pr
         let finalUrl = url;
 
         if (config.type === 'google-v1beta' || providerName === 'gemini') {
-            // Level 8: Improved logic for Gemini URL and Fallbacks
+            // Level 10: Improved logic for Gemini URL and Fallbacks
             let base = url.split('?')[0].replace(/\/$/, '');
             if (!base.includes('/v1')) base += '/v1beta';
 

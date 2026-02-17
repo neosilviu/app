@@ -1,5 +1,5 @@
 /**
- * SEARCH PANEL - Enterprise Level 8 Global Search UI
+ * SEARCH PANEL - Enterprise Level 10 Global Search UI
  * Polymorphic search across all entity types with real-time results
  */
 

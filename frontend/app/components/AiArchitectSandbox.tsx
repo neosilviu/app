@@ -10,9 +10,11 @@ import { toast } from 'sonner';
 import { DynamicEntityDetail } from './entity/DynamicEntityDetail';
 import { DynamicEntityList } from './entity/DynamicEntityList';
 import { EntityDefinitionsPanel } from './EntityDefinitionsPanel';
+import { useActionV3 } from '~/hooks/useActionV3';
 
 export function AiArchitectSandbox() {
-    const { entity, refreshConfig } = useConfig();
+    const { entity, refreshConfig, constants } = useConfig();
+    const action = useActionV3('ai_prompt', 'architect');
     const [draftJson, setDraftJson] = useState<string>(
         JSON.stringify({
             label: "Product Prototype",
@@ -132,9 +134,10 @@ export function AiArchitectSandbox() {
         if (!aiRequest) return;
         setIsAiGenerating(true);
         try {
-            const res = await api.brain.post('ai', {
-                action: 'architect',
-                prompt: aiRequest
+            const res = await action.execute({
+                prompt: aiRequest,
+                provider: constants.AI_CONFIG?.active_provider,
+                model: constants.AI_CONFIG?.model
             });
 
             if (res.success && res.data) {
@@ -163,7 +166,7 @@ export function AiArchitectSandbox() {
                         </div>
                         Blueprint <span className="text-indigo-600">Architect</span>
                     </h2>
-                    <p className="text-slate-500 font-medium text-sm mt-1">Enterprise Level 8 Metadata IDE</p>
+                    <p className="text-slate-500 font-medium text-sm mt-1">Enterprise Level 10 Metadata IDE</p>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -232,7 +235,7 @@ export function AiArchitectSandbox() {
                                         <Sparkles size={18} className="text-indigo-600" /> AI Generator
                                     </h3>
                                     <p className="text-xs text-indigo-700/70 font-medium mb-4 leading-relaxed">
-                                        Describe what kind of entity you need and the AI Architect will generate the Level 8 DNA structure.
+                                        Describe what kind of entity you need and the AI Architect will generate the Enterprise Level 10 DNA structure.
                                     </p>
                                     <textarea 
                                         placeholder="Ex: Am nevoie de o entitate pentru deal cu CRM statusuri, campuri de suma si data, si integrare cu Whatsapp..."

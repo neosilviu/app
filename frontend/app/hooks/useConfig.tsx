@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode, type FC } from 'react';
+import { useParams } from 'react-router';
 import i18next from 'i18next';
 import { resolveIcon } from '../lib/icons';
 import { 
@@ -63,7 +64,7 @@ const deepMerge = (target: any, source: any) => {
     if (!source || typeof source !== 'object') return result;
     
     Object.keys(source).forEach(key => {
-        // Enterprise Level 8: Only override if source has a valid value.
+        // Enterprise Level 10: Only override if source has a valid value.
         // If source has null or empty string, we prefer the baseline (target).
         const sourceVal = source[key];
         const isNullish = sourceVal === null || sourceVal === undefined || sourceVal === '';
@@ -80,7 +81,7 @@ const deepMerge = (target: any, source: any) => {
 const mergeConstantsIntoEntities = (ents: Record<string, any>, consts: Record<string, any>) => {
     const result: Record<string, any> = {};
     
-    // Enterprise Level 8: Unified Entity Map
+    // Enterprise Level 10: Unified Entity Map
     // Combine Registry Baseline keys and Database Entity keys to ensure no-code entities work
     const registryEntities = consts.ENTITY_CONFIG || {};
     const allEntityKeys = Array.from(new Set([
@@ -99,7 +100,7 @@ const mergeConstantsIntoEntities = (ents: Record<string, any>, consts: Record<st
         // Apply Registry Overrides/Baseline
         const registryOverride = registryEntities[entityKey] || {};
         
-        // Enterprise Level 8: Field-by-Field merging to preserve Registry baseline while allowing DB overrides
+        // Enterprise Level 10: Field-by-Field merging to preserve Registry baseline while allowing DB overrides
         const registryFields = registryOverride.fields || {};
         const databaseFieldsRaw = rawEntity.fields;
         let databaseFieldsArray = [];
@@ -127,7 +128,7 @@ const mergeConstantsIntoEntities = (ents: Record<string, any>, consts: Record<st
         // Final Merge: Baseline (registryOverride) + DB (rawEntity) with correctly merged fields
         const mergedEntity = deepMerge(registryOverride, { ...rawEntity, fields: mergedFieldsMap });
 
-        // ENSURE NORMALIZATION (Enterprise Level 8)
+        // ENSURE NORMALIZATION (Enterprise Level 10)
         const entity = normalizeEntity({ ...mergedEntity, id: entityKey });
 
         // Extra Logic: Map Options from Constants (Registry-based selection lists)
@@ -194,6 +195,7 @@ interface ConfigContextType {
     constants: Record<string, any>;
     marketplace: any[];
     uiConfig: any;
+    lang: string;
     navigation: {
         main: NavItem[];
         worker: NavItem[];
@@ -212,6 +214,8 @@ interface ConfigContextType {
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
 export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
+    const params = useParams();
+    const lang = params.lang || STATIC_CONSTANTS.I18N_CONFIG?.defaultLanguage || 'en';
     const [entity, setEntity] = useState<Record<string, any>>(() => getInitialConfig().entity);
     const [constants, setConstants] = useState<Record<string, any>>(() => getInitialConfig().constants);
     const [marketplace, setMarketplace] = useState<any[]>([]);
@@ -302,7 +306,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
     const refreshConfig = async (force = false) => {
         // Build list of constants from session to ensure we have the latest use_local_agent
-        // For Enterprise Level 8, we bypass the short throttle (2000ms) if force=true
+        // For Enterprise Level 10, we bypass the short throttle (2000ms) if force=true
         if (isFetchingRef.current) {
             console.log('[CONFIG] Already fetching, skipping');
             return;
@@ -314,7 +318,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         isFetchingRef.current = true;
         try {
             // Pages + Workers: Load from D1 via Worker endpoint
-            // Add cache-buster to bypass any intermediate caching (Enterprise Level 8)
+            // Add cache-buster to bypass any intermediate caching (Enterprise Level 10)
             const response = await api.brain.get(`config?t=${Date.now()}`);
             const result = response?.data || response;
             lastFetchTimeRef.current = Date.now();
@@ -401,7 +405,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
             });
         }
 
-        // 1. Save to Cloud (The Brain Registry - Enterprise Level 8)
+        // 1. Save to Cloud (The Brain Registry - Enterprise Level 10)
         try {
             await api.brain.post('registry/save', { 
                 namespace: 'ui',
@@ -434,7 +438,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         const handleUpdate = () => {
             if (autoRefreshEnabled && canAutoRefresh) {
                 console.log("[CONFIG] Socket auto-refresh triggered (forcing refresh)");
-                // Level 8: Always force refresh on socket events to bypass throttles
+                // Enterprise Level 10: Always force refresh on socket events to bypass throttles
                 // Also add a small delay to ensure DB sync is fully committed on backend isolates
                 setTimeout(() => refreshConfig(true), 100);
             }
@@ -463,7 +467,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }, [autoRefreshEnabled, canAutoRefresh]);
 
     return (
-        <ConfigContext.Provider value={{ entity, constants, marketplace, uiConfig, navigation, loading, isInitialized, buildInfo: buildInfo as any, refreshConfig, updateUiConfig }}>
+        <ConfigContext.Provider value={{ entity, constants, marketplace, uiConfig, lang, navigation, loading, isInitialized, buildInfo: buildInfo as any, refreshConfig, updateUiConfig }}>
             {children}
         </ConfigContext.Provider>
     );

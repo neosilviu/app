@@ -28,7 +28,7 @@ export function useSmartBack() {
     // Derive parent path by stripping the last segment
     const parts = location.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
     if (parts.length <= 1) {
-      // Dacă suntem la root, nu navigăm la '/'. Rămânem pe loc.
+      // Already at root or first level, stay here
       return;
     }
     const parent = '/' + parts.slice(0, -1).join('/');

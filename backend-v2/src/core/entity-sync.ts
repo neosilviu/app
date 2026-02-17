@@ -25,7 +25,7 @@ export class EntitySync {
    */
   public async syncAll(): Promise<void> {
     const reg = this.registry.get();
-    const entityConfigs = reg.entity; // From Registry ENTITY_CONFIGS
+    const entityConfigs = reg.ENTITY_CONFIG || {};
 
     logger.info(`Syncing ${Object.keys(entityConfigs).length} entities to DB...`);
 
@@ -33,13 +33,16 @@ export class EntitySync {
       const defTyped = def as any;
       const tableName = defTyped.tableName || entityKey;
       
-      // 1. Sync SQL Table
-      await this.syncTable(tableName, defTyped);
+      try {
+        // 1. Sync SQL Table
+        await this.syncTable(tableName, defTyped);
 
-      // 2. Sync Entity Definition Metadata to DB (for Brain/Frontend visibility)
-      // This ensures that even if an entity is defined in code (System Entities),
-      // the Brain (Cloudflare) sees it via the common 'entity_definition' table.
-      await this.syncMetadata(entityKey, defTyped);
+        // 2. Sync Entity Definition Metadata to DB (for Brain/Frontend visibility)
+        await this.syncMetadata(entityKey, defTyped);
+      } catch (err: any) {
+        logger.error(`Error syncing entity ${entityKey} (table: ${tableName}): ${err.message}`, { error: err });
+        // Don't throw, try to sync others
+      }
     }
   }
 
@@ -124,7 +127,7 @@ export class EntitySync {
 
     const sql = `CREATE TABLE IF NOT EXISTS ${tableName} (${extraFields.length > 0 ? extraFields.join(', ') + ', ' : ''}${columnDefs})`;
     
-    logger.info(`Creating table ${tableName}...`);
+    logger.info(`Creating table ${tableName} with SQL: ${sql}`);
     await this.db.run(sql);
   }
 
@@ -143,18 +146,18 @@ export class EntitySync {
 
     for (const core of coreFields) {
       if (!existingColNames.has(core.name.toLowerCase())) {
-        logger.info(`Adding core column ${core.name} to ${tableName}...`);
-        await this.db.run(`ALTER TABLE ${tableName} ADD COLUMN ${core.name} ${core.type.toUpperCase()}${core.default ? ` DEFAULT ${core.default}` : ''}`);
+        const sql = `ALTER TABLE ${tableName} ADD COLUMN ${core.name} ${core.type.toUpperCase()}${core.default ? ` DEFAULT ${core.default}` : ''}`;
+        logger.info(`Executing: ${sql}`);
+        await this.db.run(sql);
       }
     }
 
     for (const field of fields) {
       if (!existingColNames.has(field.name.toLowerCase())) {
-        logger.info(`Adding column ${field.name} to ${tableName}...`);
-        // Level 8: SQLite does not support adding a PRIMARY KEY column to an existing table.
-        // Also UNIQUE constraints via ALTER TABLE can be tricky in some SQLite versions.
         const colDef = this.getFieldDef(field, false); 
-        await this.db.run(`ALTER TABLE ${tableName} ADD COLUMN ${colDef}`);
+        const sql = `ALTER TABLE ${tableName} ADD COLUMN ${colDef}`;
+        logger.info(`Executing: ${sql}`);
+        await this.db.run(sql);
       }
     }
   }
@@ -181,8 +184,9 @@ export class EntitySync {
     }
 
     let constraints = '';
+    // Level 9 Fix: SQLite does not support adding UNIQUE or PRIMARY KEY via ALTER TABLE
     if (includePrimaryKey && field.primaryKey) constraints += ' PRIMARY KEY';
-    if (field.unique) constraints += ' UNIQUE';
+    if (includePrimaryKey && field.unique) constraints += ' UNIQUE';
     if (field.required) constraints += ' NOT NULL';
 
     return `${field.name} ${type}${constraints}`;

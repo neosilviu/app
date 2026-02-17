@@ -240,8 +240,8 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                         <Mail className="h-6 w-6" />
                                     </div>
                                     <div className="flex flex-col items-start gap-1 text-left">
-                                        <span className="text-xs font-black uppercase italic tracking-[0.2em] text-slate-900">Gmail Integration</span>
-                                        <span className="text-[10px] text-slate-400 font-medium uppercase">Auto-Reply, SMTP & OAuth2 API</span>
+                                        <span className="text-xs font-black uppercase italic tracking-[0.2em] text-slate-900">{t('settings:gmail_integration_title')}</span>
+                                        <span className="text-[10px] text-slate-400 font-medium uppercase">{t('settings:gmail_integration_desc')}</span>
                                     </div>
                                 </div>
                             </AccordionTrigger>
@@ -256,12 +256,12 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-top-2 duration-300">
                                     <div className="space-y-4">
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 border-b border-slate-50 pb-2">
-                                            AI & Logic Settings
+                                            {t('settings:ai_logic_settings')}
                                         </h4>
                                         <div className="flex items-center justify-between p-4 rounded-2xl bg-white border border-slate-50 shadow-sm">
                                             <div className="flex flex-col">
-                                                <Label className="text-[11px] font-black uppercase italic tracking-tight text-slate-700">Auto-Reply (AI)</Label>
-                                                <p className="text-[9px] text-slate-400 uppercase font-bold">Răspuns automat prin AI</p>
+                                                <Label className="text-[11px] font-black uppercase italic tracking-tight text-slate-700">{t('settings:auto_reply_ai')}</Label>
+                                                <p className="text-[9px] text-slate-400 uppercase font-bold">{t('settings:auto_reply_desc')}</p>
                                             </div>
                                             <Switch 
                                                 checked={gmailData.autoReply === true} 
@@ -270,8 +270,8 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                         </div>
                                         <div className="flex items-center justify-between p-4 rounded-2xl bg-white border border-slate-50 shadow-sm">
                                             <div className="flex flex-col">
-                                                <Label className="text-[11px] font-black uppercase italic tracking-tight text-slate-700">Analiză Task-uri</Label>
-                                                <p className="text-[9px] text-slate-400 uppercase font-bold">Extracție leaduri/taskuri</p>
+                                                <Label className="text-[11px] font-black uppercase italic tracking-tight text-slate-700">{t('settings:task_analysis')}</Label>
+                                                <p className="text-[9px] text-slate-400 uppercase font-bold">{t('settings:task_analysis_desc')}</p>
                                             </div>
                                             <Switch 
                                                 checked={gmailData.aiAnalysis === true} 
@@ -280,7 +280,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-2">
-                                                <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Interval Sync (sec)</Label>
+                                                <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">{t('settings:sync_interval')}</Label>
                                                 <BufferedInput 
                                                     type="number"
                                                     value={formatForRender(gmailData.syncInterval ?? 15, lang)}
@@ -289,7 +289,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Trash Days</Label>
+                                                <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">{t('settings:trash_days')}</Label>
                                                 <BufferedInput 
                                                     type="number"
                                                     value={formatForRender(gmailData.emptyTrashDays ?? 30, lang)}
@@ -302,10 +302,10 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
 
                                     <div className="space-y-4">
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 border-b border-slate-50 pb-2">
-                                            Identity & SMTP Security
+                                            {t('settings:identity_smtp_security')}
                                         </h4>
                                         <div className="space-y-2">
-                                            <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Gmail Account Email</Label>
+                                            <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">{t('settings:gmail_account_email')}</Label>
                                                 <BufferedInput 
                                                     value={formatForRender(gmailData.accountEmail || "", lang)}
                                                     onChange={(val) => updateGmail('accountEmail', val)}
@@ -314,7 +314,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                 />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label className="text-[10px] font-black uppercase text-orange-500 italic tracking-widest">SMTP User</Label>
+                                            <Label className="text-[10px] font-black uppercase text-orange-500 italic tracking-widest">{t('settings:smtp_user')}</Label>
                                                 <BufferedInput 
                                                     value={formatForRender(gmailData.smtp_user || "", lang)}
                                                     onChange={(val) => updateGmail('smtp_user', val)}
@@ -323,7 +323,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                 />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label className="text-[10px] font-black uppercase text-orange-500 italic tracking-widest">SMTP App-Password</Label>
+                                            <Label className="text-[10px] font-black uppercase text-orange-500 italic tracking-widest">{t('settings:smtp_pass')}</Label>
                                                 <BufferedInput 
                                                     type="password"
                                                     value={formatForRender(gmailData.smtp_pass || "", lang)}
@@ -336,7 +336,7 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
 
                                     <div className="md:col-span-2 mt-4 p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-100/50 space-y-4">
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 flex items-center gap-2 border-b border-indigo-100/50 pb-2">
-                                            <Settings2 className="h-4 w-4" /> OAuth2 API Configuration (Developer Console)
+                                            <Settings2 className="h-4 w-4" /> {t('settings:oauth2_config')}
                                         </h4>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div className="space-y-2">
@@ -382,8 +382,8 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                         <MessageSquare className="h-6 w-6" />
                                     </div>
                                     <div className="flex flex-col items-start gap-1 text-left">
-                                        <span className="text-xs font-black uppercase italic tracking-[0.2em] text-slate-900">WhatsApp Business Engine</span>
-                                        <span className="text-[10px] text-slate-400 font-medium uppercase">Auto-Reply, QR Control & Session Management</span>
+                                        <span className="text-xs font-black uppercase italic tracking-[0.2em] text-slate-900">{t('settings:whatsapp_business_engine')}</span>
+                                        <span className="text-[10px] text-slate-400 font-medium uppercase">{t('settings:whatsapp_engine_desc')}</span>
                                     </div>
                                 </div>
                             </AccordionTrigger>
@@ -407,12 +407,12 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                         {whatsappState.status === 'READY' || whatsappState.status === 'CONNECTED' ? <ShieldCheck size={18} /> : <RefreshCw size={18} className="animate-spin" />}
                                                     </div>
                                                     <div>
-                                                        <p className="text-[10px] font-black uppercase italic tracking-widest text-slate-400">Connection Status</p>
+                                                        <p className="text-[10px] font-black uppercase italic tracking-widest text-slate-400">{t('settings:connection_status')}</p>
                                                         <p className="text-sm font-bold uppercase">{whatsappState.status}</p>
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2">
-                                                    <Button variant="outline" size="sm" className="h-8 rounded-lg bg-white/10 border-white/20 text-[9px] uppercase font-black italic" onClick={() => socket.emit('whatsapp:initialize')}>Reset Session</Button>
+                                                    <Button variant="outline" size="sm" className="h-8 rounded-lg bg-white/10 border-white/20 text-[9px] uppercase font-black italic" onClick={() => socket.emit('whatsapp:initialize')}>{t('settings:reset_session')}</Button>
                                                 </div>
                                             </div>
 
@@ -423,20 +423,20 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                         alt="QR" 
                                                         className="w-40 h-40"
                                                     />
-                                                    <p className="text-slate-900 text-[9px] font-black uppercase italic mt-4 text-center">Open WhatsApp on your phone<br/>Link a Device</p>
+                                                    <p className="text-slate-900 text-[9px] font-black uppercase italic mt-4 text-center whitespace-pre-line">{t('settings:open_whatsapp_phone')}</p>
                                                 </div>
                                             ) : (whatsappState.status === 'READY' || whatsappState.status === 'CONNECTED') ? (
                                                 <div className="py-12 flex flex-col items-center justify-center gap-2 border border-emerald-500/30 rounded-2xl bg-emerald-500/5">
                                                     <Zap className="text-emerald-500 h-8 w-8" />
-                                                    <span className="text-[10px] font-black uppercase italic text-emerald-400">System Connected & Encrypted</span>
+                                                    <span className="text-[10px] font-black uppercase italic text-emerald-400">{t('settings:system_connected_encrypted')}</span>
                                                     <Button variant="ghost" className="mt-4 text-red-400 hover:text-red-300 text-[10px] uppercase font-bold" onClick={() => socket.emit('whatsapp:logout')}>
-                                                        <LogOut size={12} className="mr-2" /> Logout Session
+                                                        <LogOut size={12} className="mr-2" /> {t('settings:logout_session')}
                                                     </Button>
                                                 </div>
                                             ) : (
                                                 <div className="py-12 flex flex-col items-center justify-center gap-2 border border-white/10 rounded-2xl">
                                                     <RefreshCw className="text-slate-500 h-8 w-8 animate-spin" />
-                                                    <span className="text-[10px] font-black uppercase italic text-slate-400 tracking-widest">Waiting for Local Agent...</span>
+                                                    <span className="text-[10px] font-black uppercase italic text-slate-400 tracking-widest">{t('settings:waiting_local_agent')}</span>
                                                 </div>
                                             )}
                                         </div>
@@ -444,8 +444,8 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                         <div className="space-y-4">
                                             <div className="flex items-center justify-between p-4 rounded-2xl bg-white border border-slate-50 shadow-sm">
                                                 <div className="flex flex-col">
-                                                    <Label className="text-[11px] font-black uppercase italic tracking-tight text-slate-700">Auto-Reply (AI)</Label>
-                                                    <p className="text-[9px] text-slate-400 uppercase font-bold">Răspuns automat la mesaje noi</p>
+                                                    <Label className="text-[11px] font-black uppercase italic tracking-tight text-slate-700">{t('settings:auto_reply_ai')}</Label>
+                                                    <p className="text-[9px] text-slate-400 uppercase font-bold">{t('settings:auto_reply_desc')}</p>
                                                 </div>
                                                 <Switch 
                                                     checked={whatsappData.autoReply === true} 
@@ -453,16 +453,16 @@ export const GeneralTab: React.FC<LocalAgentTabProps> = ({
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Greeting Message</Label>
+                                                <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">{t('settings:greeting_message')}</Label>
                                                 <BufferedTextarea 
                                                     value={formatForRender(whatsappData.greetingMessage || "", lang)}
                                                     onChange={(val) => updateWhatsapp('greetingMessage', val)}
-                                                    placeholder="Bună! Te contactăm în legătură cu..."
+                                                    placeholder={t('settings:greeting_placeholder')}
                                                     className="rounded-xl resize-none h-24 text-xs font-medium"
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">About Status</Label>
+                                                <Label className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">{t('settings:about_status')}</Label>
                                                 <BufferedInput 
                                                     value={formatForRender(whatsappData.aboutStatus || "", lang)}
                                                     onChange={(val) => updateWhatsapp('aboutStatus', val)}

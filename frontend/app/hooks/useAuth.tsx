@@ -2,7 +2,9 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, ty
 import { socket, whatsappSocket } from '~/lib/core';
 import { api } from '~/lib/core';
 import { authClient } from '~/lib/core';
+import { useSession } from '~/lib/auth';
 import { useConfig } from "./useConfig";
+import { useActionV3 } from "./useActionV3";
 
 interface AuthContextType {
   user: any;
@@ -28,12 +30,19 @@ export function useOptionalAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { data: sessionData, isPending: sessionLoading } = useSession();
   const [user, setUser] = useState<any>(null);
   const [userList, setUserList] = useState<any[]>([]);
   const [userLoading, setUserLoading] = useState(false);
   const [isAdminExists, setIsAdminExists] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const config = useConfig();
+
+  // Modular V3 Actions
+  const { execute: executeCheckAdmin } = useActionV3('user', 'check-admin');
+  const { execute: executeSetupAdmin } = useActionV3('user', 'setup-admin');
+  const { execute: getMemberList } = useActionV3('workspace', 'list-members');
+
   const useLocalAgent = config?.constants?.SYSTEM_SETTING?.use_local_agent === true;
 
 
@@ -48,15 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isGlobal = roleDef?.permission?.includes('*');
     if (!user.workspaceId && !isGlobal) return;
     
-    if (!force && userList.length > 0) return; // Basic Caching (Enterprise Level 8 Optimization)
+    if (!force && userList.length > 0) return; // basic cache
     if (fetchingUserListRef.current) return; // Prevent duplicate calls
     
     fetchingUserListRef.current = true;
     setUserLoading(true);
     try {
-      const response = await api.brain.get(`workspace/member?workspaceId=${user.workspaceId || ""}`);
-      if (response && response.success) {
-        setUserList(Array.isArray(response.data) ? response.data : []);
+      const response = await getMemberList({ workspaceId: user.workspaceId || "" });
+      if (response) {
+        setUserList(Array.isArray(response) ? response : []);
       }
     } finally {
       setUserLoading(false);
@@ -64,70 +73,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.workspaceId, user?.role, config]);
 
-  const init = useCallback(async () => {
-    try {
-      // Enterprise Level 8 Optimization: Check local cache first for admin status
-      // This allows almost instant decision on whether to show setup or login
-      if (typeof localStorage !== 'undefined') {
-        const cachedAdmin = localStorage.getItem('isAdminExists');
-        if (cachedAdmin === 'true') setIsAdminExists(true);
-      }
+  useEffect(() => {
+    // Minimal, non-blocking auth initialization driven by SSR or useSession()
+    const cachedAdmin = typeof localStorage !== 'undefined' && localStorage.getItem('isAdminExists') === 'true';
+    if (cachedAdmin) setIsAdminExists(true);
 
-      // Enterprise Level 8 Parallelization: Fetch session AND system status concurrently
-      // We also add a small timestamp to bypass aggressive middleware caches if needed
-      const [sessionRes, adminRes] = await Promise.all([
-        authClient.getSession(),
-        api.brain.get(`auth/check-admin?t=${Date.now()}`).catch(() => null)
-      ]);
-      
-      const sessionData = sessionRes?.data;
-      
-      // Update Admin Exists status
-      if (sessionData?.user) {
-        setIsAdminExists(true);
-        localStorage.setItem('isAdminExists', 'true');
-      } else if (adminRes) {
-        const exists = !!(adminRes.data?.exists ?? adminRes.exists);
-        setIsAdminExists(exists);
-        if (exists) localStorage.setItem('isAdminExists', 'true');
-        else localStorage.removeItem('isAdminExists');
-      }
+    // SSR fast-path
+    if (typeof window !== 'undefined' && (window as any).__INITIAL_SESSION__ !== undefined) {
+      try {
+        const initial = (window as any).__INITIAL_SESSION__;
+        try { delete (window as any).__INITIAL_SESSION__; } catch (_) { (window as any).__INITIAL_SESSION__ = undefined; }
+        if (initial?.user) {
+          setUser(initial.user);
+          setIsAdminExists(true);
+          localStorage?.setItem('isAdminExists','true');
+          setLoading(false);
+          return;
+        }
+        if (initial?.exists !== undefined) {
+          setIsAdminExists(!!initial.exists);
+          if (initial.exists) localStorage?.setItem('isAdminExists','true');
+          setLoading(false);
+          return;
+        }
+      } catch (_) { /* ignore */ }
+    }
 
-      if (sessionData?.user) {
-        setUser(sessionData.user);
-        
-        // Parallelized Local Token Fetch (Background)
-        // We don't await this to avoid blocking the main UI gate
-        api.brain.get('auth/local-token').then(res => {
-          const tokenRes = res?.data || res;
-          if (tokenRes?.token) {
-            localStorage.setItem('token', tokenRes.token);
-            if (sessionData?.user?.email) {
-              localStorage.setItem('userEmail', sessionData.user.email);
-            }
-          }
-        }).catch(err => console.warn("[AUTH] Local token recovery failed", err));
-      }
-    } catch (err: any) {
-      console.error("[AUTH-INIT-ERROR]", err.message);
-    } finally {
+    // useSession fast-path: do not block UI while session resolves
+    if (sessionLoading) {
       setLoading(false);
+      executeCheckAdmin().then(r => { const ex = !!r?.exists; setIsAdminExists(ex); if (ex) localStorage?.setItem('isAdminExists','true'); }).catch(() => {});
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    const currentWorkspaceId = user?.workspaceId || '';
-    if (lastWorkspaceIdRef.current !== currentWorkspaceId) {
-      // Clear cache when user workspace changes
-      fetchingUserListRef.current = false;
-      setUserList([]); // Clear userList for new workspace
-      lastWorkspaceIdRef.current = currentWorkspaceId;
+    // session available — apply immediately; otherwise run a single admin check
+    if (sessionData?.user) {
+      setUser(sessionData.user);
+      setIsAdminExists(true);
+      localStorage?.setItem('isAdminExists','true');
+      api.brain.get('auth/local-token').then(res => { const t = res?.data || res; if (t?.token) localStorage.setItem('token', t.token); }).catch(() => {});
+    } else {
+      executeCheckAdmin().then(r => { const ex = !!r?.exists; setIsAdminExists(ex); if (ex) localStorage?.setItem('isAdminExists','true'); }).catch(() => {});
     }
-  }, [user?.workspaceId]);
 
-  useEffect(() => {
-    init();
-  }, [init]);
+    setLoading(false);
+  }, [sessionData, sessionLoading, executeCheckAdmin]);
 
   useEffect(() => {
     // Connect socket ONLY after user is authenticated AND not on login page AND Local Agent is enabled
@@ -136,10 +126,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user && !isLoginPage && useLocalAgent) {
       if (socket.connected) return;
 
-      // Enterprise Level 8: Delay socket connection to allow for "Brain-Only" mode
+      // delay socket connection to prioritize UI
       // If the local agent is not running, we shouldn't spam the console.
       const waitThenConnect = setTimeout(() => {
-        // Level 8: Update auth token before connecting to ensure Backend v2 can verify it
+        // Level 10: Update auth token before connecting to ensure Backend v2 can verify it
         const token = localStorage.getItem('token');
         if (token) {
           (socket as any).auth = { ...socket.auth, token, email: user.email };
@@ -154,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return () => clearTimeout(waitThenConnect);
     } else {
-      // Enterprise Level 8: Force disconnect if local agent is disabled or user logged out
+      // disconnect sockets when not needed
       // This ensures we never spam with connection errors on production when Local Agent is false
       if (socket.connected) {
         socket.disconnect();
@@ -195,7 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         setLoading(false);
-        throw new Error(error.message || "Login failed");
+        throw new Error(error.message);
       }
 
       // Refresh session data
@@ -213,8 +203,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      // Delay setting loading=false to ensure a smooth transition during navigation
-      setTimeout(() => setLoading(false), 500);
+      // Unblock UI immediately after login
+      setLoading(false);
 
       // Token fetch (don't wait for it to block UI)
       return { success: true };
@@ -240,7 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registeringRef = useRef(false);
 
   const registerAdmin = async (data: any) => {
-    // Enterprise Level 8: Concurrent Guard to prevent double-submission
+    // prevent duplicate admin registration
     if (registeringRef.current) {
         console.warn("[AUTH] Registration already in progress, ignoring duplicate call.");
         return { success: true };
@@ -248,34 +238,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     registeringRef.current = true;
     try {
-      // Folosim endpoint-ul nostru de setup-admin care are permisiuni să seteze role și workspaceId
+      // Use modular v3 action for setup-admin which has permissions to set role and workspaceId
       try {
-        const res = await api.brain.post('auth/setup-admin', data);
+        const res = await executeSetupAdmin(data);
         
-        if (!res?.success) {
-          throw new Error(res?.error || "Setup failed");
+        if (!res) {
+           throw new Error(""); // No fallback
         }
       } catch (err: any) {
-        const errorMsg = err.response?.error || err.message || "";
-        // Enterprise Level 8: Idempotency support. If admin already exists, we just proceed to login.
-        // This handles double-clicks or browser retries where the first request actually succeeded.
+        const errorMsg = err.message || "";
+        // idempotent setup: continue if already exists
         if (errorMsg.includes('already exist') || errorMsg.includes('deja configurat')) {
           console.log("[AUTH] Admin already exists (idempotent setup), proceeding to login.");
         } else {
-          throw new Error(errorMsg || "Setup failed");
+          throw new Error(errorMsg); // No fallback
         }
       }
 
       // Mark admin as existing immediately
       setIsAdminExists(true);
       
-      // Înregistrăm info despre build pentru a fi afișat în UI
+      // Register build info to be displayed in UI
       if (typeof window !== 'undefined') {
           const build = JSON.parse(__APP_VERSION__) as BuildInfo;
           console.log(`[AUTH] Setup Admin completed with build ${build.version}-${build.hash}`);
       }
 
-      // După succes, facem login-ul propriu-zis
+      // After success, perform actual login
       await login({ email: data.email, password: data.password });
       return { success: true };
     } finally {
@@ -286,7 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hasPermission = useCallback((perm: string | any, action?: string) => {
     if (!user) return false;
     
-    // Enterprise Level 8: Registry-Driven Permission Check
+    // permission check (registry-driven)
     const roles = config?.constants?.SYSTEM_ROLE || {};
     const roleDef = roles[user.role];
     
@@ -305,7 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const [entity, act] = perm.split(':');
             const entityData = userPerms[entity];
             if (entityData) {
-                // Enterprise Level 8: Canonical Mappings for Action Synonyms
+                // action synonym map
                 const synMap: Record<string, string[]> = {
                     'read': ['read', 'view', 'list'],
                     'create': ['create', 'add', 'insert'],
@@ -336,7 +325,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hasPageAccess = useCallback((pageId: string) => {
     if (!user) return false;
 
-    // Enterprise Level 8: Core Page Bypass (Always accessible for authenticated users)
+    // core page bypass for authenticated users
     if (['profile', 'dashboard', 'blueprint-architect'].includes(pageId)) return true;
     
     const roles = config?.constants?.SYSTEM_ROLE || {};
@@ -353,7 +342,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isEntity = !!entities[pageId];
     const isWorker = (config?.navigation?.worker || []).some((i: any) => i.id === pageId);
 
-    // Enterprise Level 8: Dynamic Access for Entities and Workers
+    // dynamic access checks
     if (pageId.startsWith('entity:') || isEntity) {
        const entityName = pageId.startsWith('entity:') ? pageId.replace('entity:', '') : pageId;
        
@@ -369,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        // 2. Admin/Superadmin bypass via role-level wildcard
        if (roleDef?.permission?.includes('*')) return true;
 
-       // 3. System Entity Protection (Level 8 Security Gate)
+       // 3. System Entity Protection (Level 10 Security Gate)
        // Never show internal system entities via generic group access like 'entity'
        const coreEntities = (config?.constants?.CONSTANT?.coreEntity || [
            'audit_log', 'config_version', 'system_setting', 'user', 'session', 'role', 'blueprint'
@@ -380,10 +369,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        const isSystem = coreEntities.includes(entityName.toLowerCase()) || !!entityCfg?.isSystem;
        const isAdminCategory = entityCfg?.menuConfig?.category === 'administration';
        
-       // If it's a system entity or admin-only category, it requires explicit permission OR admin role (Level 8 Protection)
+       // If it's a system entity or admin-only category, it requires explicit permission OR admin role (Level 10 Protection)
        if (isSystem || isAdminCategory) {
-           const hasLevel8Admin = roleDef?.allowedPage?.includes('*') || roleDef?.permission?.includes('*');
-           if (!hasPerm && !hasLevel8Admin) return false;
+           const hasLevel10Admin = roleDef?.allowedPage?.includes('*') || roleDef?.permission?.includes('*');
+           if (!hasPerm && !hasLevel10Admin) return false;
        }
 
        // 4. Generic Group Access (Only for non-system/business entities)
@@ -425,15 +414,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, config, hasPermission]);
 
   const switchWorkspace = useCallback(async (id: string) => {
-    setLoading(true); // Blocează UI-ul și arată loader-ul global
+    setLoading(true); // Block UI and show global loader
     try {
       const res = await api.brain.post("workspace/switch", { id });
       if (res?.success) {
-        // Re-inițializăm auth-ul pentru a reflecta noul workspaceId în state-ul React
-        await init();
-        // Socket join noul workspace
+        // Socket join the new workspace and reload to pick up workspace config
         socket.emit("workspace:join", { workspaceId: id });
-        window.location.reload(); // Hard refresh pentru a reîncărca configurația specifică noului workspace
+        window.location.reload();
       } else {
         setLoading(false);
       }
@@ -441,7 +428,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("[AUTH] Switch workspace failed:", e);
       setLoading(false);
     }
-  }, [init]);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ 

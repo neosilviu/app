@@ -8,7 +8,7 @@ import { type EntityType } from '~/lib/core';
 import { useConfig } from "~/hooks/useConfig";
 import { useAuth } from '~/hooks/useAuth';
 import { socket } from '~/lib/core';
-import { cn, api, renderString, normalizeEntity, formatForRender } from '~/lib/core';
+import { cn, api, renderString, normalizeEntity, formatForRender, resolveRecordDisplay } from '~/lib/core';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Button } from "./ui/button";
 import { Input } from '~/components/ui/input';
@@ -52,28 +52,13 @@ export function RelationSelect({ entityType, value, onChange, placeholder }: Rel
         
         socket.emit('db:list', { collection: entityType, filters }, (response: any) => {
             if (response.success && response.data) {
-                // Enterprise Level 8: Respect Entity-level displayField
+                // Enterprise Level 10: Centralized Identity Resolution
                 const entityDef = (systemConfig?.entity as any)?.[entityType.toLowerCase()];
-                const displayField = entityDef?.displayField || 'id';
-
-                const mapped = response.data.map((item: any) => {
-                    // Level 8: STRICT Display Field Resolution
-                    const getResilientLabel = (obj: any, preferred: string) => {
-                        if (!obj || typeof obj !== 'object') return String(obj);
-                        if (obj[preferred]) return obj[preferred];
-                        
-                        const keys = Object.keys(obj);
-                        const foundKey = keys.find(k => k.toLowerCase() === preferred.toLowerCase());
-                        if (foundKey && obj[foundKey]) return obj[foundKey];
-                        
-                        return obj.id || obj.ID || obj.uuid || 'N/A';
-                    };
-
-                    return {
-                        value: String(item.id || item.ID || item.uuid),
-                        label: String(getResilientLabel(item, displayField))
-                    };
-                });
+                
+                const mapped = response.data.map((item: any) => ({
+                    value: String(item.id || item.ID || item.uuid),
+                    label: String(resolveRecordDisplay(item, entityType, systemConfig))
+                }));
                 setOptions(mapped);
             }
             setLoading(false);
@@ -123,7 +108,7 @@ export function MultiRelationSelector({ field, value = [], onChange, label }: Mu
     const targetEntity = field.relation?.target || field.relationTarget || (field.type === 'tag' ? 'tag' : null);
 
     useEffect(() => {
-        // Level 8: Use registry options if available (for multi-select/enum types)
+        // Enterprise Level 10: Use registry options if available (for multi-select/enum types)
         if (field.options && Array.isArray(field.options)) {
             const mapped = field.options.map((opt: any) => ({
                 id: typeof opt === 'object' ? String(opt.value) : String(opt),
@@ -144,28 +129,11 @@ export function MultiRelationSelector({ field, value = [], onChange, label }: Mu
         
         socket.emit('db:list', { collection: targetEntity, filters }, (response: any) => {
             if (response.success && response.data) {
-                // Enterprise Level 8: Respect Entity-level or Field-level displayField
-                const entityDef = (systemConfig?.entity as any)?.[targetEntity.toLowerCase()];
-                const displayField = field.displayField || field.relation?.displayField || field.relation?.field || entityDef?.displayField || 'id';
-
-                const mapped = response.data.map((item: any) => {
-                    const getResilientLabel = (obj: any, preferred: string) => {
-                        if (!obj || typeof obj !== 'object') return String(obj);
-                        if (obj[preferred]) return obj[preferred];
-                        
-                        const keys = Object.keys(obj);
-                        const foundKey = keys.find(k => k.toLowerCase() === preferred.toLowerCase());
-                        if (foundKey && obj[foundKey]) return obj[foundKey];
-                        
-                        return obj.id || obj.ID || obj.uuid || 'N/A';
-                    };
-
-                    return {
-                        id: String(item.id || item.ID || item.uuid || item._id),
-                        name: String(getResilientLabel(item, displayField)),
-                        color: item.color || item.colorTheme
-                    };
-                });
+                const mapped = response.data.map((item: any) => ({
+                    id: String(item.id || item.ID || item.uuid || item._id),
+                    name: String(resolveRecordDisplay(item, targetEntity, systemConfig)),
+                    color: item.color || item.colorTheme
+                }));
                 setOptions(mapped);
             }
             setLoading(false);
@@ -310,7 +278,7 @@ export const DynamicTable = React.memo(function DynamicTable({
   onRestore,
   onRowClick 
 }: DynamicTableProps) {
-  const { t } = useTranslation(['common', 'entity']);
+  const { t } = useTranslation(['common', 'entity', 'entities']);
   const { lang } = useParams();
   const { entity } = useConfig();
   const config = entity[entityType];
@@ -322,7 +290,7 @@ export const DynamicTable = React.memo(function DynamicTable({
   });
   const [displayLimit, setDisplayLimit] = useState(config?.uiConfig?.list?.pageSize || 50);
 
-  // Enterprise Level 8: Cache for related entities labels
+  // Enterprise Level 10: Cache for related entities labels
   // This is used to hydrate IDs/UUIDs into proper labels (DisplayField logic)
   const [relatedData, setRelatedData] = useState<Record<string, any[]>>({});
   const { loading: authLoading } = useAuth();
@@ -333,7 +301,7 @@ export const DynamicTable = React.memo(function DynamicTable({
     }
   }, [config?.uiConfig?.list?.pageSize]);
 
-  // Enterprise Level 8: HYDRATION LOGIC
+  // Enterprise Level 10: HYDRATION LOGIC
   // Fetches labels for all relations in the current table view
   useEffect(() => {
     const fetchRelated = async () => {
@@ -445,8 +413,12 @@ export const DynamicTable = React.memo(function DynamicTable({
 
   const paginatedData = useMemo(() => sortedData.slice(0, displayLimit), [sortedData, displayLimit]);
 
+  // Enterprise Level 10: Selection State Logic
+  const allSelected = paginatedData.length > 0 && paginatedData.every(item => selectedIds.has(String(item.id || item.ID || item.uuid)));
+  const someSelected = paginatedData.some(item => selectedIds.has(String(item.id || item.ID || item.uuid))) && !allSelected;
+
   const fields = useMemo(() => {
-    // Enterprise Level 8: Always use the central normalizer
+    // Enterprise Level 10: Always use the central normalizer
     const allFields = normalizedConfig.fields;
     const columnNames = normalizedConfig?.uiConfig?.list?.columns;
     
@@ -617,25 +589,6 @@ export const DynamicTable = React.memo(function DynamicTable({
       if (items.length === 0) return "-";
       
       const target = (field.relationEntity || field.relation?.target || (field.type === 'tag' ? 'tag' : ''))?.toLowerCase();
-      const targetDef = target ? (entity as any)?.[target] : null;
-      
-      // Enterprise Level 8: Strict Display Field from Registry
-      const displayField = field.displayField || field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'id';
-
-      const getResilientLabel = (obj: any, preferred: string, id: any) => {
-          if (!obj || typeof obj !== 'object') return String(id || obj || '-');
-          
-          // Priority 1: Exact match for strictly requested field
-          if (obj[preferred]) return String(obj[preferred]);
-          
-          // Priority 2: Case-insensitive match for strictly requested field
-          const keys = Object.keys(obj);
-          const foundKey = keys.find(k => k.toLowerCase() === preferred.toLowerCase());
-          if (foundKey && obj[foundKey]) return String(obj[foundKey]);
-          
-          return obj.id || obj.ID || obj.uuid || String(id || '-');
-      };
-
       const lookupItems = (target && relatedData[target]) ? relatedData[target] : [];
 
       return (
@@ -644,15 +597,16 @@ export const DynamicTable = React.memo(function DynamicTable({
             const sid = (typeof item === 'object' && item !== null) ? (item.id || item.ID || item.uuid) : String(item);
             const found = lookupItems.find(it => String(it.id || it.ID || it.uuid || '').toLowerCase() === String(sid).toLowerCase()) || (typeof item === 'object' ? item : null);
             
-            const label = getResilientLabel(found, displayField, sid);
+            // Enterprise Level 10: Centralized Label Resolution
+            const label = resolveRecordDisplay(found || sid, target, { entity });
             const color = found?.color || found?.colorTheme;
             
             return (
               <Badge 
-                key={i} 
+                key={sid || i} 
                 variant="secondary" 
                 className="text-[8px] py-0 px-1 border-none font-bold uppercase tracking-tighter"
-                style={color ? { backgroundColor: `${color}15`, color: color, border: `1px solid ${color}30` } : { backgroundColor: '#f8fafc', color: '#64748b' }}
+                style={color ? { backgroundColor: `${color}15`, color: color, border: `1px solid ${color}30` } : { backgroundColor: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0' }}
               >
                 {renderString(label, lang)}
               </Badge>
@@ -690,9 +644,6 @@ export const DynamicTable = React.memo(function DynamicTable({
     return String(value);
   }, []);
 
-  const allSelected = data.length > 0 && selectedIds.size === data.length;
-  const someSelected = selectedIds.size > 0 && selectedIds.size < data.length;
-
   if (!config || !config.fields) return null;
 
   return (
@@ -712,8 +663,8 @@ export const DynamicTable = React.memo(function DynamicTable({
                   }}
                 />
               </TableHead>
-              {fields.map((field: any) => (
-                <TableHead key={field.name} className="cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => handleSort(field.name)}>
+              {fields.map((field: any, i: number) => (
+                <TableHead key={`${field.name || 'col'}-${i}`} className="cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => handleSort(field.name)}>
                   <div className="flex items-center">
                     {(t([`entities:fields.${field.name}`, renderString(field.label || field.name)]) as string)}
                     {getSortIcon(field.name)}
@@ -757,8 +708,8 @@ export const DynamicTable = React.memo(function DynamicTable({
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox checked={selectedIds.has(rowKey)} onCheckedChange={() => startTransition(() => onToggleSelection?.(rowKey))} />
                     </TableCell>
-                    {fields.map((field: any) => (
-                      <TableCell key={field.name}>{renderCell(item, field.name, field)}</TableCell>
+                    {fields.map((field: any, i: number) => (
+                      <TableCell key={`${field.name || 'cell'}-${i}`}>{renderCell(item, field.name, field)}</TableCell>
                     ))}
                     {config.hasTags && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -789,6 +740,74 @@ export const DynamicTable = React.memo(function DynamicTable({
           </TableBody>
         </Table>
       </div>
+      
+      {/* Enterprise Level 10: Bulk Operation Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom-8 duration-500">
+          <GlassCard className="flex items-center gap-6 px-10 py-5 rounded-[3rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border-indigo-500/20 bg-white/95 dark:bg-slate-900/95">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">{selectedIds.size} {t('common:records_selected', { count: selectedIds.size })}</span>
+              <span className="text-xs font-bold text-slate-400">Actions that impact selection</span>
+            </div>
+            
+            <div className="w-[1px] h-8 bg-slate-200 dark:bg-slate-800" />
+            
+            <div className="flex items-center gap-3">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-10 rounded-2xl gap-2 font-black text-[10px] uppercase text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/40"
+                onClick={() => {
+                  const items = data.filter(d => selectedIds.has(String(d.id || d.ID || d.uuid)));
+                  toast.success(`Exporting ${items.length} records...`);
+                }}
+              >
+                <FileIcon size={14} /> Export
+              </Button>
+
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-10 rounded-2xl gap-2 font-black text-[10px] uppercase text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/40"
+                onClick={() => {
+                  const ids = Array.from(selectedIds);
+                  if (onArchive) ids.forEach(id => onArchive(data.find(d => String(d.id || d.ID || d.uuid) === id)));
+                  if (onClearSelection) onClearSelection();
+                }}
+              >
+                <Archive size={14} /> Archive
+              </Button>
+
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-10 rounded-2xl gap-2 font-black text-[10px] uppercase text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/40"
+                onClick={() => {
+                   if (confirm(`Delete ${selectedIds.size} items?`)) {
+                      const ids = Array.from(selectedIds);
+                      if (onDelete) ids.forEach(id => onDelete(data.find(d => String(d.id || d.ID || d.uuid) === id)));
+                      if (onClearSelection) onClearSelection();
+                   }
+                }}
+              >
+                <Trash size={14} /> Delete
+              </Button>
+            </div>
+            
+            <div className="w-[1px] h-8 bg-slate-200 dark:bg-slate-800" />
+
+            <Button 
+              size="icon" 
+              variant="ghost" 
+              className="h-10 w-10 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              onClick={onClearSelection}
+            >
+              <X size={18} />
+            </Button>
+          </GlassCard>
+        </div>
+      )}
+
       {sortedData.length > displayLimit && (
         <div className="p-4 flex justify-center">
           <Button variant="outline" onClick={() => startTransition(() => setDisplayLimit((prev: number) => prev + 50))} disabled={isPending}>
@@ -816,7 +835,7 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading, isModa
   const { entity } = useConfig();
   let config = entity[entityType];
   
-  // Enterprise Level 8: Always use the central normalizer
+  // Enterprise Level 10: Always use the central normalizer
   const normalizedConfig = normalizeEntity(config);
   const fieldsArray = normalizedConfig.fields;
   const fieldsMap = normalizedConfig.fieldsMap;
@@ -887,7 +906,7 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading, isModa
         }, t('validation:required', { label: fieldLabel }));
       }
 
-      // Enterprise Level 8: Preprocess numbers at the very end to ensure raw validation worked
+      // Enterprise Level 10: Preprocess numbers at the very end to ensure raw validation worked
       if (field.type === 'number' || field.type === 'currency') {
         fieldSchema = z.preprocess((val) => (val === '' || val === null || val === undefined ? undefined : Number(val)), fieldSchema);
       }
@@ -1023,6 +1042,9 @@ export function DynamicForm({ entityType, onSubmit, initialData, loading, isModa
         if (operator === '!=' && isMatch) return null;
         if (operator === 'in' && (!targetValue || !String(targetValue).includes(String(value)))) return null;
         if (operator === 'set' && (targetValue === null || targetValue === undefined || targetValue === '')) return null;
+        if (operator === 'not-set' && (targetValue !== null && targetValue !== undefined && targetValue !== '')) return null;
+        if (operator === '>' && !(Number(targetValue) > Number(value))) return null;
+        if (operator === '<' && !(Number(targetValue) < Number(value))) return null;
       }
     }
 

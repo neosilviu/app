@@ -2,9 +2,8 @@ import { createAuthClient } from "better-auth/react";
 import { getLocalAgentUrl } from "./services";
 
 /**
- * AUTH CLIENT
- * Level 8: Points to the Brain (Cloudflare Worker) by default.
- * If Needed, the local agent can be used by overriding getLocalAgentUrl.
+ * AUTH CLIENT - Enterprise Level 10 Hybrid Infrastructure
+ * Defaults to Cloudflare Worker (The Brain) with dynamic Local Agent fallback capabilities.
  */
 export const authClient = createAuthClient({
     // Always use the full origin in the browser to satisfy Better-Auth's URL requirement.
@@ -14,3 +13,6 @@ export const authClient = createAuthClient({
         credentials: "include"
     }
 });
+
+// Compact exports (app-v3 pattern) for easier hooks usage
+export const { signIn, signUp, signOut, useSession } = authClient;

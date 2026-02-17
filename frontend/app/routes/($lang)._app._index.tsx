@@ -4,7 +4,7 @@ import { useConfig } from '~/hooks/useConfig';
 import { Link, useParams } from 'react-router';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '~/components/ui/card';
 import { IconMap } from '~/lib/icons';
-import { Activity, LayoutDashboard, Sparkles, Database, ArrowRight, UserPlus, Mail, CheckSquare, HardDrive, Cpu, Zap, RefreshCw } from 'lucide-react';
+import { Activity, LayoutDashboard, Sparkles, Database, ArrowRight, UserPlus, Mail, CheckSquare, HardDrive, Cpu, Zap, RefreshCw, MessageSquare, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { localAgentApi, api, socketRequest } from '~/lib/core';
@@ -30,6 +30,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Record<string, any>>({});
   const [activity, setActivity] = useState<any[]>([]);
   const [health, setHealth] = useState<any>(null);
+  const [workers, setWorkers] = useState<any[]>([]);
+  const [aiJobs, setAiJobs] = useState<any[]>([]);
   const [todos, setTodos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -51,8 +53,8 @@ export default function Dashboard() {
         const canReadAudit = hasPermission('audit_log', 'read');
         const canViewMonitoring = hasPageAccess('monitoring');
 
-        // Use Socket.IO for monitoring and Brain API for Audit Logs (Enterprise Level 8)
-        const [statsRes, auditRes, healthRes, todosRes] = await Promise.allSettled([
+        // Use Socket.IO for monitoring and Brain API for Audit Logs (Enterprise Level 10)
+        const [statsRes, auditRes, healthRes, todosRes, workersRes] = await Promise.allSettled([
           canViewMonitoring 
             ? socketRequest("monitoring:db", { withRecent: true }).catch(() => ({ success: false }))
             : Promise.resolve({ success: true, data: { tables: [] } } as any),
@@ -62,7 +64,8 @@ export default function Dashboard() {
           canViewMonitoring
             ? socketRequest("monitoring:workers").catch(() => ({ success: false }))
             : Promise.resolve({ success: true, data: [] } as any),
-          socketRequest("monitoring:todos").catch(() => ({ success: false }))
+          socketRequest("monitoring:todos").catch(() => ({ success: false })),
+          api.brain.get(`db/worker?limit=10`).catch(() => ({ success: false, data: [] }))
         ]);
         
         // Map monitoring:db table data to entity stats format
@@ -93,6 +96,16 @@ export default function Dashboard() {
         // Health from workers status
         const workersData = healthRes.status === 'fulfilled' ? healthRes.value?.data : null;
         setHealth(workersData);
+
+        // Workers from Brain Entity (Level 11)
+        const v3Workers = workersRes.status === 'fulfilled' && Array.isArray(workersRes.value)
+          ? workersRes.value
+          : [];
+        setWorkers(v3Workers);
+
+        // AI Jobs (Level 11)
+        const jobs = await api.brain.get(`db/ai_task?limit=5&sortBy=createdAt&sortOrder=DESC`).catch(() => []);
+        setAiJobs(Array.isArray(jobs) ? jobs : []);
         
         // Todos
         const todosData = todosRes.status === 'fulfilled' && Array.isArray(todosRes.value?.data)
@@ -122,10 +135,24 @@ export default function Dashboard() {
     }
   };
 
+  const handleToggleWorker = async (id: string) => {
+    try {
+      const resp = await api.brain.action('worker', 'toggle', { id });
+      if (resp.success) {
+        toast.success(t('dashboard:worker_updated'));
+        // Refresh workers list
+        const updated = await api.brain.get(`db/worker?limit=10`);
+        if (Array.isArray(updated)) setWorkers(updated);
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Eroare la comutare worker');
+    }
+  };
+
   const dashboardWidgets = Object.entries(configMap || {})
     .map(([name, def]) => normalizeEntity({ ...def, name }))
     .filter(ent => {
-      // Enterprise Level 8: Widget must be enabled. 
+      // Enterprise Level 10: Dynamic Widget Eligibility Resolution
       // showInDashboard is an optional secondary override (defaulting to true if enabled)
       const isEnabled = ent.dashboardConfig?.enabled !== false;
       const isVisibilityOverridden = ent.dashboardConfig?.showInDashboard === false;
@@ -150,7 +177,7 @@ export default function Dashboard() {
           <QuickActionLink to={`/${lang}/printing`} icon={<Zap className="w-4 h-4" />} label={t('dashboard:print_now')} color="orange" />
       </div>
 
-      {/* Dynamic Dashboard Engine (Level 8) */}
+      {/* Enterprise Level 10: Dynamic Modular Dashboard Engine */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {dashboardWidgets.map((entityDef) => {
           const tableName = resolveCollection(entityDef.name);
@@ -228,6 +255,14 @@ export default function Dashboard() {
                  </div>
                </CardContent>
             </Card>
+
+            <AiAutonomousCard jobs={aiJobs} />
+
+            <WorkerStatusCard 
+              workers={workers} 
+              loading={loading} 
+              onToggle={handleToggleWorker} 
+            />
 
             <Card className="border-none shadow-sm border border-gray-100">
                <CardHeader className="pb-4 flex flex-row items-center justify-between">
@@ -333,5 +368,130 @@ function WorkerStatusBadge({ name, status }: { name: string, status?: string }) 
       {name}
     </div>
   );
+}
+
+function WorkerStatusCard({ workers, loading, onToggle }: { workers: any[], loading: boolean, onToggle: (id: string) => void }) {
+  const { t } = useTranslation(['dashboard']);
+  
+  return (
+     <Card className="border-none shadow-sm border border-gray-100">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-2">
+             <Cpu className="w-4 h-4 text-blue-600" />
+             <CardTitle className="text-sm font-bold uppercase tracking-wider">{t('dashboard:workers_title')}</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-0 pb-2">
+           {loading ? (
+             <div className="p-4 space-y-2">
+                {[1,2,3].map(i => <div key={i} className="h-8 bg-gray-50 animate-pulse rounded-lg" />)}
+             </div>
+           ) : workers.length > 0 ? (
+             <div className="divide-y divide-gray-50 max-h-[300px] overflow-y-auto scrollbar-hide">
+               {workers.map((w) => (
+                 <div key={w.id} className="px-6 py-3 hover:bg-gray-50/50 transition-all group">
+                    <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                          <div className={cn(
+                             "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
+                             w.status === 'running' ? "bg-green-50 text-green-600" : "bg-gray-50 text-gray-400"
+                          )}>
+                             <WorkerIcon type={w.type} className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                             <div className="text-[11px] font-bold text-gray-900 leading-tight truncate">{w.name}</div>
+                             <div className="text-[9px] text-gray-400 font-medium uppercase tracking-tighter mt-0.5">
+                                {w.type} • {w.lastPulse ? new Date(w.lastPulse).toLocaleTimeString() : 'N/A'}
+                             </div>
+                          </div>
+                       </div>
+                       
+                       <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => onToggle(w.id)}
+                       >
+                          {w.status === 'running' ? <Zap className="w-3 h-3 text-yellow-500" /> : <RefreshCw className="w-3 h-3" />}
+                       </Button>
+                    </div>
+                    {w.error && (
+                       <div className="mt-2 text-[8px] text-red-500 font-medium bg-red-50/50 p-1.5 rounded-lg border border-red-100/50 truncate">
+                          {w.error}
+                       </div>
+                    )}
+                 </div>
+               ))}
+             </div>
+           ) : (
+             <div className="p-8 text-center text-[10px] font-bold text-gray-300 uppercase italic">
+                {t('dashboard:no_workers')}
+             </div>
+           )}
+        </CardContent>
+     </Card>
+  );
+}
+
+function AiAutonomousCard({ jobs }: { jobs: any[] }) {
+  const { t } = useTranslation(['dashboard']);
+  
+  return (
+    <Card className="border-none shadow-sm border border-gray-100 overflow-hidden">
+      <CardHeader className="pb-4 bg-gray-50/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-indigo-600 animate-pulse" />
+            <CardTitle className="text-sm font-bold uppercase tracking-wider">Agent Autonom v11</CardTitle>
+          </div>
+          <Badge variant="outline" className="text-[9px] bg-indigo-50 text-indigo-700 border-indigo-100 italic">Self-Healing</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {jobs.length === 0 ? (
+          <div className="p-8 text-center text-[10px] font-bold text-gray-300 uppercase italic">
+            Niciun task în curs
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50 max-h-[300px] overflow-y-auto scrollbar-hide">
+            {jobs.map((job) => (
+              <div key={job.id} className="p-4 hover:bg-gray-50/50 transition-colors">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-gray-900 truncate max-w-[150px]">{job.prompt || 'Misiune AI'}</span>
+                  <Badge variant="secondary" className={cn(
+                    "text-[8px] font-black uppercase px-1.5 h-4",
+                    job.status === 'completed' && "bg-green-50 text-green-700 border-green-100",
+                    job.status === 'running' && "bg-blue-50 text-blue-700 border-blue-100 animate-pulse",
+                    job.status === 'failed' && "bg-red-50 text-red-700 border-red-100",
+                    job.status === 'pending' && "bg-gray-50 text-gray-500 border-gray-100"
+                  )}>
+                    {job.status}
+                  </Badge>
+                </div>
+                <p className="text-[9px] text-gray-500 font-medium line-clamp-1">{job.prompt}</p>
+                {job.error && (
+                  <div className="mt-1 text-[8px] text-red-500 font-medium bg-red-50/50 p-1 rounded-lg border border-red-100/50 truncate">
+                    {job.error}
+                  </div>
+                )}
+                <div className="mt-2 flex items-center justify-between">
+                   <span className="text-[8px] text-gray-400 font-bold uppercase">{new Date(job.createdAt).toLocaleTimeString()}</span>
+                   {job.status === 'completed' && <CheckSquare className="w-3 h-3 text-green-500" />}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WorkerIcon({ type, className }: { type: string, className?: string }) {
+   if (type === 'whatsapp') return <MessageSquare className={className} />;
+   if (type === 'gmail') return <Mail className={className} />;
+   if (type === 'indexer') return <Database className={className} />;
+   if (type === 'proxy') return <Zap className={className} />;
+   return <Cpu className={className} />;
 }
 

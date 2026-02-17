@@ -1,4 +1,4 @@
-# Studio App v2 - Cloud Native (Enterprise Level 8)
+# Studio App v3 - Cloud Native (Enterprise Level 10)
 
 Un sistem avansat **Registry-Driven & No-Code Engine** construit pe arhitectură **Worker-First**.
 
@@ -7,7 +7,8 @@ Un sistem avansat **Registry-Driven & No-Code Engine** construit pe arhitectură
 Studio App v2 respectă regula de aur: nicio valoare (string-uri, prompt-uri, rute, entități) nu este hardcodată în cod. Totul este generat dinamic din **Registry** (Cloudflare D1 + Baseline).
 
 - **The Brain (Cloudflare Workers)**: Logica centrală, securitatea și metaprogramarea bazei de date.
-- **The DNA (Registry Baseline)**: Specificația de bază din egistry-baseline.ts.
+- **The DNA (Registry Baseline)**: Specificația de bază din 
+egistry-baseline.ts.
 - **The Database (Cloudflare D1)**: Stocare globală, sincronizată automat prin rain.server.ts.
 - **The Local Agent (Node.js)**: Server auxiliar pentru funcții hardware (WhatsApp, Printare) și proxy local.
 

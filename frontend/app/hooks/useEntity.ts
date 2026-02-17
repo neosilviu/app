@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams } from "react-router";
+import { useTranslation } from "react-i18next";
 import { 
   socket,
   socketRequest,
@@ -38,6 +39,7 @@ const LOCAL_FALLBACK_ENTITIES = [
 ];
 
 export function useEntity<T = any>(entityName: string, options: EntityOptions = {}) {
+  const { t } = useTranslation();
   const [data, setData] = useState<T[]>([]);
   const { user, hasPermission, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(!options.skipFetch);
@@ -47,7 +49,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   const { entity, constants } = useConfig();
   const { autoRefreshEnabled, canAutoRefresh } = useTheme();
   const params = useParams();
-  const lang = (params.lang as string) || 'ro';
+  const lang = (params.lang as string) || constants?.I18N_CONFIG?.defaultLanguage || 'en';
 
   const isKnownEntity = useMemo(() => {
     if (!entityName || entityName === 'undefined') return false;
@@ -138,7 +140,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
                      registryGlobals.map((e: string) => e.toLowerCase()).includes(entityName.toLowerCase());
     
     // Handle archived items
-    // Level 8: Improved archival filter - don't force 0 if not needed, as NULL also means non-archived in some schemas
+    // Enterprise Level 10: Improved archival filter - don't force 0 if not needed, as NULL also means non-archived in some schemas
     // For superadmins, we show everything by default unless they explicitly filter
     if (!options.includeArchived && filters.archived === undefined && !isGlobal && !hasPermission('*')) {
       filters.archived = 0;
@@ -163,13 +165,15 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
 
       const url = `db/collection/${entityName}/${workspaceId}/all?${queryParams.toString()}&t=${Date.now()}`;
       
+      console.log(`[useEntity-REQUEST] Fetching ${entityName}: url=${url.substring(0, 100)}... filters=${JSON.stringify(filters)}`);
+      
       let responseData;
       try {
         const response = await api.brain.get(url);
         if (!response || typeof response === 'string') throw new Error("Invalid response");
         
         responseData = response;
-        // console.log(`[useEntity] Brain API returned ${responseData.data?.length || 0} records for ${entityName}`);
+        console.log(`[useEntity-RESPONSE] Brain API returned ${responseData?.data?.length || 0} records for ${entityName}`);
         
         // HYBRID FIX: If Brain returns empty but we are connected to a socket,
         // it's possible the data exists only on the Local Agent (e.g. contact, file)
@@ -226,15 +230,18 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       setLoading(false);
       if (responseData.success) {
         const newData = Array.isArray(responseData.data) ? responseData.data : [];
+        console.log(`[useEntity-FETCH] ${entityName}: Got ${newData.length} records from Brain. First item:`, newData[0] ? JSON.stringify(newData[0]).substring(0, 150) : 'NO DATA');
         
         // Normalize data to prevent React rendering errors with relation objects
         const entityDef = entity[entityName];
         const normalizedData = entityDef ? newData.map((item: any) => normalizeFormData(item, entityDef.fields)) : newData;
+        console.log(`[useEntity-NORMALIZE] ${entityName}: After normalize = ${normalizedData.length} records`);
         
         setData(prev => {
           if (prev.length === normalizedData.length && JSON.stringify(prev[0]) === JSON.stringify(normalizedData[0])) {
              return prev;
           }
+          console.log(`[useEntity-STATE] Setting ${entityName} state to ${normalizedData.length} records (was ${prev.length})`);
           return normalizedData;
         });
         
@@ -332,12 +339,12 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     try {
       let result;
       try {
-        // Enterprise Level 8: Using explicit /new segment to avoid ID vs WorkspaceID ambiguity in brain.server.ts
+        // Enterprise Level 10: Using explicit /new segment to avoid ID vs WorkspaceID ambiguity in brain.server.ts
         const response = await api.brain.post(`db/collection/${entityName}/${workspaceId}/new`, payload);
         // console.log(`[useEntity] Brain API create response for ${entityName}:`, response);
         result = response;
       } catch (err: any) {
-        // Enterprise Level 8: Improved Error Handling
+        // Enterprise Level 10: Improved Error Handling
         // If it's a validation error (400) or Forbidden (403), do NOT fallback to socket.
         // These are legitimate backend rejections.
         const status = err?.response?.status;
@@ -386,11 +393,11 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     try {
       let result;
       try {
-        // Enterprise Level 8: Using explicit /item segment to avoid ID vs WorkspaceID ambiguity in brain.server.ts
+        // Enterprise Level 10: Using explicit /item segment to avoid ID vs WorkspaceID ambiguity in brain.server.ts
         const response = await api.brain.put(`db/collection/${entityName}/item/${id}`, payload);
         result = response;
       } catch (err: any) {
-        // Enterprise Level 8: Improved Error Handling (Update)
+        // Enterprise Level 10: Improved Error Handling (Update)
         const status = err?.response?.status;
         const brainError = err?.response?.data?.error || err?.message;
 
@@ -423,13 +430,13 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
           return item;
         }));
         
-        toast.success(`${entityName} updated successfully`);
+        toast.success(t('common.changes_saved'));
         return id;
       } else {
         throw new Error(result.error);
       }
     } catch (error: any) {
-      toast.error(`Failed to update ${entityName}: ${error.message}`);
+      toast.error(error.message);
       throw error;
     }
   };
@@ -438,11 +445,11 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     try {
       let result;
       try {
-        // Enterprise Level 8: Using explicit /item segment
+        // Enterprise Level 10: Using explicit /item segment
         const url = `db/collection/${entityName}/item/${id}${force ? '?force=true' : ''}`;
         result = await api.brain.delete(url);
       } catch (err: any) {
-        // Enterprise Level 8: Improved Error Handling (Delete)
+        // Enterprise Level 10: Improved Error Handling (Delete)
         const status = err?.response?.status;
         const brainError = err?.response?.data?.error || err?.message;
 
@@ -462,7 +469,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         }
       }
 
-      // Check for dependencies (Enterprise Level 8 Safety)
+      // Check for dependencies (Enterprise Level 10 Safety)
       if (result.success && result.data?.hasDependencies && !force) {
         if (confirm(result.data.message)) {
           return await remove(id, true); // Retry with force
@@ -474,19 +481,19 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       if (result.success) {
         skipNextSocketUpdate.current = id;
         setData(prev => prev.filter((item: any) => item.id !== id));
-        toast.success(renderString({ ro: "Înregistrare ștearsă", en: "Deleted" }, lang));
+        toast.success(t('common.delete_success'));
         return true;
       } else {
         throw new Error(result.error);
       }
     } catch (error: any) {
-      toast.error(`Failed to delete ${entityName}: ${error.message}`);
+      toast.error(error.message);
       throw error;
     }
   };
 
   /**
-   * Quick Create (Enterprise Level 8)
+   * Quick Create (Enterprise Level 10)
    * Creates a simple record with just a name/label and returns the ID.
    * Useful for inline additions in dropdowns.
    */
@@ -517,7 +524,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
     try {
       let result;
       try {
-        // Enterprise Level 8: Using explicit /item segment
+        // Enterprise Level 10: Using explicit /item segment
         const response = await api.brain.patch(`db/collection/${entityName}/item/${id}/archive`);
         result = response;
       } catch (err) {
@@ -528,13 +535,13 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       if (result.success) {
         skipNextSocketUpdate.current = id;
         setData(prev => prev.filter((item: any) => item.id !== id));
-        toast.success(`${entityName} archived successfully`);
+        toast.success(t('common.changes_saved'));
         return true;
       } else {
         throw new Error(result.error);
       }
     } catch (error: any) {
-      toast.error(`Failed to archive ${entityName}: ${error.message}`);
+      toast.error(error.message);
       throw error;
     }
   };
@@ -544,12 +551,12 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       const item = await getOne(id);
       if (item) {
         await update(id, { ...item, archived: 0 } as any);
-        toast.success(`${entityName} restored successfully`);
+        toast.success(t('common.changes_saved'));
         return true;
       }
       return false;
     } catch (error: any) {
-      toast.error(`Failed to restore ${entityName}: ${error.message}`);
+      toast.error(error.message);
       throw error;
     }
   };
@@ -566,13 +573,13 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       if (response.success) {
         skipNextSocketUpdate.current = 'batch';
         setData(prev => prev.filter((item: any) => !ids.includes(item.id)));
-        toast.success(`${ids.length} items archived`);
+        toast.success(t('common.changes_saved'));
         clearSelection();
         return true;
       }
       return false;
     } catch (error: any) {
-      toast.error(`Failed to archive items: ${error.message}`);
+      toast.error(error.message);
       throw error;
     }
   };
@@ -588,13 +595,13 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       if (response.success) {
         skipNextSocketUpdate.current = 'batch';
         setData(prev => prev.filter((item: any) => !ids.includes(item.id)));
-        toast.success(`${ids.length} items deleted`);
+        toast.success(t('common.delete_success'));
         clearSelection();
         return true;
       }
       return false;
     } catch (error: any) {
-      toast.error(`Failed to delete items: ${error.message}`);
+      toast.error(error.message);
       throw error;
     }
   };
@@ -617,13 +624,13 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
           }
           return item;
         }));
-        toast.success(`${ids.length} items updated`);
+        toast.success(t('common.changes_saved'));
         clearSelection();
         return true;
       }
       return false;
     } catch (error: any) {
-      toast.error(`Failed to update items: ${error.message}`);
+      toast.error(error.message);
       throw error;
     }
   };
@@ -631,7 +638,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   const importData = async (file: File, mapping: Record<string, string>) => {
     // Check if there are existing items to ask about duplicates
     if (data.length > 0) {
-      const confirmDuplicate = confirm("Am detectat rânduri existente. Dorești să SĂRIM (Skip) rândurile care par a fi duplicate? (Apasă CANCEL pentru a le importa pe toate)");
+      const confirmDuplicate = confirm(t('common.detect_duplicates'));
       (window as any)._importSkipDuplicates = confirmDuplicate;
     } else {
       (window as any)._importSkipDuplicates = false;
@@ -647,11 +654,11 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
           text = text.slice(1);
         }
         
-        const toastId = toast.loading('Importăm datele...');
+        const toastId = toast.loading(t('common.loading'));
         
         // Ensure we have content
         if (!text || text.trim().length === 0) {
-          toast.error('Fișierul este gol', { id: toastId });
+          toast.error(t('common.file_empty'), { id: toastId });
           reject(new Error('File is empty'));
           return;
         }
@@ -671,7 +678,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         const importTimeout = setTimeout(() => {
           worker.terminate();
           console.error('[IMPORT] Timeout - worker did not finish');
-          toast.error('Import timeout - please try again', { id: toastId });
+          toast.error(t('common.import_error'), { id: toastId });
           reject(new Error('Import timeout'));
         }, 30000); // 30 seconds
 
@@ -679,7 +686,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
             clearTimeout(importTimeout);
             console.error('[WORKER-ERROR]', error);
             worker.terminate();
-            toast.error(`Import error: ${error.message || 'Unknown'}`, { id: toastId });
+            toast.error(error.message, { id: toastId });
             reject(error);
           };
           
@@ -773,13 +780,13 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
                         totalImported += toImport.length;
                         console.log(`[IMPORT] Batch ${chunkCount} successful. Total now: ${totalImported}`);
                       } else {
-                        throw new Error(resp.error || 'Server rejected batch');
+                        throw new Error(resp.error);
                       }
                     } catch (err: any) {
                       console.error("[IMPORT] Batch failed:", err);
-                      // Enterprise Level 8: Extract detailed server error message
-                      const serverError = err?.response?.data?.error || err?.response?.data?.message || err.message || 'Server error';
-                      toast.error(`Eroare la procesarea lotului ${chunkCount}: ${serverError}`);
+                      // Enterprise Level 10: Extract detailed server error message
+                      const serverError = err?.response?.data?.error || err?.response?.data?.message || err.message;
+                      toast.error(serverError);
                     }
                   }
 
@@ -788,10 +795,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
                     console.log(`[IMPORT] ✓ DONE! Imported: ${totalImported}, Skipped: ${totalSkipped}`);
                     worker.terminate();
                     
-                    toast.success(
-                      `✓ Import complet\n📊 Importate: ${totalImported} | Duplicate omise: ${totalSkipped}`,
-                      { id: toastId, duration: 5000 }
-                    );
+                    toast.success(t('common.import_success'), { id: toastId, duration: 5000 });
                     
                     await fetchAll();
                     resolve({ imported: totalImported, skipped: totalSkipped });
@@ -799,7 +803,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
                   } else {
                     const now = Date.now();
                     if (now - lastToastUpdate > 1000) {
-                      const msg = `⏳ Importând... [${totalImported} importate | ${totalSkipped} omise]`;
+                      const msg = t('common.import_progress', { imported: totalImported, skipped: totalSkipped });
                       toast.loading(msg, { id: toastId });
                       lastToastUpdate = now;
                     }
@@ -884,9 +888,9 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   }, [entityName, isKnownEntity]);
 
   const importWithAI = async (text: string, file?: File) => {
-    const toastId = toast.loading('AI is parsing data...');
+    const toastId = toast.loading(t('common.processing'));
     try {
-      // Enterprise Level 8: Always use the central normalizer
+      // Enterprise Level 10: Always use the central normalizer
       const config = entity[entityName];
       const normalized = normalizeEntity(config);
       
@@ -943,11 +947,11 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         }
 
         if (items.length === 0) {
-          toast.success('AI a extras datele dar toate există deja în sistem', { id: toastId });
+          toast.success(t('common.import_success'), { id: toastId });
           return true;
         }
 
-        toast.loading(`Importăm ${items.length} elemente noi...`, { id: toastId });
+        toast.loading(t('common.loading'), { id: toastId });
         
         // Final cleaning and mapping of values
         const config = entity[entityName];
@@ -955,8 +959,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         const cleanedItems = items.map((item: any) => {
           const newItem = { ...item };
 
-          // SECURITATE: Dacă importăm contacte prin AI, forțăm întotdeauna rolul de 'guest' (fără permisiuni)
-          // Utilizatorul trebuie să le acorde permisiuni manual dacă este necesar.
+          // SECURITY: When importing contacts via AI, always force 'guest' role (no permissions)
           if (entityName === 'contact') {
             newItem.role = 'guest';
           }
@@ -1002,7 +1005,7 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
   };
 
   const exportData = async (format: 'csv' | 'json' = 'csv') => {
-    const toastId = toast.loading('Exporting data...');
+    const toastId = toast.loading(t('common.loading'));
     try {
       const workspaceId = user?.workspaceId || 'all';
       const url = `db/collection/${entityName}/export?workspaceId=${workspaceId}&format=${format}`;
@@ -1014,12 +1017,12 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
       if (format === 'csv') {
         const blob = new Blob([response], { type: 'text/csv' });
         
-        // Verificăm dacă nu cumva e un JSON de eroare deghizat în Blob
+        // Check if it's an error JSON disguised as fixed-size Blob
         if (blob.size < 50) {
            const text = await blob.text();
            try {
              const json = JSON.parse(text);
-             if (json.success === false) throw new Error(json.error || 'Server error');
+             if (json.success === false) throw new Error(json.error);
            } catch(e) {}
         }
 
@@ -1031,9 +1034,9 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         link.click();
         link.remove();
         window.URL.revokeObjectURL(downloadUrl);
-        toast.success('Export CSV completat', { id: toastId });
+        toast.success(t('common.export_success'), { id: toastId });
       } else {
-        // Pentru JSON, convertim arraybuffer în string
+        // For JSON, convert arraybuffer to string
         const text = new TextDecoder().decode(new Uint8Array(response));
         const jsonData = JSON.parse(text);
 
@@ -1046,11 +1049,11 @@ export function useEntity<T = any>(entityName: string, options: EntityOptions = 
         link.click();
         link.remove();
         window.URL.revokeObjectURL(downloadUrl);
-        toast.success('Export JSON completat', { id: toastId });
+        toast.success(t('common.export_success'), { id: toastId });
       }
     } catch (error: any) {
       console.error('Export failed:', error);
-      toast.error(`Export eșuat: ${error.message}`, { id: toastId });
+      toast.error(t('common.export_error'), { id: toastId });
     }
   };
 

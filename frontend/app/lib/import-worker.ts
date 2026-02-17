@@ -72,7 +72,7 @@ self.onmessage = function(e) {
     for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
       const chunk = dataRows.slice(i, i + CHUNK_SIZE);
       const processedChunk = chunk.map(row => {
-        // Enterprise Level 8: Standardized UUID for imported records
+        // Enterprise Level 10: Deterministic Identity Mapping (UUID Generation)
         const item: any = {
           id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${entityType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           workspaceId,

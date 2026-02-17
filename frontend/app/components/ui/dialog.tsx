@@ -1,6 +1,7 @@
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon, GripHorizontal } from "lucide-react"
+import { useTranslation } from "react-i18next";
 
 import { cn } from '~/lib/core'
 
@@ -64,6 +65,7 @@ const DialogContent = React.forwardRef<
     resizable?: boolean
   }
 >(({ className, children, showCloseButton = true, resizable = false, style, onOpenAutoFocus, onCloseAutoFocus, ...props }, ref) => {
+  const { t } = useTranslation()
   const [size, setSize] = React.useState<{ width?: number; height?: number }>({})
   const [hasResized, setHasResized] = React.useState(false)
   const contentRef = React.useRef<HTMLDivElement>(null)
@@ -126,7 +128,7 @@ const DialogContent = React.forwardRef<
         onOpenAutoFocus={(e) => {
           if (onOpenAutoFocus) onOpenAutoFocus(e)
           
-          // Enterprise Level 8: Focus Management Fix
+          // Enterprise Level 10: Focus Management Fix
           // Prevents Chrome "Blocked aria-hidden on an element because its descendant retained focus"
           // by ensuring the focus transition is handled before aria-hidden logic fully traps the UI.
           if (!e.defaultPrevented) {
@@ -169,7 +171,7 @@ const DialogContent = React.forwardRef<
           <div
             onMouseDown={startResizing}
             className="absolute -bottom-1 -right-1 cursor-nwse-resize p-3 z-[60]"
-            title="Redimensionează"
+            title={t('common:resize')}
           >
             <div className="w-4 h-4 text-slate-400 hover:text-blue-600 transition-colors">
               <GripHorizontal className="h-full w-full rotate-45" />

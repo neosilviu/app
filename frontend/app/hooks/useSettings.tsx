@@ -29,7 +29,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       setError(null);
 
-      // Enterprise Level 8: Skip backend fetch if we are in Setup phase (No Admin)
+      // Enterprise Level 10: Skip backend fetch if we are in Setup phase (No Admin)
       // or if we don't have a logged-in user yet (socket won't be connected),
       // OR if Local Agent is disabled in Registry.
       if (isAdminExists === false || !user || !useLocalAgent) {
@@ -41,7 +41,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
       const response = await Promise.race([
         socketRequest('system:get-settings'),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Socket timeout')), 2000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
       ]).then(res => res as any).catch(err => {
         console.warn('[SETTINGS] Local socket fetch failed, falling back to Registry:', err.message);
         return null;

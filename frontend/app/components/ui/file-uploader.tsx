@@ -4,6 +4,7 @@ import { Input } from "./input";
 import { Loader2, Upload, X, FileIcon, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "~/lib/core";
+import { useTranslation } from "react-i18next";
 
 interface FileUploaderProps {
   value: any;
@@ -15,6 +16,7 @@ interface FileUploaderProps {
 }
 
 export function FileUploader({ value, onChange, multiple, storage, accept, variant = 'file' }: FileUploaderProps) {
+  const { t } = useTranslation();
   const [uploading, setUploading] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   
@@ -95,10 +97,10 @@ export function FileUploader({ value, onChange, multiple, storage, accept, varia
             type: result.type,
           });
         } else {
-          toast.error(`Failed to upload ${file.name}: ${result.error}`);
+          toast.error(t('common:upload_failed', { name: file.name, error: result.error }));
         }
       } catch (error) {
-        toast.error(`Error uploading ${file.name}`);
+        toast.error(t('common:upload_error', { name: file.name }));
       }
     }
 
@@ -157,7 +159,7 @@ export function FileUploader({ value, onChange, multiple, storage, accept, varia
                         <Upload className="w-6 h-6 transition-transform group-hover:scale-110 text-slate-400 group-hover:text-indigo-500" />
                     )}
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover:text-indigo-500 text-center px-2">
-                        {uploading ? "Se încarcă..." : (multiple ? "Poze Noi" : "Schimbă Poza")}
+                        {uploading ? t('common:uploading') : (multiple ? t('common:new_photos') : t('common:change_photo'))}
                     </span>
                     <input
                         type="file"
@@ -265,7 +267,7 @@ export function FileUploader({ value, onChange, multiple, storage, accept, varia
           ) : (
             <Upload className="h-5 w-5 transition-transform group-hover/uploader:scale-110" />
           )}
-          {uploading ? "Sincronizare cu Storage..." : (multiple ? "Adaugă documente noi" : "Încarcă fișierul aici")}
+          {uploading ? t('common:syncing_storage') : (multiple ? t('common:add_documents') : t('common:upload_here'))}
         </Button>
       </div>
     </div>

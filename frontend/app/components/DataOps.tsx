@@ -50,7 +50,7 @@ export function DataManagementActions({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const aiFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Enterprise Level 8: Granular Permission Checks
+  // Enterprise Level 10: Granular Permission Checks
   // Bulk operations are allowed for admins, workspace managers, or explicit :bulk holders
   const isWsAdmin = hasPermission('workspace:manage') || hasPermission('workspace:members:manage');
   
@@ -62,7 +62,7 @@ export function DataManagementActions({
   
   if (!config) return null;
 
-  // Enterprise Level 8: Always use the central normalizer
+  // Enterprise Level 10: Always use the central normalizer
   const normalized = normalizeEntity(config);
   const entityFields = normalized.fields
     .filter(field => !field.readOnly && field.type !== 'id' && !field.primaryKey)

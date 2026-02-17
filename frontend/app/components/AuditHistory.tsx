@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { Activity, RotateCcw, Filter, Calendar, User, Zap, Database, ChevronDown, ChevronUp, Search, BarChart3, ArrowRight } from 'lucide-react';
 import { useConfig } from '~/hooks/useConfig';
+import { useTranslation } from 'react-i18next';
 import { api } from '~/lib/core';
 import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
@@ -29,7 +30,8 @@ interface AuditStats {
   byEntity: { entityType: string; count: number }[];
 }
 
-const JsonDiff = ({ before, after, lang }: { before: any, after: any, lang: string }) => {
+const JsonDiff = ({ before, after }: { before: any, after: any }) => {
+  const { t } = useTranslation();
   const b = typeof before === 'string' ? JSON.parse(before) : (before || {});
   const a = typeof after === 'string' ? JSON.parse(after) : (after || {});
   
@@ -39,7 +41,7 @@ const JsonDiff = ({ before, after, lang }: { before: any, after: any, lang: stri
   if (changes.length === 0) {
     return (
       <div className="text-[10px] italic text-muted-foreground p-2">
-        {renderString({ ro: 'Nicio diferență detectată în datele brute.', en: 'No differences detected in raw data.' }, lang)}
+        {t('audit:no_diff')}
       </div>
     );
   }
@@ -47,7 +49,7 @@ const JsonDiff = ({ before, after, lang }: { before: any, after: any, lang: stri
   return (
     <div className="space-y-2">
       <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
-        {renderString({ ro: 'Câmpuri Modificate', en: 'Changed Fields' }, lang)}
+        {t('audit:changed_fields')}
       </div>
       <div className="grid grid-cols-1 gap-2">
         {changes.map(k => {
@@ -80,9 +82,10 @@ const JsonDiff = ({ before, after, lang }: { before: any, after: any, lang: stri
 };
 
 export function AuditHistory() {
+  const { t, i18n } = useTranslation();
   const config = useConfig();
   const navigate = useNavigate();
-  const lang = config?.constants?.language || 'ro';
+  const lang = i18n.language;
   
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [stats, setStats] = useState<AuditStats | null>(null);
@@ -159,7 +162,7 @@ export function AuditHistory() {
 
   const handleUndo = async (logId: string) => {
     if (undoRef.current) return; // Prevent duplicate undo attempts
-    if (!confirm(renderString({ ro: 'Ești sigur că vrei să restorezi această modificare?', en: 'Are you sure you want to undo this change?' }, lang))) {
+    if (!confirm(t('audit:confirm_undo'))) {
       return;
     }
 
@@ -169,14 +172,14 @@ export function AuditHistory() {
       const data = await api.post(`action/undo/${logId}`, {});
       
       if (data && !data.error) {
-        alert(renderString({ ro: 'Modificare restaurată cu succes!', en: 'Change successfully reverted!' }, lang));
+        alert(t('audit:undo_success'));
         loadHistory();
       } else {
-        alert(data?.message || renderString({ ro: 'Eroare la restaurare', en: 'Undo failed' }, lang));
+        alert(data?.message || t('audit:undo_failed'));
       }
     } catch (error) {
       console.error('Undo failed:', error);
-      alert(renderString({ ro: 'Eroare la restaurare', en: 'Undo failed' }, lang));
+      alert(t('audit:undo_failed'));
     } finally {
       undoRef.current = false;
       setUndoing(false);
@@ -208,10 +211,10 @@ export function AuditHistory() {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return renderString({ ro: 'Acum', en: 'Just now' }, lang);
-    if (diffMins < 60) return `${diffMins} ${renderString({ ro: 'min în urmă', en: 'min ago' }, lang)}`;
-    if (diffHours < 24) return `${diffHours} ${renderString({ ro: 'ore în urmă', en: 'hours ago' }, lang)}`;
-    if (diffDays < 7) return `${diffDays} ${renderString({ ro: 'zile în urmă', en: 'days ago' }, lang)}`;
+    if (diffMins < 1) return t('common:just_now');
+    if (diffMins < 60) return t('common:min_ago', { count: diffMins });
+    if (diffHours < 24) return t('common:hours_ago', { count: diffHours });
+    if (diffDays < 7) return t('common:days_ago', { count: diffDays });
     
     return date.toLocaleDateString(lang === 'ro' ? 'ro-RO' : 'en-US', {
       year: 'numeric',
@@ -243,9 +246,9 @@ export function AuditHistory() {
         <div className="flex items-center gap-3">
           <Activity className="w-8 h-8 text-blue-600" />
           <div>
-            <h1 className="text-2xl font-bold">{renderString({ ro: 'Istoric Modificări', en: 'Change History' }, lang)}</h1>
+            <h1 className="text-2xl font-bold">{t('audit:history_title')}</h1>
             <p className="text-sm text-muted-foreground">
-              {renderString({ ro: 'Enterprise Level 8 - Undo Engine', en: 'Enterprise Level 8 - Undo Engine' }, lang)}
+              {t('audit:history_subtitle')}
             </p>
           </div>
         </div>
@@ -261,7 +264,7 @@ export function AuditHistory() {
           disabled={statsLoadingRef.current}
         >
           <BarChart3 className="w-4 h-4 mr-2" />
-          {renderString({ ro: 'Statistici', en: 'Statistics' }, lang)}
+          {t('common:monitoring')}
         </Button>
       </div>
 
@@ -270,31 +273,31 @@ export function AuditHistory() {
         <Card className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <BarChart3 className="w-5 h-5" />
-            {renderString({ ro: 'Statistici Audit', en: 'Audit Statistics' }, lang)}
+            {t('audit:stats_title')}
           </h3>
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
               <div className="text-3xl font-bold text-blue-600">{stats.total.toLocaleString()}</div>
-              <div className="text-sm text-muted-foreground">{renderString({ ro: 'Total Modificări', en: 'Total Changes' }, lang)}</div>
+              <div className="text-sm text-muted-foreground">{t('audit:total_changes')}</div>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
               <div className="text-3xl font-bold text-green-600">{stats.lastWeek.toLocaleString()}</div>
-              <div className="text-sm text-muted-foreground">{renderString({ ro: 'Ultimele 7 Zile', en: 'Last 7 Days' }, lang)}</div>
+              <div className="text-sm text-muted-foreground">{t('audit:last_7_days')}</div>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
               <div className="text-3xl font-bold text-purple-600">{stats.byAction.length}</div>
-              <div className="text-sm text-muted-foreground">{renderString({ ro: 'Tipuri Acțiuni', en: 'Action Types' }, lang)}</div>
+              <div className="text-sm text-muted-foreground">{t('audit:action_types')}</div>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
               <div className="text-3xl font-bold text-orange-600">{stats.byEntity.length}</div>
-              <div className="text-sm text-muted-foreground">{renderString({ ro: 'Entități Active', en: 'Active Entities' }, lang)}</div>
+              <div className="text-sm text-muted-foreground">{t('audit:active_entities')}</div>
             </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <h4 className="font-medium mb-2">{renderString({ ro: 'Top Acțiuni', en: 'Top Actions' }, lang)}</h4>
+              <h4 className="font-medium mb-2">{t('audit:top_actions')}</h4>
               <div className="space-y-1">
                 {stats.byAction.slice(0, 5).map((item, idx) => (
                   <div key={idx} className="flex justify-between text-sm bg-white dark:bg-gray-800 rounded px-3 py-1.5">
@@ -306,7 +309,7 @@ export function AuditHistory() {
             </div>
             
             <div>
-              <h4 className="font-medium mb-2">{renderString({ ro: 'Top Entități', en: 'Top Entities' }, lang)}</h4>
+              <h4 className="font-medium mb-2">{t('audit:top_entities')}</h4>
               <div className="space-y-1">
                 {stats.byEntity.slice(0, 5).map((item, idx) => (
                   <div key={idx} className="flex justify-between text-sm bg-white dark:bg-gray-800 rounded px-3 py-1.5">
@@ -327,7 +330,7 @@ export function AuditHistory() {
             <Search className="w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder={renderString({ ro: 'Caută...', en: 'Search...' }, lang)}
+              placeholder={t('common:search_placeholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="flex-1 px-3 py-2 border rounded-md text-sm"
@@ -338,7 +341,7 @@ export function AuditHistory() {
             <Database className="w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder={renderString({ ro: 'Filtrează după entitate...', en: 'Filter by entity...' }, lang)}
+              placeholder={t('audit:filter_entity')}
               value={entityTypeFilter}
               onChange={(e) => setEntityTypeFilter(e.target.value)}
               className="flex-1 px-3 py-2 border rounded-md text-sm"
@@ -349,7 +352,7 @@ export function AuditHistory() {
             <Zap className="w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder={renderString({ ro: 'Filtrează după acțiune...', en: 'Filter by action...' }, lang)}
+              placeholder={t('audit:filter_action')}
               value={actionFilter}
               onChange={(e) => setActionFilter(e.target.value)}
               className="flex-1 px-3 py-2 border rounded-md text-sm"
@@ -362,11 +365,11 @@ export function AuditHistory() {
       <Card className="divide-y">
         {loading ? (
           <div className="p-12 text-center text-muted-foreground">
-            {renderString({ ro: 'Încărcare...', en: 'Loading...' }, lang)}
+            {t('common:loading')}
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground">
-            {renderString({ ro: 'Niciun istoric disponibil', en: 'No history available' }, lang)}
+            {t('audit:no_history')}
           </div>
         ) : (
           filteredLogs.map((log) => (
@@ -411,7 +414,7 @@ export function AuditHistory() {
                     <div className="mt-4 space-y-4 animate-in slide-in-from-top-2 duration-300">
                       {/* Visual Diff Section */}
                       <Card className="p-4 border-indigo-100 bg-indigo-50/20 dark:bg-indigo-950/10 dark:border-indigo-900/30">
-                        <JsonDiff before={log.snapshot_before} after={log.snapshot_after} lang={lang} />
+                        <JsonDiff before={log.snapshot_before} after={log.snapshot_after} />
                       </Card>
 
                       {/* Raw Comparison Section */}
@@ -419,7 +422,7 @@ export function AuditHistory() {
                         {log.snapshot_before && (
                           <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-xl">
                             <div className="text-[10px] font-black uppercase tracking-widest mb-2 text-red-600">
-                              {renderString({ ro: 'Snapshot Înainte:', en: 'Snapshot Before:' }, lang)}
+                              {t('audit:snapshot_before')}
                             </div>
                             <pre className="text-[10px] font-mono overflow-auto max-h-48 p-2 bg-white/50 dark:bg-slate-900/50 rounded-lg border border-red-200/20">
                               {typeof log.snapshot_before === 'string' ? JSON.stringify(JSON.parse(log.snapshot_before), null, 2) : JSON.stringify(log.snapshot_before, null, 2)}
@@ -429,7 +432,7 @@ export function AuditHistory() {
                         {log.snapshot_after && (
                           <div className="p-3 bg-green-500/5 border border-green-500/10 rounded-xl">
                             <div className="text-[10px] font-black uppercase tracking-widest mb-2 text-green-600">
-                              {renderString({ ro: 'Snapshot După:', en: 'Snapshot After:' }, lang)}
+                              {t('audit:snapshot_after')}
                             </div>
                             <pre className="text-[10px] font-mono overflow-auto max-h-48 p-2 bg-white/50 dark:bg-slate-900/50 rounded-lg border border-green-200/20">
                               {typeof log.snapshot_after === 'string' ? JSON.stringify(JSON.parse(log.snapshot_after), null, 2) : JSON.stringify(log.snapshot_after, null, 2)}
@@ -460,7 +463,7 @@ export function AuditHistory() {
                       className="gap-2"
                     >
                       <RotateCcw className="w-4 h-4" />
-                      {renderString({ ro: 'Restaurează', en: 'Undo' }, lang)}
+                      {t('common:undo')}
                     </Button>
                   )}
                 </div>
@@ -474,7 +477,7 @@ export function AuditHistory() {
       {total > limit && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
-            {renderString({ ro: `Afișare ${offset + 1}-${Math.min(offset + limit, total)} din ${total}`, en: `Showing ${offset + 1}-${Math.min(offset + limit, total)} of ${total}` }, lang)}
+            {t('audit:showing_pagination', { start: offset + 1, end: Math.min(offset + limit, total), total: total })}
           </div>
           
           <div className="flex gap-2">
@@ -484,7 +487,7 @@ export function AuditHistory() {
               disabled={offset === 0}
               onClick={() => setOffset(Math.max(0, offset - limit))}
             >
-              {renderString({ ro: 'Înapoi', en: 'Previous' }, lang)}
+              {t('common:back')}
             </Button>
             <Button
               variant="outline"
@@ -492,7 +495,7 @@ export function AuditHistory() {
               disabled={offset + limit >= total}
               onClick={() => setOffset(offset + limit)}
             >
-              {renderString({ ro: 'Înainte', en: 'Next' }, lang)}
+              {t('common:next')}
             </Button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowRight, AlertCircle, CheckCircle, Clock, Zap } from 'lucide-react';
 import { useConfig } from '~/hooks/useConfig';
+import { useTranslation } from 'react-i18next';
 import { api, getErrorMessage } from '~/lib/core';
 import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
@@ -23,8 +24,9 @@ interface WorkflowWidgetProps {
 }
 
 export function WorkflowWidget({ entityType, entityId, currentStatus: initialStatus }: WorkflowWidgetProps) {
+  const { t, i18n } = useTranslation();
   const config = useConfig();
-  const lang = config?.constants?.language || 'ro';
+  const lang = i18n.language;
   
   const [currentStatus, setCurrentStatus] = useState(initialStatus || '');
   const [transitions, setTransitions] = useState<WorkflowTransition[]>([]);
@@ -50,7 +52,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
         setTransitions(payload.availableTransitions || []);
       }
     } catch (err: any) {
-      setError(getErrorMessage(err, renderString({ ro: 'Eroare la încărcare tranziții', en: 'Failed to load transitions' }, lang)));
+      setError(getErrorMessage(err, t('workflow:load_error')));
     } finally {
       setLoading(false);
     }
@@ -79,7 +81,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
         await loadTransitions();
       }
     } catch (err: any) {
-      setError(getErrorMessage(err, renderString({ ro: 'Eroare la tranziție', en: 'Transition failed' }, lang)));
+      setError(getErrorMessage(err, t('workflow:transition_failed')));
     } finally {
       setTransitioning(false);
     }
@@ -107,7 +109,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
     return (
       <Card className="p-4">
         <div className="text-sm text-muted-foreground text-center">
-          {renderString({ ro: 'Încărcare...', en: 'Loading...' }, lang)}
+          {t('common:loading')}
         </div>
       </Card>
     );
@@ -117,7 +119,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
     return (
       <Card className="p-4">
         <div className="text-sm text-muted-foreground text-center">
-          {renderString({ ro: 'Nicio stare disponibilă', en: 'No status available' }, lang)}
+          {t('workflow:no_status')}
         </div>
       </Card>
     );
@@ -129,7 +131,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
         {/* Current Status */}
         <div>
           <p className="text-xs font-semibold text-muted-foreground mb-2">
-            {renderString({ ro: 'Stare Curentă', en: 'Current Status' }, lang)}
+            {t('workflow:current_status')}
           </p>
           <Badge className={`${getStatusColor(currentStatus)} border text-sm py-2 px-3`}>
             {currentStatus}
@@ -148,7 +150,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
         {transitions.length > 0 && (
           <div>
             <p className="text-xs font-semibold text-muted-foreground mb-2">
-              {renderString({ ro: 'Tranziții Disponibile', en: 'Available Transitions' }, lang)}
+              {t('workflow:available_transitions')}
             </p>
             <div className="space-y-2">
               {transitions.map((transition) => (
@@ -170,7 +172,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
           <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-900/50 flex items-start gap-2">
             <Clock className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-amber-600 dark:text-amber-400">
-              {renderString({ ro: 'Nicio tranziție disponibilă din starea curentă', en: 'No transitions available from current state' }, lang)}
+              {t('workflow:no_transitions')}
             </p>
           </div>
         )}
@@ -182,13 +184,10 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-600" />
-              {renderString({ ro: 'Confirmare Tranziție', en: 'Confirm Transition' }, lang)}
+              {t('workflow:confirm_title')}
             </DialogTitle>
             <DialogDescription>
-              {selectedTransition && renderString({ 
-                ro: `Ești sigur că vrei să treci din "${currentStatus}" în "${selectedTransition.value}"?`,
-                en: `Are you sure you want to transition from "${currentStatus}" to "${selectedTransition.value}"?`
-              }, lang)}
+              {selectedTransition && t('workflow:confirm_desc', { from: currentStatus, to: selectedTransition.value })}
             </DialogDescription>
           </DialogHeader>
 
@@ -196,7 +195,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
             {selectedTransition?.requiresFields && selectedTransition.requiresFields.length > 0 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-900/50">
                 <p className="text-xs font-semibold text-blue-900 dark:text-blue-300 mb-1">
-                  {renderString({ ro: 'Câmpuri Necesare:', en: 'Required Fields:' }, lang)}
+                  {t('workflow:required_fields')}
                 </p>
                 <ul className="text-xs text-blue-800 dark:text-blue-400 space-y-1">
                   {selectedTransition.requiresFields.map(field => (
@@ -216,7 +215,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
               onClick={() => setConfirmDialog(false)}
               disabled={transitioning}
             >
-              {renderString({ ro: 'Anulare', en: 'Cancel' }, lang)}
+              {t('common:cancel')}
             </Button>
             <Button
               onClick={performTransition}
@@ -224,7 +223,7 @@ export function WorkflowWidget({ entityType, entityId, currentStatus: initialSta
               className="gap-2"
             >
               {transitioning && <span className="animate-spin">⟳</span>}
-              {renderString({ ro: 'Confirmă Tranziție', en: 'Confirm Transition' }, lang)}
+              {t('workflow:confirm_title')}
             </Button>
           </DialogFooter>
         </DialogContent>

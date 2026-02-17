@@ -164,10 +164,11 @@ router.get('/local/browser', async (req, res) => {
                 if (paths.length > 0) {
                     const placeholders = paths.map(() => '?').join(',');
                     const tagResults = await db.query(`
-                        SELECT et.entityId as fullPath, t.id, t.name, t.color
-                        FROM tag_assignment et
-                        JOIN tag t ON et.tagId = t.id
-                        WHERE et.entityType = 'local_file' AND et.entityId IN (${placeholders})
+                        SELECT et.sourceId as fullPath, t.id, t.name, t.color
+                        FROM entity_relation_many et
+                        JOIN tag t ON et.targetId = t.id
+                        WHERE et.sourceType = 'local_file' AND et.sourceId IN (${placeholders})
+                        AND et.targetType = 'tag'
                     `, paths);
 
                     const tagMap: any = {};

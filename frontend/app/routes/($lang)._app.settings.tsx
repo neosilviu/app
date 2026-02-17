@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams, useNavigate, useParams } from 'react-router';
 import { Button } from '~/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { socket, api, socketRequest, debounce, renderString, getRegistry } from '~/lib/core';
+import { socket, api, socketRequest, debounce, renderString } from '~/lib/core';
+import { mergeRegistryWithD1 } from '~/lib/registry-service.server';
 import { getErrorMessage } from '~/lib/utils';
 import { useAuth } from '~/hooks/useAuth';
 import { useConfig } from '~/hooks/useConfig'; 
@@ -31,13 +32,13 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 
     const db = getDb(env);
     
-    // Level 8: Always load registry for baseline defaults
-    const registry = await getRegistry(db);
+    // Enterprise Level 10: Unified Registry Foundation & Baseline Synchronization
+    const registry = await mergeRegistryWithD1(db);
     
-    // Fetch data in parallel to optimize load time (Enterprise Level 8)
+    // Fetch data in parallel to optimize load time (Enterprise Level 10 Master)
     let workspace = null;
     
-    // Enterprise Level 8: Initialize with Baseline values as defaults
+    // Enterprise Level 10: State Hydration (Registry-First Strategy)
     let systemSettings: Record<string, any> = { 
         ...registry.SYSTEM_SETTING,
         // Map common namespaces for UI components
@@ -88,7 +89,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 
                 systemSettings[ns][row.key] = value;
                 
-                // For backward compatibility and UI simplicity, map core namespaces to root (Enterprise Level 8)
+                // Enterprise Level 10 Unified State: Propagate core settings to root namespace
                 if (ns === 'system_setting' || ns === 'general' || ns === 'system') {
                     systemSettings[row.key] = value;
                 }
@@ -251,7 +252,7 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
             if (!next[ns]) next[ns] = {};
             next[ns][key] = value;
 
-            // Root mirror for core settings (Enterprise Level 8 Consistency)
+            // Enterprise Level 10 Unified State: Propagate core settings to root namespace
             if (ns === 'system_setting' || ns === 'general' || ns === 'system') {
                 next[key] = value;
             }
@@ -593,7 +594,7 @@ export default function SettingsPage({ loaderData }: Route.ComponentProps) {
                 onClose={() => setIsThemeEditorOpen(false)} 
             />
 
-            {/* FLOATING BOTTOM ACTION BAR - Enterprise Level 8 (Compact Style) */}
+            {/* FLOATING BOTTOM ACTION BAR - Enterprise Level 10 Unified UI Control */}
             <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 w-auto px-6 z-50 animate-in slide-in-from-bottom duration-500">
                 <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-800 p-2 md:p-3 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-center">
                     <Button 

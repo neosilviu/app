@@ -1,0 +1,32 @@
+{
+  "contact": {
+    "id": "contact",
+    "tableName": "contact",
+    "displayField": "name",
+    "fields": [
+      {
+        "name": "id",
+        "type": "string",
+        "label": "ID",
+        "primaryKey": true
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "label": "Name",
+        "required": true
+      },
+      {
+        "name": "email",
+        "type": "string",
+        "label": "Email",
+        "searchable": true
+      }
+    ],
+    "uiConfig": {},
+    "features": [
+      "audit"
+    ],
+    "isSystem": false
+  }
+}

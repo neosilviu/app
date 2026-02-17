@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run typecheck && react-router build",
+    "build": "node ../scripts/compile-schemas.js && npm run typecheck && react-router build",
     "dev": "node copy-dev-config.js && react-router dev",
+    "dev:wrangler": "node scripts/dev-wrangler.js",
     "preview": "wrangler pages dev ./build/client",
     "deploy": "node ../scripts/validate-deployment.js && node copy-prod-config.js && npm run build && wrangler pages deploy ./build/client --branch main",
     "start": "wrangler pages dev ./build/client",
@@ -74,6 +75,7 @@
     "@vitejs/plugin-react": "^5.1.2",
     "autoprefixer": "^10.4.23",
     "esbuild": "^0.27.2",
+    "hono": "^4.11.9",
     "postcss": "^8.5.6",
     "sqlite3": "^5.1.7",
     "tailwindcss": "^4.1.18",
@@ -81,7 +83,7 @@
     "typescript": "^5.9.2",
     "vite": "^7.1.7",
     "vite-tsconfig-paths": "^6.0.4",
-    "wrangler": "^4.62.0"
+    "wrangler": "^4.66.0"
   },
   "overrides": {
     "tar": "^7.4.3"

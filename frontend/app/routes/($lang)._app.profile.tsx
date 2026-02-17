@@ -15,7 +15,8 @@ import { User, Briefcase, Shield, Check, Save, RefreshCcw, LogOut, Bell, Globe, 
 import { toast } from "sonner";
 import { getDb } from '~/lib/d1.server';
 import { verifyAuth } from '~/lib/auth-core.server';
-import { renderString, getRegistry } from "~/lib/core";
+import { renderString } from "~/lib/core";
+import { mergeRegistryWithD1 } from "~/lib/registry-service.server";
 import { ensureSystemTables } from "~/lib/db-init.server";
 import { isGlobalAdmin } from "~/lib/auth-utils";
 
@@ -23,7 +24,7 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
   const env = (context as any).cloudflare.env;
   const db = getDb(env);
 
-  // Level 8 Self-Healing: Ensure system tables exist before querying
+  // Enterprise Level 10 Self-Healing: Infrastructure integrity verification
   await ensureSystemTables(db, request.url, context).catch(e => {
     console.error("[Profile] DB Initialization failed:", e);
   });
@@ -34,18 +35,18 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
     return { workspace: [], profile: null };
   }
 
-  const registry = await getRegistry(db);
+  const registry = await mergeRegistryWithD1(db);
   const isGlobal = isGlobalAdmin(user, registry);
 
   const workspaceQuery = isGlobal 
     ? `SELECT w.*, COALESCE(wu.role, ?) as userRole 
        FROM workspace w 
        LEFT JOIN workspace_user wu ON w.id = wu.workspaceId AND wu.userId = ?
-       WHERE w.archived = 0 AND w.deletedAt IS NULL`
+       WHERE (w.archived = 0 OR w.archived IS NULL) AND w.deletedAt IS NULL`
     : `SELECT w.*, wu.role as userRole 
        FROM workspace w 
        JOIN workspace_user wu ON w.id = wu.workspaceId 
-       WHERE wu.userId = ? AND w.archived = 0 AND w.deletedAt IS NULL`;
+       WHERE wu.userId = ? AND (w.archived = 0 OR w.archived IS NULL) AND w.deletedAt IS NULL`;
 
   const queryParams = isGlobal ? [user.role, user.sub] : [user.sub];
 
@@ -62,7 +63,7 @@ export async function loader({ request, context }: LoaderFunctionArgs) {
   // Superadmin failsafe: if no workspace found for superadmin, fetch all
   if (isGlobal && list.length === 0) {
     try {
-      const allWs = await db.query("SELECT *, ? as userRole FROM workspace WHERE archived = 0 AND deletedAt IS NULL", [user.role]);
+      const allWs = await db.query("SELECT *, ? as userRole FROM workspace WHERE (archived = 0 OR archived IS NULL) AND deletedAt IS NULL LIMIT 500", [user.role]);
       list = Array.isArray(allWs) ? allWs : [];
     } catch (e) {
       console.error("[Profile] Superadmin failsafe query failed:", e);
@@ -298,32 +299,26 @@ export default function ProfilePage() {
                       </div>
                       <div className="space-y-2">
                         <Label>{t("common:language")}</Label>
-                        <Select 
-                          value={profileData.language} 
-                          onValueChange={(val) => setProfileData(prev => ({ ...prev, language: val }))}
-                        >
+                        <Select value={profileData.language} onValueChange={(val) => setProfileData(prev => ({ ...prev, language: val }))}>
                           <SelectTrigger>
-                            <SelectValue placeholder="Selectează limba" />
+                            <SelectValue placeholder={t("common:select_language")} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="ro">Română 🇷🇴</SelectItem>
-                            <SelectItem value="en">English 🇬🇧</SelectItem>
+                            <SelectItem value="ro">{t("common:lang_ro")} 🇷🇴</SelectItem>
+                            <SelectItem value="en">{t("common:lang_en")} 🇬🇧</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
                         <Label>{t("common:timezone")}</Label>
-                        <Select 
-                          value={profileData.timezone} 
-                          onValueChange={(val) => setProfileData(prev => ({ ...prev, timezone: val }))}
-                        >
+                        <Select value={profileData.timezone} onValueChange={(val) => setProfileData(prev => ({ ...prev, timezone: val }))}>
                           <SelectTrigger>
                             <SelectValue placeholder={t("common:select_timezone")} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Europe/Bucharest">(GMT+02:00) Bucharest</SelectItem>
-                            <SelectItem value="UTC">(UTC) Coordinated Universal Time</SelectItem>
-                            <SelectItem value="Europe/London">(GMT+00:00) London</SelectItem>
+                            <SelectItem value="Europe/Bucharest">{t("common:tz_bucharest")}</SelectItem>
+                            <SelectItem value="UTC">{t("common:tz_utc")}</SelectItem>
+                            <SelectItem value="Europe/London">{t("common:tz_london")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

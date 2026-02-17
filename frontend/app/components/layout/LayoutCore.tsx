@@ -141,7 +141,7 @@ function UserMenuContent({ onClose, onOpenThemeEditor, onOpenChangelog }: {
             {navigation.user.filter(item => {
                 if (item.hidden) return false;
                 
-                // Enterprise Level 8: Unified Page Permission Check
+                // Enterprise Level 10: Unified Page Permission Check
                 // Profile is allowed for everyone as a basic requirement via hasPageAccess bypass.
                 if (item.id && !hasPageAccess(item.id)) return false;
 
@@ -312,7 +312,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, isMobile = false, setIsMobil
   const entities = config?.entity || {};
   
   const systemSettings = config?.constants?.SYSTEM_SETTING || {};
-  // Enterprise Level 8: Robust boolean check for SQLite (supports true, 1, 'true')
+  // Enterprise Level 10: Robust boolean check for SQLite (supports true, 1, 'true')
   const useLocalAgent = systemSettings.use_local_agent === true || systemSettings.use_local_agent === 1 || String(systemSettings.use_local_agent) === 'true';
 
   const { t } = useTranslation(['common', 'sidebar', 'monitoring', 'entity']);
@@ -418,22 +418,55 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, isMobile = false, setIsMobil
     return (wsId && workerStatuses[`${workerName}:${wsId}`]) || workerStatuses[workerName];
   };
 
-  const navItems = filterNavItems(navigation.main).map(item => ({
-    ...item,
-    category: (item as any).category || 'main_menu',
-    status: (item.workerName || item.id === 'monitoring') ? getWorkerStatus(item.workerName || '', item.id) : undefined
-  }));
+  const navItems = React.useMemo(() => {
+    const raw = filterNavItems(navigation.main).map(item => ({
+      ...item,
+      category: (item as any).category || 'main_menu',
+      status: (item.workerName || item.id === 'monitoring') ? getWorkerStatus(item.workerName || '', item.id) : undefined
+    }));
+    const seen = new Set();
+    return raw.filter(i => {
+      if (!i.id || seen.has(i.id)) return false;
+      seen.add(i.id);
+      return true;
+    });
+  }, [navigation.main, workerStatuses]);
 
-  const workerItems = filterNavItems(navigation.worker || []).map(item => ({
-    ...item,
-    status: (item.workerName || item.id === 'monitoring') ? getWorkerStatus(item.workerName || '', item.id) : undefined
-  }));
+  const workerItems = React.useMemo(() => {
+    const raw = filterNavItems(navigation.worker || []).map(item => ({
+      ...item,
+      status: (item.workerName || item.id === 'monitoring') ? getWorkerStatus(item.workerName || '', item.id) : undefined
+    }));
+    const seen = new Set();
+    return raw.filter(i => {
+      if (!i.id || seen.has(i.id)) return false;
+      seen.add(i.id);
+      return true;
+    });
+  }, [navigation.worker, workerStatuses]);
 
-  const adminItems = filterNavItems(navigation.admin).map(item => ({
-    ...item,
-    status: (item.workerName || item.id === 'monitoring') ? getWorkerStatus(item.workerName || '', item.id) : undefined
-  }));
-  const entityItems = filterNavItems(navigation.entity || []);
+  const adminItems = React.useMemo(() => {
+    const raw = filterNavItems(navigation.admin).map(item => ({
+      ...item,
+      status: (item.workerName || item.id === 'monitoring') ? getWorkerStatus(item.workerName || '', item.id) : undefined
+    }));
+    const seen = new Set();
+    return raw.filter(i => {
+      if (!i.id || seen.has(i.id)) return false;
+      seen.add(i.id);
+      return true;
+    });
+  }, [navigation.admin, workerStatuses]);
+
+  const entityItems = React.useMemo(() => {
+    const raw = filterNavItems(navigation.entity || []);
+    const seen = new Set();
+    return raw.filter(i => {
+      if (!i.id || seen.has(i.id)) return false;
+      seen.add(i.id);
+      return true;
+    });
+  }, [navigation.entity]);
   
   const enableWorker = config?.constants?.SYSTEM_SETTING?.enable_worker === true;
 
@@ -466,7 +499,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, isMobile = false, setIsMobil
                     "text-[7px] font-bold uppercase tracking-widest mt-0.5 opacity-70",
                     hasSystemIssues ? "text-red-500" : "text-indigo-500"
                 )}>
-                    {hasSystemIssues ? renderString(t('sidebar:system_alert'), lang) : renderString(t('sidebar:v2_label'), lang)}
+                    {hasSystemIssues ? renderString(t('sidebar:system_alert'), lang) : renderString(t('sidebar:version_default'), lang)}
                 </span>
              </div>
            )}
@@ -800,7 +833,7 @@ function Header({
   useEffect(() => {
     const fetchStorage = async () => {
       if (!user) return; // PROD GUARD: Prevent requests if not logged in
-      if (!hasPageAccess('monitoring')) return; // Level 8: Only admins can view monitoring data
+      if (!hasPageAccess('monitoring')) return; // Level 10: Only admins can view monitoring data
       
       try {
         const res = await socketRequest("monitoring:storage");
@@ -879,7 +912,7 @@ function Header({
       const entityLabel = entityDef ? renderString(entityDef.label, lang) : '';
       iconName = entityDef?.icon || '';
       
-      // Enterprise Level 8: Improved Identity Breadcrumb (Entity: Name)
+      // Enterprise Level 10: Improved Identity Breadcrumb (Entity: Name)
       if (manualTitle && String(manualTitle) !== 'undefined' && entityLabel) {
         label = `${entityLabel}: ${manualTitle}`;
       } else if (entityLabel) {
@@ -903,7 +936,7 @@ function Header({
       iconName = entities[lastValue].icon || '';
     }
 
-    // Enterprise Level 8: Cleanup labels (remove hyphens, handle special cases)
+    // Enterprise Level 10: Cleanup labels (remove hyphens, handle special cases)
     if (label === 'entity') return null;
 
     const Icon = iconName ? resolveIcon(iconName) : null;
@@ -1198,7 +1231,7 @@ export default function DashboardLayout({ children, title }: { children?: React.
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
-      {/* ENTERPRISE LEVEL 8: GLOBAL BLOCKING LOADER */}
+      {/* ENTERPRISE LEVEL 10: GLOBAL BLOCKING LOADER */}
       {loading && (
         <div className="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-md flex flex-col items-center justify-center gap-4 animate-in fade-in duration-300">
            <div className="relative">
@@ -1282,7 +1315,7 @@ export default function DashboardLayout({ children, title }: { children?: React.
             )}
             style={isFullScreenPage ? {} : { maxWidth: 'var(--content-width, 80rem)' }}
           >
-            {/* Enterprise Level 8: Ensuring context is passed even through children wrapper */}
+            {/* Enterprise Level 10: Ensuring context is passed even through children wrapper */}
             {children ? (
                  React.isValidElement(children) ? React.cloneElement(children as any, { context: { setDynamicTitle, dynamicTitle } }) : children
             ) : (

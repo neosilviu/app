@@ -1,13 +1,21 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams, useSubmit, useParams } from 'react-router';
-import { Plus, Search, Trash2, ArrowUpDown, Layers, ChevronRight, Table as TableIcon, LayoutGrid, Edit2 } from 'lucide-react';
+import { Plus, Search, Trash2, ArrowUpDown, Layers, ChevronRight, Table as TableIcon, LayoutGrid, Edit2, MoreHorizontal, Zap, RefreshCw } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Badge } from '~/components/ui/badge';
 import { GlassCard } from '~/components/ui/GlassCard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
+import { 
+    DropdownMenu, 
+    DropdownMenuContent, 
+    DropdownMenuItem, 
+    DropdownMenuLabel, 
+    DropdownMenuSeparator, 
+    DropdownMenuTrigger 
+} from "~/components/ui/dropdown-menu";
 import { Checkbox } from "~/components/ui/checkbox";
-import { cn, renderString, getThemeClasses } from '~/lib/core';
+import { cn, renderString, getThemeClasses, resolveIcon } from '~/lib/core';
 import { formatForRender } from '~/lib/utils';
 import { normalizeEntity, normalizeFormData, formatDisplayValue } from '~/lib/entity-engine';
 import type { FieldDefinition } from '~/lib/entity-engine';
@@ -36,7 +44,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
     const [showArchived, setShowArchived] = useState(false);
     const config = initialConfig || (systemConfig?.entity as any)?.[entityId] || {};
     
-    // Core Entity Hook (Enterprise Level 8)
+    // Core Entity Hook (Enterprise Level 10)
     const { 
         data: realData, 
         loading, 
@@ -74,10 +82,10 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
 
     const data = config.mockup ? (config.data || []) : realData;
 
-    // Enterprise Level 8: Normalize entity once for consumption
+    // Enterprise Level 10: Normalize entity once for consumption
     const normalized = React.useMemo(() => normalizeEntity(config), [config]);
 
-    // Normalize fields & Apply Security Visibility (Enterprise Level 8)
+    // Normalize fields & Apply Security Visibility (Enterprise Level 10)
     const fieldsList = React.useMemo(() => {
         const AUDIT_FIELDS = ['workspaceId', 'createdBy', 'updatedBy', 'archived', 'archivedAt', 'deletedAt', 'password', 'secret'];
         
@@ -101,7 +109,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
         return filtered;
     }, [config]);
 
-    // Normalize data to prevent React rendering errors (Enterprise Level 8)
+    // Normalize data to prevent React rendering errors (Enterprise Level 10)
     const normalizedData = React.useMemo(() => {
         if (!data.length || !fieldsList.length) return data;
         return data.map((item: any) => normalizeFormData(item, fieldsList));
@@ -110,8 +118,45 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
     const [search, setSearch] = useState('');
     const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
     const [relatedData, setRelatedData] = useState<Record<string, any[]>>({});
+    const [isActionRunning, setIsActionRunning] = useState<string | null>(null);
 
-    // Fetch related labels for relations (Enterprise Level 8)
+    // Enterprise Level 10: Dynamic Actions discovery and permission check
+    const { globalActions, rowActions } = React.useMemo(() => {
+        const all = (normalized.actions || []).filter((action: any) => {
+            return (useAuth as any)().hasPermission(`${entityId}:action:${action.id}`) || 
+                   (useAuth as any)().hasPermission(`${entityId}:*`) || 
+                   (useAuth as any)().hasPermission('workspace:manage');
+        });
+
+        return {
+            globalActions: all.filter((a: any) => a.isGlobal || a.id.endsWith('-all')),
+            rowActions: all.filter((a: any) => !a.isGlobal && !a.id.endsWith('-all'))
+        };
+    }, [normalized.actions, entityId]);
+
+    const handleAction = async (actionId: string, recordId?: string) => {
+        if (isActionRunning) return;
+        
+        setIsActionRunning(recordId ? `${recordId}:${actionId}` : `global:${actionId}`);
+        const action = (normalized.actions || []).find((a: any) => a.id === actionId);
+        toast.info(renderString(action?.label || actionId, lang) + "...");
+
+        try {
+            const res = await api.brain.action(entityId, actionId, recordId ? { id: recordId } : {});
+            if (res.success) {
+                toast.success(res.message || "Action success");
+                if (res.refresh) fetchData();
+            } else {
+                toast.error(res.error || "Action failed");
+            }
+        } catch (e: any) {
+            toast.error("Action execution error");
+        } finally {
+            setIsActionRunning(null);
+        }
+    };
+
+    // Fetch related labels for relations (Enterprise Level 10)
     React.useEffect(() => {
         if (!realData.length || authLoading) return; // Wait for data and auth
 
@@ -129,12 +174,12 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
 
                 if (target && relatedData[target] === undefined) {
                     try {
-                        // Enterprise Level 8: Always use a high limit for related data fetching (lookups)
+                        // Enterprise Level 10: Always use a high limit for related data fetching (lookups)
                         const res = await api.brain.get(`db/${target}?limit=1000`);
                         let fetchedData = Array.isArray(res) ? res : (res?.data || []);
                         
                         if (res && (res.success || Array.isArray(res))) {
-                            // Enterprise Level 8: Normalize related data based on its definition
+                            // Enterprise Level 10: Normalize related data based on its definition
                             const targetEntityDef = (systemConfig?.entity as any)?.[target];
 
                             if (targetEntityDef) {
@@ -160,13 +205,13 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
     const renderCell = (val: any, field: FieldDefinition) => {
         const target = (field.relationEntity || field.relation?.target || (field.type === 'tag' ? 'tag' : ''))?.toLowerCase();
         
-        // Enterprise Level 8: Strict Display Field Selection
+        // Enterprise Level 10: Strict Display Field Selection
         const targetDef = target ? (systemConfig?.entity as any)?.[target] : null;
             
         // Priority: 1. Field specific displayField, 2. Field specific relation.field, 3. Target Entity displayField, 4. 'id' (Strict)
         const displayField = field.displayField || field.relation?.displayField || field.relation?.field || targetDef?.displayField || 'id';
 
-        // Enterprise Level 8: STRCIT Case-Insensitive Label Resolution
+        // Enterprise Level 10: STRICT Case-Insensitive Label Resolution
         const getLabel = (item: any, preferred: string, fallbackId: any) => {
             if (!item) return fallbackId;
             if (typeof item !== 'object') return String(item);
@@ -187,7 +232,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
         const resolvedId = currentValIsObject ? (val.id || val.ID || val.uuid || val.key) : val;
 
         // --- RELATION MANY (Tags, Categories, etc.) ---
-        // Enterprise Level 8: Include 'tag' and 'multi-select'
+        // Enterprise Level 10: Include 'tag' and 'multi-select'
         if (field.type === 'relation-many' || field.type === 'tag' || field.type === 'multi-select' || field.multiple === true) {
             if (!val || val === '[]' || (Array.isArray(val) && val.length === 0)) return '-';
             
@@ -270,7 +315,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
         }
 
         // --- SINGLE RELATION (Workspace, Owner, etc.) ---
-        // Enterprise Level 8: Improved single-relation rendering with rich-object support
+        // Enterprise Level 10: Improved single-relation rendering with rich-object support
         if ((field.type === 'relation' || field.type === 'entity_relation') && val) {
             const sid = String(resolvedId || '').toLowerCase();
             
@@ -338,7 +383,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
 
     return (
         <div className="p-4 md:p-8 space-y-6">
-            {/* Header section - Integrated Search (Enterprise Level 8) */}
+            {/* Header section - Integrated Search (Enterprise Level 10) */}
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
                 <div className="flex-1 flex items-center gap-4">
                     {/* Compact Brand Icon */}
@@ -393,6 +438,46 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                         </Button>
                     </div>
 
+                    {globalActions.length > 0 && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    className="border-2 border-indigo-100 dark:border-slate-800 h-14 px-6 rounded-2xl font-black italic uppercase tracking-widest text-[11px] hover:bg-slate-100/50 dark:hover:bg-slate-900 transition-all font-bold"
+                                >
+                                    {isActionRunning?.startsWith('global:') ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+                                    {renderString(t('common:actions') || 'Acțiuni', lang)}
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="rounded-[20px] border-slate-100 dark:border-slate-800 shadow-2xl min-w-[220px] p-2 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl">
+                                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 py-2 flex items-center justify-between">
+                                    {renderString(config.labelPlural || config.label || entityId, lang)}
+                                    <Badge className="text-[8px] bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 border-none px-2 py-0.5">GLOBAL</Badge>
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator className="my-1 bg-slate-100 dark:bg-slate-900" />
+                                {globalActions.map((action: any) => (
+                                    <DropdownMenuItem 
+                                        key={action.id}
+                                        onClick={() => handleAction(action.id)}
+                                        className="p-3 cursor-pointer focus:bg-indigo-50 dark:focus:bg-indigo-900/20 focus:text-indigo-600 rounded-xl transition-all group mb-0.5"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900 text-slate-500 group-hover:bg-white dark:group-hover:bg-slate-800 group-hover:text-indigo-600 transition-colors shadow-sm">
+                                                {action.icon ? resolveIcon(action.icon, { size: 16 }) : <Zap size={16} />}
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[11px] font-black uppercase italic tracking-tighter">{renderString(action.label, lang)}</span>
+                                                {action.description && (
+                                                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter line-clamp-1">{renderString(action.description, lang)}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
+
                     {features.creatable !== false && (
                         <Button
                             onClick={() => navigate(`new`)}
@@ -405,7 +490,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                 </div>
             </div>
 
-            {/* Entity Actions & Management (Enterprise Level 8) */}
+            {/* Entity Actions & Management (Enterprise Level 10) */}
             <DataManagementActions
                 entityType={entityId}
                 selectedCount={selectedIds.size}
@@ -478,7 +563,7 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                                             </div>
                                         </TableHead>
                                     ))}
-                                    {normalized.uiConfig?.list?.showActions === true && (
+                                    {(normalized.uiConfig?.list?.showActions === true || rowActions.length > 0) && (
                                         <TableHead className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
                                             {renderString(t('common:actions'), lang)}
                                         </TableHead>
@@ -506,9 +591,40 @@ export function DynamicEntityList({ entityId, config: initialConfig }: DynamicEn
                                                 {renderCell(item[f.name || f.key], f)}
                                             </TableCell>
                                         ))}
-                                        {normalized.uiConfig?.list?.showActions === true && (
+                                        {(normalized.uiConfig?.list?.showActions === true || rowActions.length > 0) && (
                                             <TableCell className="px-6 py-4 text-right">
-                                                <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex justify-end items-center gap-1 opacity-10 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {rowActions.length > 0 && (
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button 
+                                                                    variant="ghost" 
+                                                                    size="icon" 
+                                                                    className="h-8 w-8 rounded-lg hover:bg-indigo-50 text-indigo-600"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                >
+                                                                    {isActionRunning?.startsWith(`${item.id}:`) ? <RefreshCw className="animate-spin h-4 w-4" /> : <Zap size={14} />}
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end" className="rounded-xl border-slate-200 shadow-xl min-w-[180px]">
+                                                                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-slate-400">{renderString(t('common:entity_actions'), lang)}</DropdownMenuLabel>
+                                                                <DropdownMenuSeparator />
+                                                                {rowActions.map((action: any) => (
+                                                                    <DropdownMenuItem 
+                                                                        key={action.id}
+                                                                        onClick={(e) => { e.stopPropagation(); handleAction(action.id, item.id); }}
+                                                                        className="p-2 cursor-pointer focus:bg-indigo-50 focus:text-indigo-600 rounded-lg m-1 transition-colors"
+                                                                    >
+                                                                        <div className="flex items-center gap-2">
+                                                                            {action.icon ? resolveIcon(action.icon, { size: 14 }) : <Zap size={14} />}
+                                                                            <span className="text-[11px] font-black uppercase italic tracking-tighter">{renderString(action.label, lang)}</span>
+                                                                        </div>
+                                                                    </DropdownMenuItem>
+                                                                ))}
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    )}
+                                                    
                                                     <Button 
                                                         variant="ghost" 
                                                         size="icon" 

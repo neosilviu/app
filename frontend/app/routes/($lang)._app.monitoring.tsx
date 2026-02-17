@@ -14,6 +14,7 @@ import {
 import { useAuth } from "~/hooks/useAuth";
 import { useSettings } from "~/hooks/useSettings";
 import { useConfig } from "~/hooks/useConfig";
+import { useActionV3 } from "~/hooks/useActionV3";
 import { useNavigate, useParams } from "react-router";
 import type { Route } from "./+types/($lang)._app.monitoring";
 
@@ -43,7 +44,7 @@ export default function MonitoringPage() {
     const systemSettings = config?.constants?.SYSTEM_SETTING || {};
     const useLocalAgent = systemSettings.use_local_agent === true || systemSettings.use_local_agent === 1 || String(systemSettings.use_local_agent) === 'true';
 
-    // Security check: Role-based page access & Local Agent dependency
+    // Security check: Role-based page access
     useEffect(() => {
         if (!config?.isInitialized) return;
 
@@ -53,9 +54,9 @@ export default function MonitoringPage() {
             return;
         }
 
+        // We no longer block if Local Agent is off, because we have Cloud Monitoring via v3!
         if (!useLocalAgent) {
-            toast.error("Pagina de monitorizare necesită Agentul Local activ");
-            navigate(`/${lang}/settings`);
+            console.log("[MONITOR] Local Agent inactive, showing Cloud stats only.");
         }
     }, [user, hasPageAccess, navigate, useLocalAgent, config?.isInitialized, lang]);
     
@@ -70,6 +71,12 @@ export default function MonitoringPage() {
     const [storageStats, setStorageStats] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+
+    // V3 Cloud Actions
+    const { execute: getCloudDb } = useActionV3('system_setting', 'monitoring-db');
+    const { execute: getCloudWorkers } = useActionV3('system_setting', 'monitoring-workers');
+    const { execute: getCloudInfra } = useActionV3('system_setting', 'monitoring-infra');
+    const { execute: getCloudAudits } = useActionV3('system_setting', 'monitoring-audits');
 
     // Logs State
     const [liveLogs, setLiveLogs] = useState<any[]>([]);
@@ -101,30 +108,85 @@ export default function MonitoringPage() {
         if (refreshing) return;
         setRefreshing(true);
         
-        // Fetch each piece independently to populate UI faster
-        const jobs = [
-            { req: "monitoring:local", setter: setLocalStats },
-            { req: "monitoring:db", setter: setDbStats },
-            { req: "monitoring:workers", setter: setWorkerStats },
-            { req: "monitoring:storage", setter: setStorageStats },
-            { req: "monitoring:settings:get", callback: (res: any) => {
-                if (res.success) {
-                    setSyncHeavyDataUI(res.data.syncHeavyData || syncHeavyData);
-                }
-            }}
-        ];
+        // --- 1. Cloud Stats (Always Fetch) ---
+        try {
+            const dbV3 = await getCloudDb();
+            if (dbV3) {
+                // Map Cloud stats to "remote" property for the V2 UI
+                const tableStatsMapped = dbV3.tables?.map((t: any) => ({
+                    ...t,
+                    counts: {
+                        remote: t.counts?.local || 0, // D1 is local to the brain, but remote to the UI
+                        local: 0
+                    }
+                })) || [];
+                
+                setDbStats({ ...dbV3, tables: tableStatsMapped });
+            }
+            
+            const workerV3 = await getCloudWorkers();
+            if (workerV3) setWorkerStats(workerV3);
 
-        // Start all requests in parallel but process them as they arrive
-        const localPromises = jobs.map(job => 
-            socketRequest(job.req)
-                .then(res => {
-                    if (job.setter) job.setter(res.data || res);
-                    if (job.callback) job.callback(res);
-                })
-                .catch(err => console.error(`[MONITOR] Error fetching ${job.req}:`, err))
-        );
+            const infraV3 = await getCloudInfra({ type: 'cloudflare' });
+            if (infraV3) setStorageStats(infraV3);
 
-        await Promise.allSettled(localPromises);
+            const auditV3 = await getCloudAudits();
+            if (auditV3) setHistoryLogs(auditV3);
+        } catch (e) {
+            console.error("[MONITOR] Cloud fetch failed:", e);
+        }
+
+        // --- 2. Local Stats (Only if Agent enabled) ---
+        if (useLocalAgent) {
+            const jobs = [
+                { req: "monitoring:local", setter: setLocalStats },
+                { req: "monitoring:db", setter: (data: any) => {
+                    // Update the local counts in the already fetched Cloud stats
+                    setDbStats((prev: any) => {
+                        const localTables = data?.tables || [];
+                        const mergedTables = (prev?.tables || []).map((t: any) => {
+                            const localMatch = localTables.find((lt: any) => lt.table === t.table);
+                            return {
+                                ...t,
+                                counts: {
+                                    ...t.counts,
+                                    local: localMatch?.counts?.local || 0
+                                }
+                            };
+                        });
+                        return { ...prev, tables: mergedTables, localMeta: data };
+                    });
+                }},
+                { req: "monitoring:workers", setter: (data: any) => {
+                    setWorkerStats((prev: any) => ({
+                        ...prev,
+                        localAgent: data
+                    }));
+                }},
+                { req: "monitoring:storage", setter: (data: any) => {
+                    setStorageStats((prev: any) => ({
+                        ...prev,
+                        local: data
+                    }));
+                }},
+                { req: "monitoring:settings:get", callback: (res: any) => {
+                    if (res.success) {
+                        setSyncHeavyDataUI(res.data.syncHeavyData || syncHeavyData);
+                    }
+                }}
+            ];
+
+            const localPromises = jobs.map(job => 
+                socketRequest(job.req)
+                    .then(res => {
+                        if (job.setter) job.setter(res.data || res);
+                        if (job.callback) job.callback(res);
+                    })
+                    .catch(err => console.warn(`[MONITOR] Local ${job.req} unavailable`))
+            );
+
+            await Promise.allSettled(localPromises);
+        }
         
         setRefreshing(false);
         setLoading(false);

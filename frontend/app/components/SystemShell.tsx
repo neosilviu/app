@@ -145,7 +145,7 @@ export const ConnectionManager: React.FC = () => {
     return null;
   }
 
-  // Level 8: Permanent elimination of the bottom connection secondary message as per user request
+  // Enterprise Level 10: Permanent elimination of the bottom connection secondary message
   // We keep the health check logic but stop rendering the overlay to avoid blocking the UI
   return null;
 };
@@ -166,6 +166,7 @@ export const WorkerOfflineOverlay: React.FC<WorkerOfflineOverlayProps> = ({
   onRetry = () => window.location.reload(),
   onNavigateToMonitoring = () => window.location.href = '/monitoring'
 }) => {
+  const { t } = useTranslation();
   const isDisabled = status === 'disabled';
 
   return (
@@ -174,12 +175,12 @@ export const WorkerOfflineOverlay: React.FC<WorkerOfflineOverlayProps> = ({
         <AlertCircle className="w-12 h-12 text-amber-500" />
       </div>
       <h2 className="text-2xl font-bold text-gray-900 mb-2">
-        {isDisabled ? `${workerName} este dezactivat` : `${workerName} nu rulează`}
+        {isDisabled ? t('common.worker_disabled', { name: workerName }) : t('common.worker_offline', { name: workerName })}
       </h2>
       <p className="text-gray-500 max-w-md mb-8">
         {isDisabled 
-          ? `Acest serviciu a fost dezactivat manual din setările de sistem. Te rugăm să îl activezi din panoul de monitorizare pentru a-l putea utiliza.`
-          : `Serviciul de fundal pentru ${workerName} nu rulează în acest moment. Verifică starea acestuia în panoul de monitorizare.`}
+          ? t('common.worker_disabled_desc')
+          : t('common.worker_offline_desc', { name: workerName })}
       </p>
       <div className="flex gap-4">
         <button 
@@ -187,14 +188,14 @@ export const WorkerOfflineOverlay: React.FC<WorkerOfflineOverlayProps> = ({
           className="px-6 py-3 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
         >
           <Settings className="w-4 h-4" />
-          Mergi la Monitorizare
+          {t('common.go_to_monitoring')}
         </button>
         <button 
           onClick={onRetry}
           className="px-6 py-3 bg-gray-50 text-gray-700 font-bold rounded-xl hover:bg-gray-100 transition-all border border-gray-200 flex items-center gap-2"
         >
           <RefreshCw className="w-4 h-4" />
-          Reîncearcă
+          {t('common.retry')}
         </button>
       </div>
     </div>
@@ -209,6 +210,7 @@ export function ShortcutManager() {
   const { lang } = useParams();
   const { theme, setTheme, customTheme } = useTheme();
   const { uiConfig, entity } = useConfig();
+  const { t } = useTranslation();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -252,7 +254,7 @@ export function ShortcutManager() {
             break;
           case "toggle-theme":
             setTheme(theme === "dark" ? "light" : "dark");
-            toast.info(`Tema schimbată în ${theme === "dark" ? "Light" : "Dark"}`);
+            toast.info(t('common.theme_switched', { theme: theme === "dark" ? "Light" : "Dark" }));
             break;
           case "go-dashboard": navigate(getLocalizedPath("/", lang)); break;
           case "go-monitoring": navigate(getLocalizedPath("/monitoring", lang)); break;
@@ -269,21 +271,21 @@ export function ShortcutManager() {
               const entityId = action.split('?')[0].replace('nav:', '');
               const entityDef = (entity as any)[entityId];
               navigate(getLocalizedPath(`/${action.replace('nav:', '')}`, lang));
-              toast.info(`Navigare către ${renderString(entityDef?.labelPlural || entityDef?.label, lang) || entityId}`);
+              toast.info(t('common.navigating_to', { label: renderString(entityDef?.labelPlural || entityDef?.label, lang) || entityId }));
             }
             // 2. Creation (new:entity_id)
             else if (action.startsWith("new:")) {
               const entityId = action.replace('new:', '');
               const entityDef = (entity as any)[entityId];
               navigate(getLocalizedPath(`/${entityId}/new`, lang));
-              toast.success(`Deschidere formular: ${renderString(entityDef?.label, lang) || entityId}`);
+              toast.success(t('common.opening_form', { label: renderString(entityDef?.label, lang) || entityId }));
             }
             // 3. List/Board (list:entity_id)
             else if (action.startsWith("list:")) {
               const entityId = action.replace('list:', '');
               const entityDef = (entity as any)[entityId];
               navigate(getLocalizedPath(`/${entityId}`, lang));
-              toast.info(`Listă completă: ${renderString(entityDef?.labelPlural || entityDef?.label, lang) || entityId}`);
+              toast.info(t('common.navigating_to', { label: renderString(entityDef?.labelPlural || entityDef?.label, lang) || entityId }));
             }
             break;
         }
@@ -308,7 +310,7 @@ export function ShortcutManager() {
            if (matchesKey && matchesModifier) {
              e.preventDefault();
              navigate(getLocalizedPath(`/${id}`, lang));
-             toast.info(`Navigare către ${renderString(config.labelPlural || config.label, lang)}`);
+             toast.info(t('common:navigating_to', { label: renderString(config.labelPlural || config.label, lang) }));
            }
         }
       });

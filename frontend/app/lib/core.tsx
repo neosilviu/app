@@ -46,15 +46,10 @@ export {
     authClient
 } from './auth';
 
-// 6. Business Logic
-export {
-    BUSINESS_LOGIC,
-    getTierPrice,
-    calculateJobPrice,
-    findTierPrice
-} from './logic';
+// 6. Business Logic (Shared)
+// Note: Printing logic moved to domain-specific route files
 
-// 7. Entity Engine (Level 8)
+// 7. Entity Engine (Enterprise Level 10 Unified Mastery)
 export * from './entity-engine';
 
 

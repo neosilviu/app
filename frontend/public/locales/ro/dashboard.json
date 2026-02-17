@@ -8,5 +8,8 @@
   "d1_sync": "Sincronizarea cu Cloudflare D1 este activă.",
   "manage_todos": "Gestionează Task-uri",
   "last_update": "Ultima actualizare",
-  "all_done": "Toate task-urile completate"
+  "all_done": "Toate task-urile completate",
+  "workers_title": "Status Workeri",
+  "no_workers": "Niciun worker activ",
+  "worker_updated": "Status worker actualizat!"
 }

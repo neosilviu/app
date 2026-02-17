@@ -36,7 +36,7 @@ export default function GenericEntityDetailPage() {
     );
   }
 
-  // Enterprise Level 8: Case-Insensitive Lookup
+  // Enterprise Level 10: Case-Insensitive Lookup
   const normalizedEntityId = (entityId || '').toLowerCase();
   const configKey = Object.keys(configMap).find(k => k.toLowerCase() === normalizedEntityId);
   const config = configKey ? configMap[configKey] : undefined;

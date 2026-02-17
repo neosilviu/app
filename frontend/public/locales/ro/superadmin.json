@@ -63,6 +63,41 @@
   "extend_system_desc": "Extinde configurația sistemului la runtime.",
   "key_name": "Nume Cheie (Snake Case)",
   "register_key": "Înregistrează Cheie Nouă",
+  "entity_builder": {
+    "title": "Builder Entități",
+    "subtitle": "Gestionează arhitectura datelor și metadatele în timp real.",
+    "new_entity": "Entitate Nouă",
+    "ai_success": "Arhitectura a fost generată de AI cu succes!",
+    "ai_title": "AI Entity Architect",
+    "ai_prompt_desc": "Descrie entitatea pe care vrei să o creezi în limbaj natural.",
+    "ai_placeholder": "Ex: Vreau un modul de gestiune flote auto...",
+    "generate": "Generează Entitate",
+    "cancel": "Anulează",
+    "system_name": "Nume Sistem (ID)",
+    "display_label": "Etichetă Afișare",
+    "db_table": "Tabel DB",
+    "save_entity": "Salvează Entitate",
+    "create_new": "Creează Entitate Nouă",
+    "edit_entity": "Editează {{name}}",
+    "complete_config": "Finalizează configurația entității",
+    "tabs": {
+        "basic": "General",
+        "fields": "Câmpuri",
+        "display": "Afișare",
+        "menu": "Meniu",
+        "dashboard": "Dashboard"
+    },
+    "errors": {
+        "name_required": "Numele sistemului este obligatoriu"
+    },
+    "save_success": "Entitatea {{name}} a fost salvată!",
+    "confirm_delete": "Sigur vrei să ștergi această entitate?",
+    "tooltips": {
+        "system_name": "ID-ul unic al entității (plural, snake_case)",
+        "display_label": "Numele afișat în interfață",
+        "db_table": "Numele tabelei din baza de date"
+    }
+  },
     "marketplace": {
       "search_placeholder": "Caută șabloane (ex: CRM, Medical)...",
       "install_architecture": "Instalează Arhitectura",

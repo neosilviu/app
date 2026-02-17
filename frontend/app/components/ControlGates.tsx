@@ -20,7 +20,7 @@ export function PermissionGate({ children, permission, role, fallback = null }: 
     const { user, hasPermission } = auth;
     if (!user) return <>{fallback}</>;
 
-    // Administrative roles (Enterprise Level 8)
+    // Administrative roles (Enterprise Level 10)
     const isAdmin = ['superadmin', 'workspace_owner', 'workspace_admin'].includes(user.role);
     if (isAdmin) return <>{children}</>;
 
@@ -53,7 +53,7 @@ export function SuperAdminGate({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useEffect(() => {
-    // Enterprise Level 8: Logic for initial setup redirection
+    // Enterprise Level 10: Logic for initial setup redirection
     // We only redirect if:
     // 1. Not loading
     // 2. Not logged in
@@ -67,13 +67,18 @@ export function SuperAdminGate({ children }: { children: React.ReactNode }) {
   }, [authLoading, isAdminExists, navigate, lang, location.pathname, user]);
 
   if (authLoading) {
+    // Fast-unblock UX: render app immediately and show a small non-blocking status badge.
+    // This mirrors app-v3 behaviour where the UI is interactive while auth finishes in background.
     return (
-      <div key="system-check" className="flex items-center justify-center min-h-screen bg-background">
-        <div className="text-center space-y-4">
-          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-muted-foreground animate-pulse font-medium">Checking session...</p>
+      <>
+        {children}
+        <div className="fixed top-4 right-4 z-[9999] pointer-events-none">
+          <div className="inline-flex items-center gap-3 rounded-md px-3 py-2 bg-muted/10 text-sm text-muted-foreground shadow-lg backdrop-blur-sm">
+            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-medium">Checking session...</span>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 

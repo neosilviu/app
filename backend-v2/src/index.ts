@@ -11,6 +11,10 @@ import { EntitySync } from './core/entity-sync';
 import { SystemSchema } from './core/system-schema';
 import { SocketManager } from './services/SocketManager';
 import { WorkerManager } from './core/WorkerManager';
+// import { AVAILABLE_V3_ENTITIES } from '../../core/entities/index'; // Eliminat: ESM import
+
+// Export for AI Worker
+// (global as any).AVAILABLE_V3_ENTITIES = AVAILABLE_V3_ENTITIES; // Eliminat: nu mai există
 
 // Increase listeners for development HMR/reloads
 if (typeof process !== 'undefined') {
@@ -43,6 +47,10 @@ async function bootstrap() {
 
   // 2. Initialize Registry
   await RegistryManager.getInstance().load();
+    // Registry-driven: importă doar JSON, nu cod ESM
+    const { loadRegistry } = require('../registry-entities');
+    const registry = loadRegistry();
+    // Poți folosi registry['user'], registry['deal'], etc.
 
   // 3. Sync Database Schema
   const syncer = new EntitySync();
@@ -61,14 +69,15 @@ async function bootstrap() {
   // Middleware
   app.use(cors({
     origin: (origin, callback) => {
-      // Allow all subdomains of aemdpc.ro and localhost
+      // Allow localhost and local network origins
       if (!origin || 
           origin.includes('aemdpc.ro') || 
           origin.includes('localhost') || 
           origin.includes('127.0.0.1') ||
           origin.includes('192.168.') ||
-          origin.includes('10.0.') ||
-          origin.includes('172.')) {
+          origin.includes('10.') ||
+          origin.includes('172.') ||
+          (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL)) {
         return callback(null, true);
       }
       console.warn(`[CORS-REJECT] Origin: ${origin}`);

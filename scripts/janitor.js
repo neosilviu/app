@@ -1,5 +1,5 @@
 /**
- * STUDIO APP v2 - JANITOR SCRIPT (Enterprise Level 8)
+ * STUDIO APP v3 - JANITOR SCRIPT (Enterprise Level 10)
  * Scans the workspace for exported symbols (functions, constants, types) 
  * that are not referenced anywhere else in the project.
  */
@@ -12,6 +12,7 @@ const ROOT_DIR = process.cwd();
 const SEARCH_DIRS = [
     path.join(ROOT_DIR, 'frontend', 'app'),
     path.join(ROOT_DIR, 'backend-v2', 'src'),
+    path.join(ROOT_DIR, 'core'),
     path.join(ROOT_DIR, 'registry-baseline.ts')
 ];
 

@@ -3,16 +3,21 @@ import { cloudflare } from "better-auth-cloudflare";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 import { wrapD1Binding, getDb } from "./d1.server";
+import { getRegistry } from "./registry";
 
 let _cachedAuth: any = null;
 
 export const getAuth = (env: any, request?: Request) => {
-    // Level 8: Always use the globally wrapped DB from getDb to ensure 
+    const registry = getRegistry();
+    const authConfig = registry?.AUTH_CONFIG || {};
+
+    // Enterprise Level 10: Unified Transactional Database Binding
+    // Always use the globally wrapped DB from getDb to ensure 
     // serialization (DbQueue) works across all libraries (Better-Auth, D1Driver, etc.)
     const driver = getDb(env);
     const d1Binding = driver.db;
     
-    // Check if origin changed (Enterprise Level 8: Dynamic Origin Support)
+    // Check if origin changed (Enterprise Level 10: Dynamic Origin & Multi-Domain Shield)
     let currentOrigin = '';
     if (request) {
         try { currentOrigin = new URL(request.url).origin; } catch (e) {}
@@ -27,7 +32,7 @@ export const getAuth = (env: any, request?: Request) => {
     }
 
     let baseURL = env?.BETTER_AUTH_URL || currentOrigin;
-    if (!baseURL) baseURL = 'http://localhost:8788';
+    if (!baseURL) baseURL = '';
 
     console.log(`[AUTH-INIT] Initializing Better-Auth at ${baseURL} (Singleton mode)`);
     const initStart = Date.now();
@@ -47,22 +52,40 @@ export const getAuth = (env: any, request?: Request) => {
         console.error = wrappedConsoleError as any;
         
         console.log("[AUTH-INIT] Creating Kysely DB...");
-        const db = new Kysely<any>({
-            dialect: new D1Dialect({ database: d1Binding as any }),
-            plugins: [
-                {
-                    transformQuery: (args: any) => args.node,
-                    transformResult: (args: any) => {
-                        const result = args.result;
-                        if (result && (result as any).numUpdatedOrDeletedRows !== undefined && result.numAffectedRows === undefined) {
-                            // Map deprecated property to new one to satisfy Kysely's internal checks
-                            result.numAffectedRows = BigInt((result as any).numUpdatedOrDeletedRows);
+        
+        // Level 10: Seamlessly patch D1Dialect to stop the Kysely "outdated driver" warning.
+        // We intercept the driver and connection execution to transform the result BEFORE Kysely sees it.
+        const dialect = new D1Dialect({ database: d1Binding as any });
+        const originalCreateDriver = dialect.createDriver.bind(dialect);
+        
+        dialect.createDriver = () => {
+            const driver = originalCreateDriver();
+            const originalAcquireConnection = driver.acquireConnection.bind(driver);
+            
+            driver.acquireConnection = async () => {
+                const connection = await originalAcquireConnection();
+                const originalExecuteQuery = connection.executeQuery.bind(connection);
+                
+                connection.executeQuery = async <R>(compiledQuery: any): Promise<any> => {
+                    const result = await originalExecuteQuery(compiledQuery);
+                    const casted = result as any;
+                    if (casted && casted.numUpdatedOrDeletedRows !== undefined) {
+                        // Transform to the new expected numAffectedRows
+                        if (casted.numAffectedRows === undefined) {
+                            (casted as any).numAffectedRows = BigInt(casted.numUpdatedOrDeletedRows || 0);
                         }
-                        return Promise.resolve(result);
+                        // Remove the old property to satisfy Kysely's check
+                        const dummy = casted.numUpdatedOrDeletedRows;
+                        delete (casted as any).numUpdatedOrDeletedRows; 
                     }
-                } as any
-            ]
-        });
+                    return casted;
+                };
+                return connection;
+            };
+            return driver;
+        };
+
+        const db = new Kysely<any>({ dialect });
 
         console.log("[AUTH-INIT] Running betterAuth constructor...");
         const auth = betterAuth({
@@ -70,22 +93,22 @@ export const getAuth = (env: any, request?: Request) => {
                 provider: "sqlite",
                 db: db,
             },
-            secret: env?.BETTER_AUTH_SECRET || "o6E7vjY9vWxN8pM5vDxN1mL4pT2vB0nQ",
+            secret: env?.BETTER_AUTH_SECRET || '',
             baseURL,
             logger: {
                 disabled: false,
                 level: "error",
             },
             emailAndPassword: { 
-                enabled: true,
+                enabled: authConfig.strategies?.local?.enabled ?? true,
                 autoSignIn: true,
-                minPasswordLength: 8,
+                minPasswordLength: authConfig.strategies?.local?.passwordMinLength ?? 8,
                 maxPasswordLength: 128
             },
             user: {
                 additionalFields: {
-                    role: { type: "string", required: false, defaultValue: "user" },
-                    workspaceId: { type: "string", required: false }
+                    role: { type: "string" as any, required: false, defaultValue: "user" },
+                    workspaceId: { type: "string" as any, required: false, defaultValue: authConfig.defaultWorkspaceId || "system" }
                 }
             },
             plugins: [
@@ -132,7 +155,8 @@ export async function verifyAuth(request: Request, env: any) {
       };
     }
 
-    // Level 8: Support Bearer Token directly from Header for non-browser/internal clients
+    // Enterprise Level 10: Headless Auth Protocol (Token-First Resolution)
+    // Support Bearer Token directly from Header for non-browser/internal clients
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.split(' ')[1];
         if (token) {

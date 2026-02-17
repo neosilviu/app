@@ -1,4 +1,4 @@
-# Arhitectura Sistemului (Enterprise Level 8)
+# Arhitectura Sistemului (Enterprise Level 10)
 
 Proiectul Studio App v2 este construit pe principiul **Worker-First Architecture**, utilizand **Cloudflare Workers** ca Creier central si un **Local Agent** pentru operatiuni hardware si procesari locale.
 

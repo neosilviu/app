@@ -14,7 +14,8 @@ import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
 import { Separator } from "~/components/ui/separator";
 import { Settings2, Minus, Plus } from "lucide-react";
-import { getTierPrice, calculateJobPrice, renderString } from "../../lib/core";
+import { renderString } from "../../lib/core";
+import { getTierPrice, calculateJobPrice } from "../../routes/printing-logic";
 
 interface JobConfigDialogProps {
     isOpen: boolean;

@@ -257,7 +257,7 @@ export const DatabaseBrowserDialog: React.FC<DatabaseBrowserDialogProps> = ({
                                         <span className="text-[9px] font-black uppercase italic text-slate-300">|</span>
                                         <span className="text-[9px] font-black uppercase italic text-slate-400">Rows {Math.min(rows.length, pageSize)} of {total}</span>
                                     </div>
-                                    <p className="text-[9px] font-black uppercase italic text-slate-300 tracking-tighter">Enterprise Level 8 Audit Console</p>
+                                    <p className="text-[9px] font-black uppercase italic text-slate-300 tracking-tighter">Enterprise Level 10 Audit Console</p>
                                 </div>
                             </div>
                         ) : (

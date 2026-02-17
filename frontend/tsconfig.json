@@ -4,7 +4,8 @@
     "**/.server/**/*",
     "**/.client/**/*",
     ".react-router/types/**/*",
-    "../registry-baseline.ts"
+    "../registry-baseline.ts",
+    "../core/**/*"
   ],
   "exclude": ["node_modules", "../OLD"],
   "compilerOptions": {

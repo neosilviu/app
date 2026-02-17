@@ -6,6 +6,7 @@
 import axios from 'axios';
 import { io, type Socket } from "socket.io-client";
 import { XMLParser } from 'fast-xml-parser';
+import { renderString } from './utils';
 
 const logger = console;
 
@@ -15,7 +16,7 @@ let DISABLE_SOCKET_BY_REGISTRY = false;
 export function initRegistry(registry: any) {
     _registry = registry;
     
-    // Enterprise Level 8: Update DISABLE_SOCKET_BY_REGISTRY flag based on Registry setting
+    // Enterprise Level 10: Dynamic Connectivity Orchestration (Registry-Dependent)
     const newDisableState = registry?.SYSTEM_SETTING?.use_local_agent === false;
     if (newDisableState !== DISABLE_SOCKET_BY_REGISTRY) {
         DISABLE_SOCKET_BY_REGISTRY = newDisableState;
@@ -26,7 +27,7 @@ export function initRegistry(registry: any) {
         }
     }
     
-    // Level 8: Dynamic Socket Re-alignment (only if Local Agent is enabled)
+    // Enterprise Level 10: Real-time Socket Protocol Alignment
     if (!DISABLE_SOCKET_BY_REGISTRY) {
         const newUrl = getLocalAgentUrl();
         if (isBrowser && newUrl && socket && (socket as any).io) {
@@ -45,11 +46,28 @@ export function initRegistry(registry: any) {
 
 const isBrowser = typeof window !== 'undefined' && !(window as any).__is_shim;
 
-export const getLocalAgentUrl = () => {
-    const env = (import.meta as any).env || {};
+/**
+ * Enterprise Level 10: Isomorphic Environment Access (Vite-Safe)
+ * Resolves properties from import.meta.env or process.env without dynamic object access.
+ */
+const getEnvVar = (key: string): any => {
+    // 1. Try Vite/React Router (Static-analysis optimized)
+    if (key === 'VITE_SOCKET_URL') return import.meta.env.VITE_SOCKET_URL;
+    if (key === 'VITE_LOCAL_API_URL') return import.meta.env.VITE_LOCAL_API_URL;
+    if (key === 'NODE_ENV') return import.meta.env.MODE;
+    if (key === 'DEV') return import.meta.env.DEV;
     
+    // 2. Try Node process fallback (SSR/Worker)
+    if (typeof process !== 'undefined' && process.env) {
+        return process.env[key];
+    }
+    
+    return undefined;
+};
+
+export const getLocalAgentUrl = () => {
     // 1. Try from Environment Variables
-    const envUrl = env.VITE_SOCKET_URL || env.VITE_LOCAL_API_URL;
+    const envUrl = getEnvVar('VITE_SOCKET_URL') || getEnvVar('VITE_LOCAL_API_URL');
     if (envUrl) return envUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
     
     // 2. Local-First Preference: Leverage Vite Proxy (Enterprise Architecture)
@@ -64,7 +82,7 @@ export const getLocalAgentUrl = () => {
         }
     }
 
-    // 3. Try from Registry (The Brain's Configuration) - Level 8 Preference
+    // 3. Enterprise Level 10: Registry-Based Discovery (Brain Core Configuration)
     const registryUrl = _registry?.SYSTEM_SETTING?.local_agent_url || _registry?.local_agent_url;
     if (registryUrl) {
         return registryUrl.replace(/\/$/, '');
@@ -74,12 +92,12 @@ export const getLocalAgentUrl = () => {
     const PORT = _registry?.SYSTEM_SETTING?.local_agent_port || _registry?.local_agent_port || 4001;
 
     if (isBrowser) {
-        const { hostname, protocol } = window.location;
+        const { hostname, protocol, origin } = window.location;
         
         // 1. Domain mapping for Local/Dev (localhost, 127.0.0.1, internal IPs)
         const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.') || hostname.startsWith('172.') || hostname.endsWith('.local');
         if (isLocal) {
-            // Enterprise Level 8: Always use Proxy-First approach for Local/Dev
+            // Enterprise Level 10: Transparent Proxy Tunnel (Vite/Wrangler Shim)
             // This ensures we pass through Vite's proxy (port 8788) which is already mapped to Backend V2
             return origin;
         }
@@ -96,14 +114,14 @@ export const getLocalAgentUrl = () => {
         // 3. Same domain fallback (only if registry didn't give us anything else)
         return `${protocol}//${hostname}`;
     }
-    return env.DEV ? `http://127.0.0.1:${PORT}` : '';
+    return getEnvVar('DEV') ? `http://127.0.0.1:${PORT}` : '';
 };
 
 let SOCKET_URL = isBrowser ? getLocalAgentUrl() : '';
 
 const getSocketAuth = () => {
     // Pass namespace based on context, or default to root
-    if (isBrowser) {
+    if (isBrowser && typeof localStorage !== 'undefined') {
         const token = localStorage.getItem("token");
         const email = localStorage.getItem("userEmail");
         return token ? { token, email } : { email };
@@ -113,7 +131,7 @@ const getSocketAuth = () => {
 
 const mockSocket: any = { on: () => { }, off: () => { }, emit: () => { }, connect: () => { }, disconnect: () => { }, connected: false, once: () => { } };
 
-// Enterprise Level 8: Check if Local Agent is explicitly disabled
+// Enterprise Level 10: Connectivity Guard - Prevent socket instantiation if explicitly disabled
 let DISABLE_SOCKET = false; 
 
 // Implementation: We might need separate sockets for namespaces /whatsapp, /gmail
@@ -134,7 +152,7 @@ export const socket: Socket = (isBrowser && !DISABLE_SOCKET && !DISABLE_SOCKET_B
         path: "/api/socket.io", 
         autoConnect: false, 
         reconnection: true, 
-        reconnectionAttempts: 1, // Enterprise Level 8: Stop spamming if the agent is not present
+        reconnectionAttempts: 1, // Enterprise Level 10: Throttled reconnection (Resource Optimization)
         reconnectionDelay: 10000, 
         auth: getSocketAuth(),
         timeout: 2000 // Short timeout for faster failover
@@ -188,7 +206,7 @@ if (isBrowser && !DISABLE_SOCKET) {
 
 
 export function socketRequest(event: string, data: any = {}): Promise<any> {
-    // Enterprise Level 8: Brain Fallback for system and common data events
+    // Enterprise Level 10: Automatic API Redundancy (Brain Fallback)
     // This allows the app to work even if the Local Agent is not running.
     if (event.startsWith('system:') || event.startsWith('registry:') || event.startsWith('workspace:') || event.startsWith('monitoring:') || event.startsWith('ai:')) {
         const parts = event.split(':');
@@ -199,8 +217,8 @@ export function socketRequest(event: string, data: any = {}): Promise<any> {
         const method = isWrite ? 'post' : 'get';
         const url = `${resource}/${op}`;
 
-        // Enterprise Level 8: Only attempt Brain fallback if we have a token
-        const hasToken = isBrowser && !!localStorage.getItem('token');
+        // Enterprise Level 10: Auth-State Verification for Redundancy Trigger
+        const hasToken = isBrowser && typeof localStorage !== 'undefined' && !!localStorage.getItem('token');
 
         if (hasToken) {
             return new Promise((resolve) => {
@@ -210,7 +228,7 @@ export function socketRequest(event: string, data: any = {}): Promise<any> {
                     if (res && res.success !== false) {
                         resolve(res);
                     } else {
-                        // Level 8: Only fallback to socket if Agent is enabled in Registry
+                        // Enterprise Level 10: Dynamic Socket Handover
                         if (_registry?.SYSTEM_SETTING?.use_local_agent) {
                             socket.emit(event, data, (socketRes: any) => resolve(socketRes));
                         } else {
@@ -218,7 +236,7 @@ export function socketRequest(event: string, data: any = {}): Promise<any> {
                         }
                     }
                 }).catch((err: any) => {
-                    // Level 8: Only fallback to socket if Agent is enabled in Registry
+                    // Enterprise Level 10: Dynamic Socket Handover
                     if (_registry?.SYSTEM_SETTING?.use_local_agent) {
                         console.warn(`[SERVICES] Brain API fallback for ${event} failed (${err.message}). Trying socket...`);
                         socket.emit(event, data, (socketRes: any) => resolve(socketRes));
@@ -232,12 +250,12 @@ export function socketRequest(event: string, data: any = {}): Promise<any> {
     }
 
     return new Promise((resolve, reject) => {
-        // Level 8: Block direct socket requests if the agent is disabled
+        // Enterprise Level 10 Guard: Prevent unsolicited socket traffic when Local Agent is disabled
         if (_registry && _registry.SYSTEM_SETTING && _registry.SYSTEM_SETTING.use_local_agent === false) {
             return resolve({ success: false, error: 'LOCAL_AGENT_DISABLED' });
         }
 
-        // We removed the warning here to support L8 lazy connection (managed by AuthProvider)
+        // We removed the warning here to support L10 lazy connection
         const timeout = setTimeout(() => reject(new Error(`Socket timeout: ${event}`)), 10000);
         socket.emit(event, data, (res: any) => {
             clearTimeout(timeout);
@@ -249,7 +267,7 @@ export function socketRequest(event: string, data: any = {}): Promise<any> {
 
 // --- API CLIENT ---
 
-const isProd = typeof window !== 'undefined' && window.location.hostname === 'service.aemdpc.ro';
+const isProd = isBrowser && !['localhost', '127.0.0.1'].includes(window.location.hostname) && !window.location.hostname.endsWith('.local');
 
 // In production and dev, use the internal /api/ route (The Brain / Cloudflare Worker)
 // We only use the Local Agent for specific local/hardware task via api.local
@@ -268,8 +286,8 @@ export const brainApi = axios.create({ baseURL: BRAIN_API_URL, timeout: 45000 })
  * dev server which may intentionally exclude certain /api/* routes.
  */
 export const getLocalAgentApiBaseUrl = () => {
-    const env = (import.meta as any).env || {};
-    if (env.VITE_LOCAL_API_URL) return env.VITE_LOCAL_API_URL.replace(/\/$/, '');
+    const vUrl = getEnvVar('VITE_LOCAL_API_URL');
+    if (vUrl) return vUrl.replace(/\/$/, '');
 
     const PORT = _registry?.SYSTEM_SETTING?.local_agent_port || _registry?.local_agent_port || 4001;
 
@@ -280,7 +298,7 @@ export const getLocalAgentApiBaseUrl = () => {
         const { hostname, origin } = window.location;
         const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.endsWith('.local');
         if (isLocal) {
-            // Enterprise Level 8: Always use Proxy-First approach for Local/Dev
+            // Enterprise Level 10: Transparent Proxy Tunnel (Vite/Wrangler Shim)
             // This ensures we pass through Vite's proxy (port 8788) which is already mapped to Backend V2
             // This avoids direct port 4001 access issues which often fail in networks or firewalls.
             return `${origin}/api-local`;
@@ -314,11 +332,11 @@ export const normalizeApiPath = (u: string) => {
 [brainApi, localAgentApi].forEach(instance => {
     instance.interceptors.request.use(
         config => {
-            if (isBrowser) {
+            if (isBrowser && typeof localStorage !== 'undefined') {
                 const token = localStorage.getItem('token');
                 if (token) config.headers.Authorization = `Bearer ${token}`;
                 
-                // Enterprise Level 8: Inject Current Language to all outgoing API requests
+                // Enterprise Level 10: Multi-Language Context Injection (I18N Propagation)
                 try {
                     const fullLang = localStorage.getItem('i18nextLng') || 'ro';
                     const lang = fullLang.split('-')[0].toLowerCase();
@@ -372,7 +390,7 @@ const wrapRequest = (fnBrain: any, fnLocal: any) => async (url: string, dataOrCf
             }
         }
         
-        // Level 8: Always prefer the server's error body if available
+        // Enterprise Level 10 Unified Error Schema: Standardize on detailed response bodies
         if (respData && typeof respData === 'object') {
             return respData;
         }
@@ -389,6 +407,10 @@ export const api = {
     put: wrapRequest((u: string, d?: any, cfg?: any) => brainApi.put(u, d, cfg).then(r => r.data), (u: string, d?: any, cfg?: any) => localAgentApi.put(u, d, cfg).then(r => r.data)),
     patch: wrapRequest((u: string, d?: any, cfg?: any) => brainApi.patch(u, d, cfg).then(r => r.data), (u: string, d?: any, cfg?: any) => localAgentApi.patch(u, d, cfg).then(r => r.data)),
     delete: wrapRequest((u: string, cfg?: any) => brainApi.delete(u, cfg).then(r => r.data), (u: string, cfg?: any) => localAgentApi.delete(u, cfg).then(r => r.data)),
+    
+    // Enterprise Level 10: Unified Action Protocol
+    action: (entity: string, actionId: string, data?: any, cfg?: any) => brainApi.post(normalizeApiPath(`action/${entity}/${actionId}`), data, cfg).then(r => r.data),
+    
     brain: {
         get: (url: string, cfg?: any) => brainApi.get(normalizeApiPath(url), cfg).then(r => r.data),
         post: async (url: string, data?: any, cfg?: any) => {
@@ -419,6 +441,10 @@ export const api = {
         put: (url: string, data?: any, cfg?: any) => brainApi.put(normalizeApiPath(url), data, cfg).then(r => r.data),
         patch: (url: string, data?: any, cfg?: any) => brainApi.patch(normalizeApiPath(url), data, cfg).then(r => r.data),
         delete: (url: string, cfg?: any) => brainApi.delete(normalizeApiPath(url), cfg).then(r => r.data),
+        
+        // Enterprise Level 10: Explicit Brain Action Execution
+        action: (entity: string, actionId: string, data?: any, cfg?: any) => brainApi.post(normalizeApiPath(`action/${entity}/${actionId}`), data, cfg).then(r => r.data),
+        
         quickCreate: async (entityId: string, name: string, additionalData: any = {}, workspaceId?: string) => {
             const ws = workspaceId || 'system';
             const payload = {
@@ -478,14 +504,14 @@ export class BaseAiEngine {
         this.env = adapter.env || {};
         this.settings = adapter.systemSetting || _registry?.SYSTEM_SETTING || {};
 
-        // Level 8: Inject dynamic models from Registry settings if present (Generic loop)
+        // Enterprise Level 10: Dynamic Model Hydration (Registry-First Inventory)
         // We use this.config.providers instead of global _registry to be Worker-safe
         if (this.config.models && this.config.providers && this.settings) {
             Object.keys(this.config.providers).forEach(pId => {
                 const key = `discovered_${pId}_models`;
                 let dynamic = this.settings[key];
                 
-                // Level 8: Auto-parse if it's a JSON string from D1
+                // Enterprise Level 10 Resilience: Recursive JSON extraction from hydrated settings
                 if (typeof dynamic === 'string' && (dynamic.startsWith('[') || dynamic.startsWith('{'))) {
                     try { dynamic = JSON.parse(dynamic); } catch(e) {}
                 }
@@ -508,7 +534,7 @@ export class BaseAiEngine {
         let modelId = options.model;
         let foundModel: any = null;
 
-        // 1. Level 8: Provider Resolution (Priority: Model-specific > Explicit Provider > Active Provider)
+        // 1. Enterprise Level 10: Deterministic Provider Resolution (Hierarchy: Model Override > Explicit > Active)
         // If we have a model ID, check which provider it belongs to. This overrides the suggested provider
         // to prevent sending a Cloudflare model to Google, for example.
         if (modelId && this.config.models) {
@@ -521,13 +547,13 @@ export class BaseAiEngine {
             }
 
             if (foundModel && foundModel.provider) {
-                // Enterprise Level 8: The model's defined provider is the Single Source of Truth.
+                // Enterprise Level 10: Model Provider DNA is Absolute SSOT.
                 if (providerName && providerName !== foundModel.provider) {
                     this.logger.warn(`[AI-ENGINE] Overriding requested provider "${providerName}" with "${foundModel.provider}" for model "${modelId}"`);
                 }
                 providerName = foundModel.provider;
             } else {
-                // Level 8: Hardcoded Prefix Resolution (Safety Net for unknown/untagged models)
+                // Enterprise Level 10: Identity-Based Provider Resolution (Safety Fallback)
                 const mid = String(modelId);
                 if (mid.startsWith('@cf/')) providerName = 'cloudflare';
                 else if (mid.includes('azureml') || mid.includes('github')) providerName = 'github';
@@ -545,7 +571,7 @@ export class BaseAiEngine {
                           this.config.defaultProvider;
         }
 
-        // Level 8: Provider Aliasing (Google vs Gemini legacy support)
+        // Enterprise Level 10: Legacy Alias Reconciliation (Google -> Gemini)
         if (providerName === 'google' && !this.config.providers?.google && this.config.providers?.gemini) {
             providerName = 'gemini';
         }
@@ -557,7 +583,7 @@ export class BaseAiEngine {
             throw new Error(`AI Provider "${providerName}" not found!`);
         }
 
-        // 3. Strict Model Resolution (Enterprise Level 8) - Strictly from Registry or Options
+        // 3. Enterprise Level 10: Strict Model Resolution (Explicit > Default > Preferred)
         if (!modelId) {
             // Check provider specific default
             modelId = providerConfig.defaultModel;
@@ -571,7 +597,7 @@ export class BaseAiEngine {
             }
         }
 
-        // 4. Final Cross-Verification (Level 8: Prevent cross-provider model leakage)
+        // 4. Enterprise Level 10: Leakage Prevention (Final Provider-Model Validation)
         // If the resolved model ID has a specific prefix, ensure the provider matches.
         const mid = String(modelId);
         let correctedProvider = providerName;
@@ -589,7 +615,7 @@ export class BaseAiEngine {
 
         this.logger.log(`[AI-ENGINE] Resolved provider: ${providerName}, model: ${modelId}`);
 
-        // --- RAG INJECTION (Enterprise Level 8: Unified Context) ---
+        // --- RAG INJECTION (Enterprise Level 10: Unified Context) ---
         let finalPrompt = prompt;
         if (this.config.ragEnabled && this.env.AI && this.env.VECTOR_INDEX && this.config.embeddingModel) {
             try {
@@ -598,7 +624,7 @@ export class BaseAiEngine {
                     const matches = await this.env.VECTOR_INDEX.query(queryEmb.data[0], { topK: 3, returnMetadata: true });
                     if (matches?.matches?.length > 0) {
                         const contextBlocks = matches.matches
-                            .filter((m: any) => m.score > 0.5) // Lower threshold for better recall in Level 8
+                            .filter((m: any) => m.score > 0.5) // Lower threshold for better recall in Level 10
                             .map((m: any) => `[SURSA: ${m.metadata?.title || 'Knowledge Base'}]\n${m.metadata?.content || ''}\n(Relevance Score: ${Math.round(m.score * 100)}%)`)
                             .join('\n---\n');
                         
@@ -622,7 +648,7 @@ ${prompt}`;
 
         const formattedHistory = this.formatHistory(history, providerConfig);
 
-        // Level 8: Detect if we should inject File Generation instructions
+        // Enterprise Level 10: Detect if we should inject File Generation instructions
         if (options.fileGenEnabled || (foundModel?.capabilities?.includes('files'))) {
             const fileInstr = `\n\n[FILE GENERATION ENABLED] If you want to generate a downloadable file for the user, use the following markdown format:
 \`\`\`extension filename=yourfile.ext
@@ -637,7 +663,7 @@ file content goes here
         } catch (error: any) {
             this.logger.error(`[AI-ENGINE] Primary chat error (${providerName}): ${error.message}`);
             
-            // Enterprise Level 8: Multi-Provider Fallback logic (Restored by user request)
+            // Enterprise Level 10: Multi-Provider Fallback logic (Restored by user request)
             const activeProviders = Array.isArray(this.config.activeProviders) ? this.config.activeProviders : [];
             const nextProviders = activeProviders.filter((p: string) => p !== providerName);
             
@@ -648,7 +674,7 @@ file content goes here
                         const fallbackCfg = this.config.providers?.[fallbackName];
                         if (fallbackCfg) {
                             const fallbackHistory = this.formatHistory(history, fallbackCfg);
-                            // Level 8: During fallback, we let the provider use its own default model
+                            // Enterprise Level 10: During fallback, we let the provider use its own default model
                             return await this.executeProviderCall(fallbackName, fallbackCfg, prompt, fallbackHistory, { 
                                 ...options, 
                                 model: undefined, 
@@ -705,7 +731,7 @@ file content goes here
     resolveApiKey(p: any, providerName: string = '') {
         if (p.apiKey && !p.apiKey.startsWith('{{')) return p.apiKey;
         
-        // Level 8: Prioritize Registry-defined Environment Variables (No Hardcoding)
+        // Enterprise Level 10: Prioritize Registry-defined Environment Variables (No Hardcoding)
         const possibleVars = [
             p.apiKeyEnvVar,
             p.apiTokenEnvVar,
@@ -719,7 +745,7 @@ file content goes here
             if (typeof process !== 'undefined' && (process.env as any)?.[v]) return (process.env as any)[v];
         }
 
-        // Level 8: Fallback to global registry settings (D1 overrides)
+        // Enterprise Level 10: Fallback to global registry settings (D1 overrides)
         const s = this.settings || _registry?.SYSTEM_SETTING;
         if (s) {
             const registryKey = `${providerName}_api_key`;
@@ -734,12 +760,12 @@ file content goes here
     resolveAccountId(p: any, providerName: string = '') {
         if (p.accountId && !p.accountId.startsWith('{{')) return p.accountId;
         
-        // Level 8: Prioritize Registry-defined Environment Variables
+        // Enterprise Level 10: Prioritize Registry-defined Environment Variables
         const v = providerName === 'cloudflare' ? 'CLOUDFLARE_ACCOUNT_ID' : `${providerName.toUpperCase()}_ACCOUNT_ID`;
         if (this.env && this.env[v]) return this.env[v];
         if (typeof process !== 'undefined' && (process.env as any)?.[v]) return (process.env as any)[v];
 
-        // Level 8: Fallback to global registry settings
+        // Enterprise Level 10: Fallback to global registry settings
         const s = this.settings || _registry?.SYSTEM_SETTING;
         if (s) {
             const registryKey = `${providerName}_account_id`;
@@ -750,10 +776,10 @@ file content goes here
     }
 
     async executeProviderCall(name: string, p: any, prompt: string, history: any[], options: any) {
-        // Level 8: Improved Model Resolution logic
+        // Enterprise Level 10: Improved Model Resolution logic
         let model = options.model;
 
-        // Level 8: Resolve Reference (Map DB ID or Numeric ID back to Technical Name)
+        // Enterprise Level 10: Resolve Reference (Map DB ID or Numeric ID back to Technical Name)
         if (this.config.models && model) {
              const record = this.config.models.find((m: any) => 
                  String(m.id) === String(model) || 
@@ -768,7 +794,7 @@ file content goes here
         }
 
         if (!model && name !== 'cloudflare' && !this.env?.AI) {
-            // Level 8: Try to find any enabled model for this provider as fallback
+            // Enterprise Level 10: Try to find any enabled model for this provider as fallback
             const fallbackModel = (this.config.models || []).find((m: any) => m.provider === name && m.enabled !== false);
             if (fallbackModel) model = fallbackModel.id;
             else throw new Error(`Model not specified for provider ${name} and no default available in registry.`);
@@ -780,11 +806,11 @@ file content goes here
         
         let url = (p.baseUrl || "");
         
-        // Level 8: Template Injection
+        // Enterprise Level 10: Template Injection
         if (url.includes('{{model}}')) url = url.replace(/\{\{model\}\}/g, model || "");
         if (url.includes('{{accountId}}')) url = url.replace(/\{\{accountId\}\}/g, accountId || "");
 
-        // URL Normalization (Enterprise Level 8 Immunity)
+        // URL Normalization (Enterprise Level 10 Immunity)
         if (url.startsWith('http')) {
             const protocolMatch = url.match(/^(https?):\/\//);
             if (protocolMatch) {
@@ -827,7 +853,7 @@ file content goes here
         const model = options.model || p.defaultModel;
         if (!model) throw new Error("GitHub model is required but missing.");
         
-        // Level 8: Clean Model ID (Handle technical names, technical_id, or Azure ML URIs)
+        // Enterprise Level 10: Clean Model ID (Handle technical names, technical_id, or Azure ML URIs)
         // If it's a full URI like azureml://.../Meta-Llama-3.1-70B-Instruct/versions/1, we want the name part.
         let cleanModel = String(model);
         if (cleanModel.includes('/versions/')) {
@@ -849,7 +875,7 @@ file content goes here
             max_tokens: options.maxTokens ?? this.config.maxTokens
         };
         
-        // Level 8: Smart URL Construction (Fill only if missing)
+        // Enterprise Level 10: Smart URL Construction (Fill only if missing)
         let finalUrl = url;
         if (!finalUrl.includes('/chat/completions') && !finalUrl.includes('?')) {
             finalUrl = finalUrl.replace(/\/+$/, '') + '/chat/completions';
@@ -878,7 +904,7 @@ file content goes here
         const model = options.model || p.defaultModel;
         if (!model) throw new Error(`Model name is required for driver ${p.type || 'AI'} but missing.`);
         
-        // Level 8: Vision Support for OpenAI-Compatible Providers
+        // Enterprise Level 10: Vision Support for OpenAI-Compatible Providers
         const userContent: any[] = [];
         if (options.file && (options.file.startsWith('data:image') || options.fileType?.startsWith('image/'))) {
             userContent.push({
@@ -903,7 +929,13 @@ file content goes here
             body.response_format = { type: 'json_object' };
         }
 
-        // Level 8: Smart URL Construction (Fill only if missing)
+        // Enterprise Level 10: Native Tool Support
+        if (options.tools && Array.isArray(options.tools) && options.tools.length > 0) {
+            body.tools = options.tools;
+            if (options.tool_choice) body.tool_choice = options.tool_choice;
+        }
+
+        // Enterprise Level 10: Smart URL Construction (Fill only if missing)
         let finalUrl = url;
         if (!finalUrl.includes('/chat/completions') && !finalUrl.includes('/completions') && !finalUrl.includes('generateContent') && !finalUrl.includes('?')) {
             finalUrl = finalUrl.replace(/\/+$/, '') + '/chat/completions';
@@ -939,14 +971,24 @@ file content goes here
 
         const data = await resp.json();
         if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-        return data.choices?.[0]?.message?.content || null;
+        
+        // Enterprise Level 10: Unified Tool Response
+        const message = data.choices?.[0]?.message;
+        if (message?.tool_calls) {
+            return {
+                tool_calls: message.tool_calls,
+                content: message.content
+            };
+        }
+
+        return message?.content || null;
     }
     async callGoogle(url: string, prompt: string, history: any[], options: any, p: any) {
         const model = options.model || p.defaultModel;
         
         if (!model) throw new Error("Google Gemini Model name is required but missing in Registry/Options.");
 
-        // Level 8: Clean URL and strip /openai for native driver if user accidentally put it in Registry
+        // Enterprise Level 10: Clean URL and strip /openai for native driver if user accidentally put it in Registry
         let base = url.split('/openai')[0].split('?')[0].replace(/\/$/, ''); 
         
         // Advanced detection: if it's a native google url but doesn't have a version segment, add one.
@@ -955,7 +997,7 @@ file content goes here
         }
 
         let finalUrl = base;
-        // Level 8: Smart URL Construction (Enterprise Resilience)
+        // Enterprise Level 10: Smart URL Construction (Enterprise Resilience)
         // Ensure the URL ends with the correct model and action if they are missing
         const urlWithoutProtocol = finalUrl.includes('://') ? finalUrl.split('://')[1] : finalUrl;
         
@@ -968,7 +1010,7 @@ file content goes here
              }
         }
         
-        // Final sanity check for double actions in URL (Enterprise Level 8 Immunity)
+        // Final sanity check for double actions in URL (Enterprise Level 10 Immunity)
         if (finalUrl.includes(':generateContent:generateContent')) {
             finalUrl = finalUrl.replace(/:generateContent:generateContent/g, ':generateContent');
         }
@@ -1009,7 +1051,7 @@ file content goes here
         const fetchGoogle = async (targetUrl: string): Promise<any> => {
             this.logger.log(`[AI-ENGINE] Gemini Call: ${targetUrl.split('key=')[0]}key=***`);
             
-            // Level 9: Support Native System Instructions for Gemini (Adapted to URL version)
+            // Enterprise Level 10: Support Native System Instructions for Gemini (Adapted to URL version)
             const callBody = { ...body };
             if (options.systemPrompt) {
                 if (targetUrl.includes('/v1beta') && !options.forceLegacySystem) {
@@ -1038,7 +1080,7 @@ file content goes here
                     if (parsed.error?.message) errMsg = parsed.error.message;
                 } catch(e) {}
                 
-                // Level 8: Version & Schema Auto-Recovery
+                // Enterprise Level 10: Version & Schema Auto-Recovery
                 // 1. If v1beta failed with 404, try v1
                 if (resp.status === 404 && targetUrl.includes('/v1beta')) {
                     this.logger.warn(`[AI-ENGINE] v1beta failed for Gemini (404). Retrying with v1...`);
@@ -1113,7 +1155,7 @@ file content goes here
             } catch (e) {}
         }
         
-        // Level 8: Native Cloudflare Workers AI Binding (High Performance - "Direct")
+        // Enterprise Level 10: Native Cloudflare Workers AI Binding (High Performance - "Direct")
         if (this.env && this.env.AI) {
             if (!model) {
                  throw new Error("Cloudflare Model is required even for direct AI binding. Please select one from the catalog.");
@@ -1149,7 +1191,7 @@ file content goes here
             throw new Error("Cloudflare Account ID missing. Cannot call Cloudflare API.");
         }
 
-        // Level 8: Enterprise Template & Self-Healing URL Path
+        // Enterprise Level 10: Enterprise Template & Self-Healing URL Path
         let finalUrl = url;
         
         // Replace template tags (High priority)
@@ -1195,7 +1237,7 @@ file content goes here
         if (!response.ok) {
             const errText = await response.text();
             
-            // Level 8: Auto-Agreement for Llama models (Cloudflare specific)
+            // Enterprise Level 10: Auto-Agreement for Llama models (Cloudflare specific)
             if (response.status === 403 && errText.includes('Model Agreement') && errText.includes("'agree'") && !options.isAgreementRetry) {
                 this.logger.warn(`[AI-ENGINE] Cloudflare Model Agreement required for ${model}. Attempting auto-agreement...`);
                 try {
@@ -1243,7 +1285,7 @@ file content goes here
     extractJson(text: string) {
         if (!text || typeof text !== 'string') return null;
         
-        // Enterprise Level 8: Ultra-Robust JSON Extraction
+        // Enterprise Level 10: Ultra-Robust JSON Extraction
         let cleanText = text.trim();
         
         try {
@@ -1269,7 +1311,7 @@ file content goes here
             } else if (startBracket !== -1 && endBracket !== -1 && endBracket > startBracket) {
                 potential = cleanText.substring(startBracket, endBracket + 1);
             } else if (startBrace !== -1) {
-                // Enterprise Level 8: Handle truncated JSON (No closing brace)
+                // Enterprise Level 10: Handle truncated JSON (No closing brace)
                 potential = cleanText.substring(startBrace);
             } else if (startBracket !== -1) {
                 potential = cleanText.substring(startBracket);
@@ -1283,7 +1325,7 @@ file content goes here
                     
                     return JSON.parse(repaired);
                 } catch (e) {
-                    // Level 8: Last Ditch Effort - Handle common LLM JSON errors
+                    // Enterprise Level 10: Last Ditch Effort - Handle common LLM JSON errors
                     try {
                         let betterRepaired = potential
                             .replace(/,\s*([\}\]])/g, '$1') // Trailing commas
@@ -1291,7 +1333,7 @@ file content goes here
                         
                         return JSON.parse(betterRepaired);
                     } catch (ex) {
-                        // Level 8: Handle truncated JSON by closing tokens
+                        // Enterprise Level 10: Handle truncated JSON by closing tokens
                         if (potential.startsWith('{')) {
                             try {
                                 return JSON.parse(potential.trim() + '" }');
@@ -1384,7 +1426,7 @@ export class AiService {
     private engine: BaseAiEngine;
     private config: any;
     constructor(env: any = {}, options: any = {}) {
-        // Level 8: Prioritize explicitly passed config, then fallback to global registry
+        // Enterprise Level 10: Prioritize explicitly passed config, then fallback to global registry
         this.config = options.ai_config || options.registry?.AI_CONFIG || _registry?.AI_CONFIG;
         this.engine = new BaseAiEngine({ 
             config: this.config, 
@@ -1425,7 +1467,221 @@ export class AiService {
         return this.engine.extractJson(resp);
     }
 
-    // --- Enterprise Level 8: Test Connection ---
+    /**
+     * Enterprise Level 10: Global AI Dispatcher (Tool Use)
+     * Maps modular actions from registry into AI-compatible tool specifications.
+     */
+    getModularTools(entities: any, lang: string = 'en') {
+        if (!entities) return [];
+        const tools: any[] = [];
+
+        // 1. Generic DB Tools (System Level)
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'db__query',
+                description: 'Căutare generală în baza de date (SELECT). Folosește tabele precum lead, deal, task, contact, worker.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        table: { type: 'string', description: 'Numele tabelei' },
+                        filters: { type: 'object', description: 'Filtre (ex: { status: "active" })' },
+                        limit: { type: 'number', default: 10 }
+                    },
+                    required: ['table']
+                }
+            }
+        });
+
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'db__get',
+                description: 'Obține o singură înregistrare după ID.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        table: { type: 'string' },
+                        id: { type: 'string' }
+                    },
+                    required: ['table', 'id']
+                }
+            }
+        });
+
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'db__sync_schema',
+                description: 'Sincronizează schema bazei de date cu definițiile codului. Folosește asta dacă observi erori de tip "no such column" sau "no such table".',
+                parameters: { type: 'object', properties: {} }
+            }
+        });
+
+        // 2. System Level Tools
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'system__execute_shell',
+                description: 'Execută o comandă shell pe agentul local (Windows). Folosește pentru scripturi, git, npm, sau verificări de fișiere.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        command: { type: 'string', description: 'Comanda shell' },
+                        cwd: { type: 'string', description: 'Working directory' }
+                    },
+                    required: ['command']
+                }
+            }
+        });
+
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'system__read_logs',
+                description: 'Citește ultimele linii din log-uri. Folosește asta pentru a diagnostica erori raportate de utilizator.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        lines: { type: 'number', description: 'Număr de linii de citit (default 50)' }
+                    }
+                }
+            }
+        });
+
+        // 3. Modular Actions (Entity Level)
+        Object.entries(entities).forEach(([entityId, entity]: [string, any]) => {
+            const modularActions = (entity.actions || []);
+            modularActions.forEach((action: any) => {
+                // Skip internal-only actions if needed
+                if (action.id === 'log' && entityId === 'system_error') return;
+
+                tools.push({
+                    type: 'function',
+                    function: {
+                        name: `${entityId}__${action.id}`,
+                        description: `${entityId.toUpperCase()} Action: ${renderString(action.description || action.label, lang)}`,
+                        parameters: {
+                            type: 'object',
+                            properties: {
+                                id: { type: 'string', description: 'Record ID (for item-level actions)' },
+                                input: { type: 'object', description: 'Action payload (based on action schema)' }
+                            },
+                        }
+                    }
+                });
+            });
+        });
+
+        return tools;
+    }
+
+    /**
+     * Enterprise Level 10: AI Task Execution Loop
+     * Allows the AI to autonomously plan and execute modular actions.
+     */
+    async runTask(task: string, ctx: any, options: any = {}) {
+        const { db, registry, user, env, v3Entities } = ctx;
+        const tools = this.getModularTools(v3Entities, options.lang || 'en');
+        
+        let history = options.history || [];
+        let iterations = 0;
+        const maxIterations = options.maxIterations || 5;
+
+        this.engine.logger.log(`[AI-TASK] Starting task: "${task}" with ${tools.length} available tools.`);
+
+        while (iterations < maxIterations) {
+            iterations++;
+            
+            const response = await this.chat(task, history, {
+                ...options,
+                tools: tools.length > 0 ? tools : undefined,
+                systemPrompt: options.systemPrompt || `Ești un asistent AI autonom pentru Studio App v3. 
+Eut dispui de acces la diferite acțiuni (Tools). Planifică pașii necesari pentru a îndeplini sarcina utilizatorului.
+Dacă sarcina este finalizată, răspunde cu un mesaj text final.`
+            });
+
+            // 1. Text response means task finished or needs more info
+            if (typeof response === 'string') {
+                return { success: true, result: response, history, iterations };
+            }
+
+            // 2. Tool Calls
+            if (response && response.tool_calls) {
+                const toolResults = [];
+                for (const call of response.tool_calls) {
+                    const [entityId, actionId] = call.function.name.split('__');
+                    const args = typeof call.function.arguments === 'string' ? JSON.parse(call.function.arguments) : call.function.arguments;
+
+                    this.engine.logger.log(`[AI-TASK] Tool Call: ${entityId}/${actionId}`);
+
+                    try {
+                        let result;
+
+                        // Case 1: Generic DB Tools
+                        if (entityId === 'db' && actionId === 'query') {
+                            result = await db.query(`SELECT * FROM ${args.table} WHERE 1=1 ${Object.keys(args.filters || {}).map(k => `AND ${k} = ?`).join(' ')} LIMIT ?`, [...Object.values(args.filters || {}), args.limit || 10]);
+                        } else if (entityId === 'db' && actionId === 'get') {
+                            result = await db.get(args.table, args.id);
+                        } else if (entityId === 'system' && actionId === 'execute_shell') {
+                            // Call the Local Agent API
+                            result = await api.local.post('system/execute', { command: args.command, cwd: args.cwd });
+                        } else if (entityId === 'db' && actionId === 'sync_schema') {
+                            // Enterprise Level 12: Database Maintenance Tools (Local Agent Sync)
+                            result = await api.local.post('system/db/sync');
+                        } else if (entityId === 'system' && actionId === 'read_logs') {
+                            // Enterprise Level 12: Log Analysis Tools
+                            result = await api.local.get('system/logs', { params: { lines: args.lines || 100 } });
+                        }
+                        // Case 2: Modular Entity Actions
+                        else if (v3Entities?.[entityId]) {
+                            const action = v3Entities[entityId].actions?.find((a: any) => a.id === actionId);
+                            if (action) {
+                                // Reconstruct context for the modular handler
+                                const actionCtx = { 
+                                    ...ctx, 
+                                    collection: entityId, 
+                                    id: args.id, 
+                                    body: args.input,
+                                    AiService // recurse!
+                                };
+                                result = await action.handler(actionCtx, args.input || args);
+                            }
+                        }
+
+                        if (result === undefined) throw new Error(`Action ${entityId}/${actionId} not found or failed.`);
+
+                        toolResults.push({
+                            role: 'tool',
+                            tool_call_id: call.id,
+                            name: call.function.name,
+                            content: JSON.stringify(result)
+                        });
+                    } catch (e: any) {
+                        toolResults.push({
+                            role: 'tool',
+                            tool_call_id: call.id,
+                            name: call.function.name,
+                            content: JSON.stringify({ error: e.message })
+                        });
+                    }
+                }
+
+                // Add tool calls and results to history for next iteration
+                history.push({
+                    role: 'assistant',
+                    tool_calls: response.tool_calls
+                });
+                history.push(...toolResults);
+            } else {
+                break;
+            }
+        }
+
+        return { success: false, error: 'Max iterations reached', history };
+    }
+
+    // --- Enterprise Level 10: Test Connection ---
     async testConnection(providerName: string, db: any = null, options: any = {}) {
         try {
             const registry = { ..._registry, AI_CONFIG: this.config };
@@ -1439,7 +1695,7 @@ export class AiService {
             this.engine.logger.log(`[AI-ENGINE] Testing connection for ${providerName} (Discovery Mode)...`);
             this.engine.logger.log(`[AI-ENGINE] Resolved Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'MISSING'} | Account: ${accountId || 'MISSING'}`);
 
-            // Enterprise Level 8: Discovery Mode (Decoupled from specific model)
+            // Enterprise Level 10: Discovery Mode (Decoupled from specific model)
             // Tests the API Key/Credentials by attempting to list models.
             try {
                 let discoveryUrl = p.baseUrl || "";
@@ -1451,7 +1707,7 @@ export class AiService {
                     const base = baseMatch ? baseMatch[1] : discoveryUrl.split('/models/')[0].split('/openai')[0].replace(/\/$/, '');
                     discoveryUrl = base + `/models?key=${apiKey}`;
                     
-                    // Level 8: Add native Google API Key header as well for maximum compatibility
+                    // Enterprise Level 10: Add native Google API Key header as well for maximum compatibility
                     headers['x-goog-api-key'] = apiKey;
                 } else if (p.type === 'openai-v1' || p.type === 'github-v1' || discoveryUrl.includes('api.openai.com') || discoveryUrl.includes('azure.com') || discoveryUrl.includes('groq.com') || discoveryUrl.includes('deepseek.com')) {
                     // OpenAI-compatible discovery (OpenAI, GitHub, Groq, DeepSeek, etc.)

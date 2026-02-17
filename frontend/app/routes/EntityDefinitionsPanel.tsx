@@ -22,6 +22,15 @@ import {
     TabsTrigger 
 } from '~/components/ui/tabs';
 import { Switch } from '~/components/ui/switch';
+import { 
+    Dialog, 
+    DialogContent, 
+    DialogHeader, 
+    DialogTitle,
+    DialogDescription,
+    DialogFooter
+} from '~/components/ui/dialog';
+import { Textarea } from '~/components/ui/textarea';
 
 export function EntityDefinitionsPanel() {
     const { entity: configEntities, refreshConfig } = useConfig();
@@ -33,6 +42,44 @@ export function EntityDefinitionsPanel() {
     const [saving, setSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const savingRef = useRef(false);
+
+    // AI Architect State
+    const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [isArchitectRunning, setIsArchitectRunning] = useState(false);
+
+    const handleArchitect = async () => {
+        if (!aiPrompt) return;
+        setIsArchitectRunning(true);
+        try {
+            const res = await api.brain.action('ai_prompt', 'architect', { prompt: aiPrompt });
+            if (res.success && res.data) {
+                // The AI might return an object that needs normalization
+                const raw = res.data;
+                const result = normalizeEntity(raw);
+                
+                setEditingEntity({
+                    ...result,
+                    name: result.name || result.id || 'new_entity',
+                    id: undefined, // Ensure we don't overwrite if AI hallucinated an ID
+                    fields: result.fields || [],
+                    uiConfig: result.uiConfig || {
+                        list: { columns: [] },
+                        form: { sections: [] }
+                    }
+                });
+                setIsAiModalOpen(false);
+                setAiPrompt('');
+                toast.success(t('superadmin:entity_builder:ai_success'));
+            } else {
+                toast.error(res.error || "Architect failed");
+            }
+        } catch (e: any) {
+            toast.error(getErrorMessage(e, "Architect failed"));
+        } finally {
+            setIsArchitectRunning(false);
+        }
+    };
 
     useEffect(() => {
         if (!configEntities) return;
@@ -112,14 +159,78 @@ export function EntityDefinitionsPanel() {
                     </h3>
                     <p className="text-xs text-slate-500 font-medium">{t('superadmin:entity_builder:subtitle')} {entityData.length} {t('common:records', { count: entityData.length })}.</p>
                 </div>
-                <Button 
-                    onClick={startNew}
-                    className="rounded-xl font-black uppercase italic text-xs px-6"
-                >
-                    <Plus className="mr-2 h-4 w-4" />
-                    {t('superadmin:entity_builder:new_entity')}
-                </Button>
+                <div className="flex gap-2">
+                    <Button 
+                        variant="outline"
+                        onClick={() => setIsAiModalOpen(true)}
+                        className="rounded-xl font-black uppercase italic text-xs px-6 border-primary/20 text-primary hover:bg-primary/5"
+                    >
+                        <Zap className="mr-2 h-4 w-4" />
+                        AI Architect
+                    </Button>
+                    <Button 
+                        onClick={startNew}
+                        className="rounded-xl font-black uppercase italic text-xs px-6"
+                    >
+                        <Plus className="mr-2 h-4 w-4" />
+                        {t('superadmin:entity_builder:new_entity')}
+                    </Button>
+                </div>
             </div>
+
+            {/* AI Architect Dialog */}
+            <Dialog open={isAiModalOpen} onOpenChange={setIsAiModalOpen}>
+                <DialogContent className="sm:max-w-xl rounded-3xl p-0 overflow-hidden border-none shadow-2xl">
+                    <div className="p-8 space-y-6">
+                        <DialogHeader>
+                            <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary mb-4">
+                                <Zap size={24} />
+                            </div>
+                            <DialogTitle className="text-2xl font-black italic uppercase tracking-tighter">{t('superadmin:entity_builder:ai_title')}</DialogTitle>
+                            <DialogDescription className="text-slate-500 font-medium">
+                                {t('superadmin:entity_builder:ai_prompt_desc')}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                            <Textarea 
+                                placeholder={t('superadmin:entity_builder:ai_placeholder')}
+                                value={aiPrompt}
+                                onChange={(e) => setAiPrompt(e.target.value)}
+                                className="min-h-[150px] rounded-2xl border-slate-200 focus:ring-primary/20 p-4 font-medium"
+                            />
+                            
+                            <div className="bg-slate-50 rounded-2xl p-4 flex gap-3">
+                                <div className="p-2 bg-white rounded-xl shadow-sm h-fit">
+                                    <Code size={16} className="text-slate-400" />
+                                </div>
+                                <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                                    <span className="font-bold text-slate-700 block mb-1">PRO TIP</span>
+                                    AI-ul va genera automat relațiile (Foreign Keys) dacă menționezi alte entități existente (ex: "legat de contacte").
+                                </p>
+                            </div>
+                        </div>
+
+                        <DialogFooter className="flex gap-3 sm:justify-end">
+                            <Button variant="ghost" className="rounded-xl font-bold" onClick={() => setIsAiModalOpen(false)}>
+                                {t('superadmin:entity_builder:cancel')}
+                            </Button>
+                            <Button 
+                                className="rounded-xl font-black uppercase italic px-8 h-12"
+                                disabled={!aiPrompt || isArchitectRunning}
+                                onClick={handleArchitect}
+                            >
+                                {isArchitectRunning ? (
+                                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Zap className="mr-2 h-4 w-4" />
+                                )}
+                                {isArchitectRunning ? "..." : t('superadmin:entity_builder:generate')}
+                            </Button>
+                        </DialogFooter>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             {editingEntity ? (
                 <GlassCard className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4">
@@ -442,7 +553,7 @@ export function EntityDefinitionsPanel() {
                                                         const config = { 
                                                             ...editingEntity.uiConfig, 
                                                             form: { ...editingEntity.uiConfig?.form, showActions: checked },
-                                                            list: { ...editingEntity.uiConfig?.list, showActions: checked } // Level 8 Sync
+                                                            list: { ...editingEntity.uiConfig?.list, showActions: checked } // Enterprise Level 10 Unified UI Sync
                                                         };
                                                         setEditingEntity({ ...editingEntity, uiConfig: config });
                                                     }}

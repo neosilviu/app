@@ -75,7 +75,7 @@ export const UserTab: React.FC<UserTabProps> = ({
         try {
             const res = await api.brain.get(`workspace/user-permission?userId=${targetId}&workspaceId=${workspaceId}`);
             
-            // Enterprise Level 8: Initialize with Role-Based Defaults
+            // Enterprise Level 10: Initialize with Role-Based Defaults
             const basePermissions: any = {};
             entityList.forEach(ent => {
                 const entityId = ent.id;
@@ -250,7 +250,7 @@ export const UserTab: React.FC<UserTabProps> = ({
                                             size="icon" 
                                             className="h-10 w-10 rounded-xl border-slate-100 text-slate-400 hover:text-red-600 hover:border-red-100"
                                             onClick={() => handleRemoveUser(member.userId || member.id)}
-                                            title="Remove User"
+                                            title={t('common:delete')}
                                         >
                                             <Trash2 size={18} />
                                         </Button>

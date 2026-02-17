@@ -40,7 +40,7 @@ export const AiModelCatalog = ({ selectedProvider }: { selectedProvider?: string
         let name = m.name || m.id;
         const id: string = m.id || "";
         
-        // Level 8: Generic model name resolution
+        // Enterprise Level 10: Generic model name resolution
         // Special case for GitHub Azure ML URIs (azureml://.../models/Name/versions/1)
         if (id.startsWith('azureml://') && id.includes('/models/')) {
             const match = id.match(/\/models\/([^/]+)/);
@@ -62,7 +62,7 @@ export const AiModelCatalog = ({ selectedProvider }: { selectedProvider?: string
             }
         }
 
-        // Level 8: Catch-all for numeric/useless names (like '1' or 'versions')
+        // Enterprise Level 10: Catch-all for numeric/useless names (like '1' or 'versions')
         if ((/^\d+$/.test(name) || name.toLowerCase() === 'versions') && id.length > name.length) {
             const parts = id.split(/[/_-]/).filter(p => !/^\d+$/.test(p) && p.toLowerCase() !== 'versions');
             if (parts.length > 0) name = parts[parts.length - 1];
@@ -103,7 +103,7 @@ export const AiModelCatalog = ({ selectedProvider }: { selectedProvider?: string
     const allModels = React.useMemo(() => {
         if (!catalog || !catalog.merged) return [];
         
-        // Level 8: Unified Model Aggregation with Contextual Filtering
+        // Enterprise Level 10: Unified Model Aggregation with Contextual Filtering
         let combined: any[] = [];
         
         if (selectedProvider && selectedProvider !== 'all') {
@@ -176,7 +176,7 @@ export const AiModelCatalog = ({ selectedProvider }: { selectedProvider?: string
                 (data.merged?.[p] || []).forEach((m: any) => {
                     const modelId = m.id;
                     const ov = overrides[modelId] || {};
-                    // Level 8: Discovered models are enabled by default once detected
+                    // Enterprise Level 10: Discovered models are enabled by default once detected
                     // This ensures "detection" feels immediate to the user.
                     initialEnabled[modelId] = ov.enabled !== undefined ? ov.enabled : true;
                     initialNames[modelId] = ov.internalName || generateFriendlyName(m);
@@ -195,7 +195,7 @@ export const AiModelCatalog = ({ selectedProvider }: { selectedProvider?: string
     const syncActive = async () => {
         setLoading(true);
         try {
-            // Level 8 Logic: Filter providers to sync based on selectedProvider prop OR all active providers
+            // Enterprise Level 10 Logic: Filter providers to sync based on selectedProvider prop OR all active providers
             const providersToSync = selectedProvider 
                 ? (Array.isArray(selectedProvider) ? selectedProvider : [selectedProvider])
                 : Object.keys(catalog?.merged || {});

@@ -31,7 +31,7 @@ export function EntityDevTools() {
           </div>
           <div>
             <h2 className="text-xl font-black italic uppercase tracking-tighter">Registry DNA Inspector</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Enterprise Level 8 Diagnostic Tools</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Enterprise Level 10 Diagnostic Tools</p>
           </div>
         </div>
 

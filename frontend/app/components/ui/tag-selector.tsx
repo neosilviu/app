@@ -11,6 +11,7 @@ import {
 } from "~/components/ui/popover";
 import { Input } from "~/components/ui/input";
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 // Global cache to avoid redundant fetches across many instances (preventing ERR_INSUFFICIENT_RESOURCES)
 let cachedAllTags: Tag[] | null = null;
@@ -32,6 +33,7 @@ interface TagSelectorProps {
 }
 
 export const TagSelector = memo(function TagSelector({ entityType, entityId, initialTags, onTagsChange, size = 'sm' }: TagSelectorProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -208,7 +210,7 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
           if (found) return handleAssign(found);
         }
         
-        toast.error("Nu s-a putut identifica ID-ul etichetei");
+        toast.error(t('common:tag_id_error'));
         return;
     }
 
@@ -240,7 +242,7 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
       if (!res.success) {
         // Revert local state on failure
         fetchEntityTags();
-        toast.error("Eroare la asocierea etichetei");
+        toast.error(t('common:tag_assign_error'));
       }
     });
   };
@@ -355,19 +357,19 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
         >
           <div className="p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Etichete</h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('common:tag_selector_title')}</h4>
               <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={(e) => {
                 e.stopPropagation();
                 setIsAdding(!isAdding);
               }}>
-                {isAdding ? 'Anulează' : 'Nouă'}
+                {isAdding ? t('common:cancel') : t('common:tag_new')}
               </Button>
             </div>
 
             {isAdding ? (
               <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
                 <Input 
-                  placeholder="Nume etichetă..." 
+                  placeholder={t('common:tag_placeholder')} 
                   value={newTagName}
                   onChange={e => setNewTagName(e.target.value)}
                   className="h-8 text-xs"
@@ -381,13 +383,13 @@ export const TagSelector = memo(function TagSelector({ entityType, entityId, ini
                     className="w-10 h-10 rounded-lg cursor-pointer border-none p-0 overflow-hidden"
                   />
                   <Button className="flex-1 h-10 text-xs font-bold" onClick={handleCreate}>
-                    Creează
+                    {t('common:create')}
                   </Button>
                 </div>
               </div>
             ) : (
               <div className="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                {allTags.length === 0 && <p className="text-[10px] text-slate-400 text-center py-2">Nicio etichetă definită.</p>}
+                {allTags.length === 0 && <p className="text-[10px] text-slate-400 text-center py-2">{t('common:tag_no_tags')}</p>}
                 {allTags.map(tag => {
                   const isAssigned = entityTags.find(t => t.id === tag.id);
                   return (

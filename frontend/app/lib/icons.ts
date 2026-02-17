@@ -1,3 +1,7 @@
+import React, { 
+  type FC,
+  type SVGProps,
+} from 'react';
 import { 
   Type, 
   AlignLeft, 
@@ -599,9 +603,15 @@ export const IconMap: Record<string, any> = {
   GripVertical
 };
 
-export const resolveIcon = (iconName: any) => {
+export const resolveIcon = (iconName: any, props: any = {}) => {
   if (!iconName) return IconMap.HelpCircle || HelpCircle;
-  if (typeof iconName === 'function') return iconName;
+  if (typeof iconName === 'function') {
+    // If it's a function (component) and we have props, we render it
+    if (Object.keys(props).length > 0) {
+      return (p: any) => (iconName as any)({ ...p, ...props });
+    }
+    return iconName;
+  }
   if (typeof iconName === 'object') return IconMap.HelpCircle || HelpCircle;
   
   const Icon = IconMap[iconName];
@@ -610,7 +620,16 @@ export const resolveIcon = (iconName: any) => {
     const pascalName = (typeof iconName === 'string' && iconName.length > 0) 
       ? iconName.charAt(0).toUpperCase() + iconName.slice(1)
       : '';
-    return IconMap[pascalName] || IconMap.HelpCircle || HelpCircle;
+    const FinalIcon = IconMap[pascalName] || IconMap.HelpCircle || HelpCircle;
+    
+    if (Object.keys(props).length > 0) {
+        return (p: any) => React.createElement(FinalIcon, { ...p, ...props });
+    }
+    return FinalIcon;
+  }
+
+  if (Object.keys(props).length > 0) {
+    return (p: any) => React.createElement(Icon, { ...p, ...props });
   }
   return Icon;
 };

@@ -102,17 +102,15 @@ import {
     api,
     socket,
     socketRequest,
-    getTierPrice,
-    calculateJobPrice,
     generateId,
     formatDate,
     deepClone,
     debounce,
     isValidEmail,
-    getRomanianTime,
     checkIsWorkingHours,
     renderString
 } from "~/lib/core";
+import { getTierPrice, calculateJobPrice } from "./printing-logic";
 import { cn } from '~/lib/core';
 import { getErrorMessage } from '~/lib/utils';
 

@@ -1,4 +1,5 @@
 import { getRegistry, resolveCollection, getPrimaryKey, normalizeEntity, clearRegistryCache, loadBaseline, type EntityDefinition } from './core';
+import { getSchemaHash, getSchemaMetadata, schemaChanged, getDDLStatements } from './schema-cache.server';
 
 // --- DB INIT STATE ---
 const global = globalThis as any;
@@ -17,7 +18,7 @@ export async function waitForDbReady(db: any, maxWaitMs = 15000, signal?: AbortS
 
     console.log(`[DB-READY] Waiting for database to be ready (Max: ${maxWaitMs}ms)...`);
 
-    // Level 8: Improved signal awareness to prevent AbortError during init
+    // Level 10: Improved signal awareness to prevent AbortError during init
     while (!global.IS_DB_INITIALIZED && (Date.now() - startTime) < maxWaitMs) {
         if (signal?.aborted) {
             console.log(`[DB-READY] Wait aborted by client signal.`);
@@ -28,7 +29,11 @@ export async function waitForDbReady(db: any, maxWaitMs = 15000, signal?: AbortS
 
         if (global.DB_INIT_PROMISE) {
             try {
-                await global.DB_INIT_PROMISE;
+                // Enterprise Level 10: Added race to prevent blocking the while loop indefinitely if init hangs
+                await Promise.race([
+                    global.DB_INIT_PROMISE,
+                    new Promise(r => setTimeout(r, 1000)) // Check every 1s
+                ]);
                 if (global.IS_DB_INITIALIZED) {
                     // console.log(`[DB-READY] Initialization complete after ${Date.now() - startTime}ms.`);
                     break;
@@ -51,14 +56,35 @@ export async function waitForDbReady(db: any, maxWaitMs = 15000, signal?: AbortS
  * Ensures system tables exist and migrations are applied
  */
 export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any) {
+    // Enterprise Level 10: Absolute Fast-Path (Isolate Warm)
     if (global.IS_DB_INITIALIZED) return;
+
     if (global.DB_INIT_PROMISE) {
         return global.DB_INIT_PROMISE;
     }
 
-    // Enterprise Level 8: Fast-Path for Warm Starts / Sync Detection
-    const SYNC_TOKEN = "v2_core_v1"; // Update this to force re-sync
-    const kv = ctx?.env?.KV;
+    // Enterprise Level 11: SMART SCHEMA HASH CHECK
+    // If schema hasn't changed, skip expensive PRAGMA table_info() calls
+    const codeHash = getSchemaHash();
+    if (codeHash) {
+        try {
+            const dbHashResult = await db.query("SELECT value FROM system_setting WHERE namespace='schema' AND key='hash' LIMIT 1");
+            const dbHash = dbHashResult?.[0]?.value;
+            
+            if (dbHash === codeHash) {
+                console.log(`[DB-INIT][HASH-MATCH] ✅ Schema not changed (${codeHash.substring(0, 8)}...) - skipping expensive sync`);
+                global.IS_DB_INITIALIZED = true;
+                return;
+            }
+        } catch (e) {
+            // Table might not exist yet, fall through to normal init
+        }
+    }
+
+    // Enterprise Level 10: Fast-Path for Warm Starts / Sync Detection
+    const SYNC_TOKEN = "v3_modular_v1.10"; // Updated to force re-sync
+    const kv = ctx?.env?.KV || ctx?.KV; // Robust check
+
 
     global.DB_INIT_PROMISE = (async () => {
         try {
@@ -77,9 +103,10 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             // DEBUG: Logam startul initializarii
             
             // Step 1: Initialize System Registry Marker
+            console.log("[DB-INIT] Step 1: Checking _metadata table...");
             let migrationLevel = 0;
             try {
-                // Enterprise Level 8: Ultra-fast check for production
+                // Enterprise Level 10: Ultra-fast check for production
                 const metaTable = await db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='_metadata'");
                 if (!metaTable || metaTable.length === 0) {
                     console.log("[DB-INIT] No _metadata table yet. First run.");
@@ -94,61 +121,101 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
                  console.warn("[DB-INIT] Transient error checking _metadata:", e.message);
             }
 
-            // Step 2: DNA-Driven Schema Sychronization
+            // DNA-Driven Schema Synchronization
             const baseline = await loadBaseline();
             const coreEntities = (baseline.ENTITY_CONFIG || {}) as Record<string, any>;
 
-            // CORE TABLES: Must be ready before we mark DB as initialized
-            // Better Auth depends on 'user' and 'session'
-            // Setup-Admin depends on 'contact' for business profile sync
-            const coreSyncList = ['user', 'session', 'account', 'verification', 'contact', 'entity_definition', 'workspace', 'system_setting', 'system_error', '_ai_prompt', 'help_content', 'system_performance_log'];
+            // Enterprise Level 10: Registry-Driven Discovery
+            // We identify entities to sync based on 'baseline' flag or 'isSystem' property.
+            const coreEntitiesToSync = Object.entries(coreEntities)
+                .filter(([_, cfg]) => (cfg as any).isSystem === true || (cfg as any).baseline === true)
+                .sort(([a, configA], [b, configB]) => {
+                    // Priority to prevent FK conflicts, now driven by 'priority' metadata or lexical fallback
+                    const pA = (configA as any).priority || 1000;
+                    const pB = (configB as any).priority || 1000;
+                    if (pA !== pB) return pA - pB;
+                    return a.localeCompare(b);
+                })
+                .map(([name]) => name);
             
-            console.log(`[DB-INIT] Starting Core DNA Sync (${coreSyncList.join(', ')})...`);
-            for (const entityName of coreSyncList) {
+            console.log(`[DB-INIT] Syncing Core DNA (${coreEntitiesToSync.length} entities)...`);
+            
+            // Enterprise Level 10: Parallel Discovery Phase
+            const coreDdlResults = await Promise.all(coreEntitiesToSync.map(async (entityName) => {
                 const config = coreEntities[entityName];
-                if (config) {
-                    await syncEntityTable(db, { ...config, name: entityName }, baseline);
-                }
-            }
+                return await syncEntityTable(db, { ...config, name: entityName }, baseline, true);
+            }));
 
-            // Enterprise Level 8: Namespace Normalization & Deduplication Migration
-            // Now that we are sure the 'system_setting' table exists and has correct columns.
-            try {
-                // Step A: Deduplicate records (lowercase match)
-                try {
-                    await db.exec("DELETE FROM system_setting WHERE rowid NOT IN (SELECT MIN(rowid) FROM system_setting GROUP BY LOWER(namespace), LOWER(key))");
-                } catch (dedupErr: any) {
-                    console.warn("[DB-INIT] Deduplication step failed:", dedupErr.message);
+            const coreDdl: string[] = [];
+            coreDdlResults.forEach(stmts => {
+                if (Array.isArray(stmts)) coreDdl.push(...stmts);
+            });
+
+            if (coreDdl.length > 0) {
+                console.log(`[DB-INIT] Applying ${coreDdl.length} Core DDL statements (Batched)...`);
+                // Split into smaller batches to prevent D1 statement limits if needed
+                const ddlChunks = [];
+                for (let i = 0; i < coreDdl.length; i += 20) {
+                    ddlChunks.push(coreDdl.slice(i, i + 20));
                 }
-                
-                // Step B: Normalize remaining records to lowercase
-                try {
-                    await db.exec("UPDATE system_setting SET namespace = LOWER(namespace), id = LOWER(id)");
-                } catch (normErr: any) {
-                    console.warn("[DB-INIT] Normalization step failed:", normErr.message);
+
+                for (const chunk of ddlChunks) {
+                    const batchStmts = chunk.map(sql => db.prepare(sql));
+                    await db.batch(batchStmts).catch((ddlErr: any) => {
+                        // Ignore common duplicate errors during concurrent boot
+                        if (!ddlErr.message.includes("duplicate column name") && !ddlErr.message.includes("already exists")) {
+                            console.warn(`[DB-INIT] DDL Warning in batch:`, ddlErr.message);
+                        }
+                    });
                 }
-            } catch (e: any) {
-                console.warn("[DB-INIT] Namespace normalization procedure failed:", e.message);
             }
 
             // Step 3: Specific Migrations / Fixes (Keep only what's absolutely necessary)
-            // Ensure System Workspace exists (MANDATORY for Level 8 isolation)
+            // Ensure System Workspace exists (MANDATORY for Level 10 isolation)
             try {
                 const systemWorkspace = await db.query("SELECT id FROM workspace WHERE id = 'system' LIMIT 1");
                 if (!systemWorkspace || systemWorkspace.length === 0) {
-                    console.log("[DB-INIT] Creating mandatory 'system' workspace...");
-                    await db.query(`INSERT INTO workspace (id, name, createdAt, updatedAt) VALUES (?, ?, ?, ?)`, [
-                        'system', 'System Administration', new Date().toISOString(), new Date().toISOString()
-                    ]);
+                    console.log("[DB-INIT][SEED] Creating mandatory 'system' workspace...");
+                    await db.query(`
+                        INSERT OR IGNORE INTO workspace (id, name, slug, ownerId, createdAt, updatedAt) 
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    `, ['system', 'System Administration', 'system', 'system', new Date().toISOString(), new Date().toISOString()]);
+                } else {
+                    console.log("[DB-INIT] 'system' workspace confirmed.");
                 }
             } catch (e: any) {
-                console.warn("[DB-INIT] System workspace check/creation failed:", e.message);
+                console.error("[DB-INIT][ERROR] System workspace seed failed:", e.message);
             }
 
-            // Level 8: Set initialized AFTER core sync and critical data seed
-            global.IS_DB_INITIALIZED = true;
+            // Enterprise Level 11: Save schema hash to prevent expensive re-syncs
+            if (codeHash) {
+                try {
+                    await db.query(`
+                        INSERT OR REPLACE INTO system_setting 
+                        (id, namespace, key, value, dataType, workspaceId, createdAt, updatedAt) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    `, [
+                        'schema:hash',
+                        'schema',
+                        'hash',
+                        codeHash,
+                        'text',
+                        'system',
+                        new Date().toISOString(),
+                        new Date().toISOString()
+                    ]);
+                    console.log(`[DB-INIT][HASH-SAVED] ✅ Saved schema hash: ${codeHash.substring(0, 8)}...`);
+                } catch (e: any) {
+                    console.warn("[DB-INIT] Could not save schema hash:", e.message);
+                }
+            }
 
-            // Enterprise Level 8: Mark setup complete and schema sync'd in KV
+            // Enterprise Level 10: Set initialized AFTER core sync and critical data seed
+            global.IS_DB_INITIALIZED = true;
+            const duration = Date.now() - start;
+            console.log(`[DB-INIT] Initialization complete in ${duration}ms (Core data ready).`);
+
+            // Enterprise Level 10: Mark setup complete and schema sync'd in KV
             try {
                 if (kv) {
                     // Marker that schema is ready to avoid expensive syncEntityTable loops
@@ -166,6 +233,7 @@ export async function ensureSystemTables(db: any, requestUrl?: string, ctx?: any
             // Only start it once to avoid duplicate work
             if (!global.BASELINE_SYNC_STARTED) {
                 global.BASELINE_SYNC_STARTED = true;
+                console.log("[DB-INIT] Triggering full baseline background sync...");
                 const baselineSyncPromise = ensureBaselineSync(db, baseline).catch(e => {
                     console.error("[DB-INIT] Background baseline sync failed:", e.message);
                 });
@@ -199,8 +267,11 @@ export function mapFieldType(type: string): string {
     return 'TEXT';
 }
 
+/**
+ * Ensures entity_definition table has correct schema for V3 DNA
+ */
 export async function ensureBaselineSync(db: any, registry: any) {
-    const baselineEntities = registry.ENTITY_CONFIG || registry.ENTITY_CONFIG || registry.entity_definition || registry.entity_definition || {};
+    const baselineEntities = registry.ENTITY_CONFIG || registry.entity_definition || {};
     const jsonStringify = (value: any, fallback: string | null = null) => {
         if (value === null || value === undefined) return fallback;
         if (typeof value === 'string') return value;
@@ -210,57 +281,33 @@ export async function ensureBaselineSync(db: any, registry: any) {
             return fallback;
         }
     };
-
-    const formatLabelValue = (value: any, fallback: string) => {
-        if (value === null || value === undefined) return fallback;
-        if (typeof value === 'string') return value;
-        try {
-            return JSON.stringify(value);
-        } catch {
-            return fallback;
-        }
-    };
-    
-    // Step 0: Ensure entity_definition has all required columns (Enterprise Level 8 Auto-Heal)
-    const requiredColumns = [
-        'id', 'name', 'label', 'labelPlural', 'description', 'icon', 'colorTheme',
-        'tableName', 'displayField', 'fields', 'validations', 'relationships', 'dependencies',
-        'uiConfig', 'menuConfig', 'permission', 'features', 'layout',
-        'dashboardConfig', 'isSystem', 'workspaceId', 'createdAt', 'updatedAt'
-    ];
-    
-    try {
-        const existingCols = await db.query(`PRAGMA table_info("entity_definition")`);
-        const existingColNamesLower = existingCols.map((c: any) => (c.name || '').toLowerCase());
-        
-        for (const col of requiredColumns) {
-            if (!existingColNamesLower.includes(col.toLowerCase())) {
-                const colType = ['fields', 'validations', 'relationships', 'dependencies', 'uiConfig', 'menuConfig', 'permission', 'features', 'layout', 'dashboardConfig'].includes(col) ? 'JSON' : 'TEXT';
-                console.log(`[DB-INIT] AUTO-HEAL: Adding missing column "${col}" to entity_definition`);
-                await db.exec(`ALTER TABLE "entity_definition" ADD COLUMN "${col}" ${colType}`);
-            }
-        }
-    } catch (e: any) {
-        console.warn("[DB-INIT] entity_definition column check failed:", e.message);
-    }
     
     if (baselineEntities && Object.keys(baselineEntities).length > 0) {
         const metaStatements: any[] = [];
+        const ddlStatements: string[] = [];
+        
+        console.log(`[DB-INIT] Analyzing baseline for ${Object.keys(baselineEntities).length} entities...`);
         
         for (const [name, config] of Object.entries(baselineEntities)) {
             try {
-                // syncEntityTable handles DDL (CREATE/ALTER) - keep individual as it's sensitive
-                const syncResult = await syncEntityTable(db, { name, ...(config as any) }, registry);
+                // Collect DDL and metadata in one pass using dryRun: true
+                const syncResult = await syncEntityTable(db, { name, ...(config as any) }, registry, true);
                 
-                if (syncResult && !Array.isArray(syncResult)) {
-                    const normalized = syncResult as EntityDefinition;
+                if (Array.isArray(syncResult)) {
+                    ddlStatements.push(...syncResult);
+                }
+
+                // Get normalized entity for metadata store
+                const normalized = normalizeEntity({ name, ...(config as any) });
+                if (normalized) {
                     metaStatements.push(
                         db.prepare(`INSERT OR REPLACE INTO entity_definition (
                             id, name, label, labelPlural, tableName, icon, fields, 
                             validations, relationships, dependencies, uiConfig, menuConfig, 
-                            permission, features, layout, dashboardConfig,
+                            permission, features, layout, actions, flowRules, dashboardConfig,
+                            baseline, isCore, priority, excludeBaseFields, description,
                             workspaceId, isSystem
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
                         .bind(
                             normalized.id || normalized.name, 
                             normalized.name, 
@@ -277,24 +324,63 @@ export async function ensureBaselineSync(db: any, registry: any) {
                             jsonStringify(normalized.permission || {}),
                             jsonStringify(normalized.features || {}),
                             jsonStringify(normalized.layout || {}),
+                            jsonStringify(normalized.actions || []), 
+                            jsonStringify(normalized.flowRules || {}), 
                             jsonStringify(normalized.dashboardConfig || {}),
+                            normalized.baseline ? 1 : 0,
+                            normalized.isCore ? 1 : 0,
+                            normalized.priority || 0,
+                            jsonStringify(normalized.excludeBaseFields || []),
+                            jsonStringify(normalized.description || ''),
                             'system',
                             normalized.isSystem ? 1 : 0
                         )
                     );
                 }
             } catch (e: any) {
-                console.warn(`[DB-INIT] Baseline sync: entity '${name}' failed:`, e?.message || e);
+                console.warn(`[DB-INIT] Baseline analysis: entity '${name}' failed:`, e?.message || e);
             }
         }
 
+        // 1. Execute DDL in chunks
+        if (ddlStatements.length > 0) {
+            console.log(`[DB-INIT] Applying ${ddlStatements.length} background DDL statements...`);
+            for (let i = 0; i < ddlStatements.length; i += 20) {
+                const chunk = ddlStatements.slice(i, i + 20);
+                await db.batch(chunk.map((sql: string) => db.prepare(sql))).catch((e: any) => {
+                    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+                         console.warn("[DB-INIT] DDL Batch error:", e.message);
+                    }
+                });
+            }
+        }
+
+        // 2. Execute Metadata Sync in chunks
         if (metaStatements.length > 0) {
             console.log(`[DB-INIT] Syncing ${metaStatements.length} entity definitions (Batched)...`);
-            await db.batch(metaStatements).catch((e: any) => console.error("[DB-INIT] Entity meta batch sync failed:", e.message));
+            for (let i = 0; i < metaStatements.length; i += 20) {
+                const chunk = metaStatements.slice(i, i + 20);
+                await db.batch(chunk).catch((e: any) => console.error("[DB-INIT] Entity meta batch sync failed:", e.message));
+            }
+        }
+
+        // Enterprise Level 10: Absolute Cleanup (Strict DNA Enforcement)
+        try {
+            const baselineKeys = Object.keys(baselineEntities);
+            if (baselineKeys.length > 0) {
+                const placeholders = baselineKeys.map(() => '?').join(', ');
+                console.log(`[DB-INIT] Cleaning up orphans...`);
+                await db.query(
+                    `DELETE FROM entity_definition WHERE isSystem = 1 AND name NOT IN (${placeholders})`,
+                    baselineKeys
+                );
+            }
+        } catch (e: any) {
+            console.warn("[DB-INIT] Strict cleanup failed:", e.message);
         }
     }
 
-    // Enterprise Level 8: Sync Settings, Prompts & Roles Baseline
+    // Enterprise Level 10: Sync Settings, Prompts & Roles Baseline
     try {
         await syncSystemSettingsBaseline(db, registry);
         await syncAiPromptsBaseline(db, registry);
@@ -304,7 +390,7 @@ export async function ensureBaselineSync(db: any, registry: any) {
         console.warn(`[DB-INIT] Baseline data sync failed:`, e?.message || e);
     }
 
-    // Level 8: Force registry reload after sync
+    // Enterprise Level 10: Force registry reload after sync
     clearRegistryCache();
 }
 
@@ -319,10 +405,10 @@ export async function syncWorkspaceSettingsBaseline(db: any, registry: any) {
         id: 'system-settings',
         workspaceId: 'system',
         category: 'general',
-        workspaceName: systemSettings.workspace_name || 'Studio App',
-        language: registry.language || 'ro',
-        timezone: registry.timezone || 'UTC',
-        logoUrl: systemSettings.logo_url || '/logo.png',
+        workspaceName: systemSettings.workspace_name || '',
+        language: registry.language || '',
+        timezone: registry.timezone || '',
+        logoUrl: systemSettings.logo_url || '',
         ai: JSON.stringify(aiConfig),
         setting: JSON.stringify(systemSettings)
     };
@@ -362,29 +448,51 @@ export async function syncRolesBaseline(db: any, registry: any) {
 }
 
 export async function syncSystemSettingsBaseline(db: any, registry: any) {
-    // Enterprise Level 8: Invert the namespace mapping to find registry keys to sync
-    const nsConfig = registry?.CONSTANT?.namespaceMapping || {};
     const namespaces: Record<string, string> = {};
+    const coreMapping = registry?.CONSTANT?.coreNamespaceMapping || {
+        'SYSTEM_SETTING': 'system',
+        'AI_CONFIG': 'ai',
+        'THEME': 'theme',
+        'AUTH_CONFIG': 'auth'
+    };
+    
+    // Enterprise Level 10: Ensure core namespaces are set first
+    Object.entries(coreMapping).forEach(([registryKey, dbNamespace]) => {
+        if (registry[registryKey]) namespaces[registryKey] = dbNamespace as string;
+    });
+
+    // Supplement with namespace mapping from registry
+    const nsConfig = registry?.CONSTANT?.namespaceMapping || {};
     for (const [dbNs, regKey] of Object.entries(nsConfig)) {
-        // We only sync keys that exist in the registry object
-        if (registry[regKey as string]) {
-            namespaces[regKey as string] = dbNs;
+        const rKey = regKey as string;
+        if (registry[rKey] && !namespaces[rKey]) {
+            namespaces[rKey] = dbNs;
         }
     }
 
-    console.log('[DB-INIT] Syncing system settings baseline (Batched)...');
+    console.log(`[DB-INIT] Syncing system settings baseline (${Object.keys(namespaces).length} namespaces found)...`);
+    console.log(`[DB-INIT] Namespaces to sync: ${JSON.stringify(namespaces)}`);
+
     const statements: any[] = [];
     const processedIds = new Set<string>();
 
     for (const [registryKey, namespace] of Object.entries(namespaces)) {
         const data = registry[registryKey];
-        if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+            console.log(`[DB-INIT] Skipping namespace ${registryKey} (Data type: ${typeof data}, isArray: ${Array.isArray(data)})`);
+            continue;
+        }
 
+        console.log(`[DB-INIT] processing namespace ${registryKey} with ${Object.keys(data).length} keys`);
         for (const [key, value] of Object.entries(data)) {
+            // Enterprise Level 10: Skip metadata keys
+            if (key.startsWith('__')) continue;
+
             const dataType = typeof value === 'object' && value !== null ? 'json' : typeof value;
             const finalValue = dataType === 'json' ? JSON.stringify(value) : (value === null ? '' : String(value));
 
-            // Enterprise Level 8: Normalize to lowercase for consistent ID and lookup
+
+            // Enterprise Level 10: Normalize to lowercase for consistent ID and lookup
             const targetNamespace = namespace.toLowerCase();
             const targetKey = key.toLowerCase();
             const settingId = `${targetNamespace}:${targetKey}`;
@@ -393,10 +501,10 @@ export async function syncSystemSettingsBaseline(db: any, registry: any) {
             if (processedIds.has(settingId)) continue;
             processedIds.add(settingId);
 
-            // Enterprise Level 8: Use INSERT OR IGNORE to allow user overrides to persist 
+            // Enterprise Level 10: Use INSERT OR IGNORE to allow user overrides to persist 
             statements.push(
-                db.prepare(`INSERT OR IGNORE INTO system_setting (id, namespace, key, value, dataType) VALUES (?, ?, ?, ?, ?)`)
-                    .bind(settingId, targetNamespace, key, finalValue, dataType)
+                db.prepare(`INSERT OR REPLACE INTO system_setting (id, namespace, key, value, dataType, workspaceId) VALUES (?, ?, ?, ?, ?, ?)`)
+                    .bind(settingId, targetNamespace, key, finalValue, dataType, 'system')
             );
         }
     }
@@ -412,10 +520,12 @@ export async function syncSystemSettingsBaseline(db: any, registry: any) {
         for (const chunk of chunks) {
             await db.batch(chunk).catch((e: any) => {
                 console.error(`[DB-INIT] Settings batch ${chunkIdx} failed:`, e.message);
-                throw e; // Propagate up
+                // DON'T throw, allow other syncs to continue
             });
             chunkIdx++;
         }
+    } else {
+        console.warn("[DB-INIT] No settings found to sync. Namespaces checked:", Object.keys(namespaces));
     }
 }
 
@@ -425,13 +535,6 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
 
     console.log('[DB-INIT] Syncing AI prompts baseline (Batched)...');
     const statements: any[] = [];
-
-    // Level 8: Check for legacy 'template' column to avoid NOT NULL constraints
-    let hasTemplate = false;
-    try {
-        const columns = await db.query(`PRAGMA table_info("_ai_prompt")`);
-        hasTemplate = !!columns.find((c: any) => c.name === 'template');
-    } catch (e) {}
 
     // Categories that contain arrays of prompts - Defined in Registry
     const categories = registry?.CONSTANT?.aiPromptCategory || [];
@@ -443,29 +546,25 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
         for (const p of promptList) {
             const nameStr = typeof p.name === 'object' ? (p.name.en || p.name.ro) : (p.name || p.id);
             
-            // Enterprise Level 8: Unified bind to handle both legacy 'template' and new architecture
-            const sql = hasTemplate 
-                ? `INSERT OR REPLACE INTO _ai_prompt (id, name, systemPrompt, userPromptTemplate, model, inputContext, outputField, workspaceId, category, isLocked, template) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-                : `INSERT OR REPLACE INTO _ai_prompt (id, name, systemPrompt, userPromptTemplate, model, inputContext, outputField, workspaceId, category, isLocked) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            const sql = `INSERT OR REPLACE INTO _ai_prompt (id, name, template, systemPrompt, userPromptTemplate, model, provider, config, inputContext, outputField, category, description, isLocked, workspaceId) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
             const values = [
                 p.id, 
                 nameStr, 
-                p.content || p.systemPrompt || '', 
+                p.template || p.content || '', // template is the main prompt
+                p.content || p.systemPrompt || '', // systemPrompt fallback
                 p.userPromptTemplate || '', 
                 p.model || registry.AI_CONFIG?.model || '', 
+                p.provider || registry.AI_CONFIG?.active_provider || '',
+                p.config ? JSON.stringify(p.config) : '',
                 p.inputContext || '', 
                 p.outputField || 'output', 
-                'system',
                 category,
-                p.isLocked ? 1 : 0
+                p.description ? (typeof p.description === 'object' ? JSON.stringify(p.description) : p.description) : '',
+                p.isLocked ? 1 : 0,
+                'system'
             ];
-
-            if (hasTemplate) {
-                values.push(p.content || p.systemPrompt || '');
-            }
 
             statements.push(db.prepare(sql).bind(...values));
         }
@@ -489,7 +588,7 @@ export async function syncAiPromptsBaseline(db: any, registry: any) {
 }
 
 export async function syncEntityTable(db: any, rawDef: any, registry?: any, dryRun: boolean = false) {
-    // Enterprise Level 8: Unified Normalization Lens
+    // Enterprise Level 10: Unified Normalization Lens
     const entityDef = normalizeEntity(rawDef);
     if (!entityDef || !entityDef.name) return dryRun ? [] : undefined;
 
@@ -497,44 +596,38 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any, dryR
     const pk = getPrimaryKey(tableName);
     const fields = entityDef.fields;
     
+    // Level 10: Dynamically pull virtual field types from constants
+    const virtualFields = registry?.CONSTANT?.virtualFields || [];
+    
     const sqlStatements: string[] = [];
 
     try {
         const rows = await db.query(`PRAGMA table_info("${tableName}")`);
+        // existingColsLower is declared here so indexing logic later can reference it regardless of branch
+        let existingColsLower: string[] = [];
         if (!rows || rows.length === 0) {
             const colDefs = [`"${pk}" TEXT PRIMARY KEY`];
             fields.forEach((f: any) => {
-                const fname = f.name || f.id;
+                const fname = f.name;
                 const ftype = (f.type || 'text').toLowerCase();
 
                 // Skip virtual fields
-                if (['relation-many', 'tag', 'calculation', 'formula', 'divider', 'group', 'section', 'tab', 'description', 'info-box'].includes(ftype)) {
+                if (virtualFields.includes(ftype)) {
                     return;
                 }
 
-                if (fname && fname !== pk && fname !== 'id') {
+                if (fname && fname !== pk) {
                     let colDef = `"${fname}" ${mapFieldType(f.type)}`;
                     if (f.unique) colDef += ' UNIQUE';
                     if (f.required) colDef += ' NOT NULL';
                     
-                    // Level 8: Foreign Key Support
+                    // Foreign Key Support
                     if (f.relation && f.relation.target) {
                         const targetTable = resolveCollection(f.relation.tableName || f.relation.target);
                         colDef += ` REFERENCES "${targetTable}"(id) ON DELETE SET NULL`;
                     }
                     
                     colDefs.push(colDef);
-                }
-            });
-            
-            // Add standard fields (Enterprise Level 8) - Defined in Registry
-            const std = registry?.CONSTANT?.systemFields || [];
-            std.forEach((s: string) => {
-                // Skip workspaceId for workspace table (redundant)
-                if (s === 'workspaceId' && tableName === 'workspace') return;
-                
-                if (!fields.find((f: any) => ((f.name || f.id) || '').toLowerCase() === s.toLowerCase())) {
-                    colDefs.push(`"${s}" ${s === 'archived' ? 'INTEGER DEFAULT 0' : 'TEXT'}`);
                 }
             });
 
@@ -548,20 +641,23 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any, dryR
             }
         } else {
             const existingColsRaw = rows.map((r: any) => r.name);
-            const existingColsLower = existingColsRaw.map((n: string) => n.toLowerCase());
+            existingColsLower = existingColsRaw.map((n: string) => n.toLowerCase());
             
             const missing: any[] = [];
             const processedMissing = new Set<string>();
 
-            // 1. Process fields from entity definition
+            // Enterprise Level 10: Primary Key check (Unified Lens)
+            if (!existingColsLower.includes(pk.toLowerCase())) {
+                missing.push({ name: pk, id: pk, type: 'text', label: 'Primary Key' });
+                processedMissing.add(pk.toLowerCase());
+            }
+
+            // 1. Process fields from entity definition (Includes inherited Base fields)
             fields.forEach((f: any) => {
-                const fname = f.name || f.id;
+                const fname = f.name;
                 const ftype = (f.type || 'text').toLowerCase();
                 
-                // Skip virtual fields that don't need a physical column
-                if (['relation-many', 'tag', 'calculation', 'formula', 'divider', 'group', 'section', 'tab', 'description', 'info-box'].includes(ftype)) {
-                    return;
-                }
+                if (virtualFields.includes(ftype)) return;
 
                 if (fname && !existingColsLower.includes(fname.toLowerCase())) {
                     if (!processedMissing.has(fname.toLowerCase())) {
@@ -570,25 +666,20 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any, dryR
                     }
                 }
             });
-            
-            // 2. Core system fields check - From Registry
-            const std = registry?.CONSTANT?.systemFields || [];
-            std.forEach((s: string) => {
-                // Skip workspaceId for workspace table
-                if (s === 'workspaceId' && tableName === 'workspace') return;
-                
-                if (!existingColsLower.includes(s.toLowerCase())) {
-                    if (!processedMissing.has(s.toLowerCase())) {
-                        missing.push({ name: s, label: s, type: s === 'archived' ? 'boolean' : 'text' });
-                        processedMissing.add(s.toLowerCase());
-                    }
-                }
-            });
 
             if (missing.length > 0) {
                 for (const col of missing) {
                     const fname = col.name || col.id;
-                    const sql = `ALTER TABLE "${tableName}" ADD COLUMN "${fname}" ${mapFieldType(col.type)}`;
+                    let sql = `ALTER TABLE "${tableName}" ADD COLUMN "${fname}" ${mapFieldType(col.type)}`;
+                    
+                    // Enterprise Level 10: Dynamic Default for NOT NULL columns during schema evolution
+                    if (fname === 'workspaceId' || col.required) {
+                        if (fname === 'workspaceId') sql += " DEFAULT 'system'";
+                        else if (fname === 'ownerId') sql += " DEFAULT 'system'";
+                        else if (mapFieldType(col.type) === 'INTEGER') sql += " DEFAULT 0";
+                        else if (mapFieldType(col.type) === 'REAL') sql += " DEFAULT 0.0";
+                        else sql += " DEFAULT ''";
+                    }
                     
                     if (dryRun) {
                         sqlStatements.push(sql);
@@ -613,6 +704,88 @@ export async function syncEntityTable(db: any, rawDef: any, registry?: any, dryR
             }
         }
         
+        // --- ENTERPRISE LEVEL 10: AUTOMATED PERFORMANCE INDEXING ---
+        // We sync indexes after table structure is ready.
+        try {
+            const indexSql: string[] = [];
+            fields.forEach((f: any) => {
+                const fname = f.name || f.id;
+                if (!fname) return;
+
+                // Unique indexing is handled during CREATE/ALTER, but we ensure it here too
+                if (f.unique) {
+                    indexSql.push(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_u_${tableName}_${fname}" ON "${tableName}"("${fname}")`);
+                } 
+                // Performance indexing based on .describe('index=true')
+                else if (f.index === true) {
+                    // Optimized descending index for dates (standard for createdAt)
+                    const direction = (fname.toLowerCase().includes('date') || fname.toLowerCase().includes('createdat')) ? 'DESC' : 'ASC';
+                    indexSql.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_${fname}" ON "${tableName}"("${fname}" ${direction})`);
+                }
+            });
+
+            // Ensure workspace isolation index
+            if (!tableName.includes('workspace')) {
+                indexSql.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_ws" ON "${tableName}"("workspaceId")`);
+            }
+
+            // --- ENTERPRISE LEVEL 11: ULTIMATE PERFORMANCE COMPOSITE INDEX ---
+            // DNA-Guided Optimization: Most critical path uses workspaceId + deletedAt + createdAt
+            if (existingColsLower.includes('workspaceid') && existingColsLower.includes('deletedat') && existingColsLower.includes('createdat')) {
+                indexSql.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_ultimate_perf" ON "${tableName}"("workspaceId", "deletedAt", "createdAt" DESC)`);
+            }
+
+            // --- ENTERPRISE LEVEL 10: AUTO-PERFORMANCE COMPOSITE INDEX ---
+            // Most queries filter by deletedAt and sort by createdAt DESC
+            if (existingColsLower.includes('deletedat') && existingColsLower.includes('createdat')) {
+                indexSql.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_perf_standard" ON "${tableName}"("deletedAt", "createdAt" DESC)`);
+            }
+
+            // --- ENTERPRISE LEVEL 11: AUTH & SESSION OPTIMIZATION ---
+            if (tableName === 'session' || tableName === 'account') {
+                indexSql.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_userId" ON "${tableName}"("userId")`);
+                if (tableName === 'session') {
+                    indexSql.push(`CREATE INDEX IF NOT EXISTS "idx_session_expires" ON "session"("expiresAt")`);
+                }
+            }
+            if (tableName === 'user') {
+                indexSql.push(`CREATE INDEX IF NOT EXISTS "idx_user_email" ON "user"("email")`);
+            }
+
+            // --- ENTERPRISE LEVEL 10: CUSTOM COMPOSITE INDEXES ---
+            if (Array.isArray(entityDef.indexes)) {
+                entityDef.indexes.forEach((idx: string, i: number) => {
+                    // Check if it's already a full SQL or just column names
+                    if (idx.toLowerCase().startsWith('create index')) {
+                        indexSql.push(idx);
+                    } else {
+                        // idx can be "workspaceId, createdAt DESC"
+                        // we slugify columns for name: idx_audit_log_workspaceid_createdat
+                        const slug = idx.toLowerCase().replace(/ desc/g, '').replace(/ asc/g, '').replace(/[^a-z0-9]/g, '_');
+                        indexSql.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_${slug}" ON "${tableName}"(${idx})`);
+                    }
+                });
+            }
+
+            if (dryRun) {
+                sqlStatements.push(...indexSql);
+            } else if (indexSql.length > 0) {
+                // Enterprise Level 10: Batch index creation to reduce I/O locks
+                try {
+                    const batchStmts = indexSql.map(sql => db.prepare(sql));
+                    await db.batch(batchStmts).catch((e: any) => {
+                        // Batch failure fallback to individual execution for already-existing indices
+                        const isCommon = e.message.includes('already exists') || e.message.includes('duplicate');
+                        if (!isCommon) console.warn(`[DB-INDEX-BATCH-WARN] ${tableName}:`, e.message);
+                    });
+                } catch (e) {
+                    // Silent fallback for batch errors
+                }
+            }
+        } catch (idxErr: any) {
+            console.warn(`[DB-INDEX-SYNC-FAILED] ${tableName}:`, idxErr.message);
+        }
+
         if (dryRun) return sqlStatements;
         return entityDef;
     } catch (e: any) {

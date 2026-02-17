@@ -1,6 +1,6 @@
 /**
  * SEARCH DIALOG WRAPPER - Manages global search modal with keyboard shortcut
- * Enterprise Level 8: Cmd+K / Ctrl+K to open search
+ * Enterprise Level 10: Cmd+K / Ctrl+K to open search
  */
 
 import { useEffect, useState } from 'react';

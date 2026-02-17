@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, parseISO } from 'date-fns';
-import { ro } from 'date-fns/locale';
+import * as Locales from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { Button } from './button';
 import { cn } from '~/lib/core';
+import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 
 interface DatePickerProps {
     value?: string | Date;
@@ -14,7 +16,11 @@ interface DatePickerProps {
     showTime?: boolean;
 }
 
-export function DatePicker({ value, onChange, placeholder = "Select date", className, showTime = false }: DatePickerProps) {
+export function DatePicker({ value, onChange, placeholder, className, showTime = false }: DatePickerProps) {
+    const { t } = useTranslation();
+    const { lang = 'en' } = useParams();
+    const dateLocale = (Locales as any)[lang] || Locales.enUS;
+
     const [open, setOpen] = useState(false);
     const [currentMonth, setCurrentMonth] = useState(value ? (typeof value === 'string' ? parseISO(value) : value) : new Date());
 
@@ -37,7 +43,7 @@ export function DatePicker({ value, onChange, placeholder = "Select date", class
                     <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-xs font-black uppercase tracking-tighter">
-                    {format(currentMonth, 'MMMM yyyy', { locale: ro })}
+                    {format(currentMonth, 'MMMM yyyy', { locale: dateLocale })}
                 </span>
                 <Button 
                     variant="ghost" 
@@ -53,7 +59,7 @@ export function DatePicker({ value, onChange, placeholder = "Select date", class
 
     const renderDays = () => {
         const days = [];
-        const date = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+        const date = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
         for (let i = 0; i < 7; i++) {
             days.push(
                 <div key={i} className="text-center text-[10px] font-bold text-slate-400 uppercase py-1">
@@ -131,14 +137,14 @@ export function DatePicker({ value, onChange, placeholder = "Select date", class
                 >
                     <div className="w-12 h-12 rounded-xl bg-indigo-50 flex flex-col items-center justify-center text-indigo-600 transition-colors group-hover:bg-indigo-600 group-hover:text-white shrink-0">
                         <CalendarIcon size={20} className="mb-0.5" />
-                        {selectedDate && <span className="text-[9px] font-black leading-none">{format(selectedDate, "MMM", { locale: ro }).toUpperCase()}</span>}
+                        {selectedDate && <span className="text-[9px] font-black leading-none">{format(selectedDate, "MMM", { locale: dateLocale }).toUpperCase()}</span>}
                     </div>
                     <div className="flex-1 flex flex-col min-w-0">
                         <span className="text-[10px] font-black uppercase italic tracking-widest text-slate-400 leading-none mb-1">
-                            {placeholder || "Dată Selectată"}
+                            {placeholder || t('common.date')}
                         </span>
                         <span className="text-sm font-black text-slate-800 italic truncate">
-                            {selectedDate ? format(selectedDate, showTime ? 'PPP HH:mm' : 'PPP', { locale: ro }) : <span>{placeholder}</span>}
+                            {selectedDate ? format(selectedDate, showTime ? 'PPP HH:mm' : 'PPP', { locale: dateLocale }) : <span>{placeholder || t('common.select_date')}</span>}
                         </span>
                     </div>
                     <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:text-indigo-500 hover:bg-indigo-50 transition-colors shrink-0">
@@ -154,7 +160,7 @@ export function DatePicker({ value, onChange, placeholder = "Select date", class
                     
                     {showTime && (
                         <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col gap-2">
-                             <span className="text-[9px] font-black uppercase text-slate-400">Selectează Ora</span>
+                             <span className="text-[9px] font-black uppercase text-slate-400">{t('common.select_time')}</span>
                              <div className="flex items-center gap-2">
                                  <input 
                                     type="time" 
@@ -180,7 +186,7 @@ export function DatePicker({ value, onChange, placeholder = "Select date", class
                                 className="w-full text-[10px] font-black uppercase italic tracking-widest bg-indigo-600 text-white hover:bg-indigo-700 h-9 rounded-xl shadow-md shadow-indigo-100 mb-1"
                                 onClick={() => setOpen(false)}
                              >
-                                 CONFIRMĂ SELECȚIA
+                                 {t('common.confirm')}
                              </Button>
                          )}
                          <Button 
@@ -191,7 +197,7 @@ export function DatePicker({ value, onChange, placeholder = "Select date", class
                                 setOpen(false);
                             }}
                          >
-                             TODAY
+                             {t('common.today')}
                          </Button>
                     </div>
                 </div>

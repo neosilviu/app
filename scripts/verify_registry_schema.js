@@ -4,7 +4,7 @@ const axios = require('axios');
 const API_URL = process.env.API_URL || 'http://localhost:8788/api';
 
 async function verifySchemaDrift() {
-    console.log("🛠️ Verificare Schema Drift & Integrity (Level 8)...");
+    console.log("🛠️ Verificare Schema Drift & Integrity (Level 10)...");
 
     try {
         const response = await axios.get(`${API_URL}/config`);

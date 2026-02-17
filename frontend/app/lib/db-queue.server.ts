@@ -33,16 +33,15 @@ class DbQueue {
         this.writeQueue = this.writeQueue.then(() => processSequentially());
     }
 
-    // Level 8: Improved queue logic
+    // Enterprise Level 10: Structural Concurrency Resolution (D3 Protocol)
     shouldQueue(isWrite = true): boolean {
         // ONLY queue in local development on Windows
         // In production (Cloudflare), D1 handles its own concurrency
         const isWinDev = typeof process !== 'undefined' && (process.env.NODE_ENV === 'development' || process.platform === 'win32');
         if (typeof process === 'undefined' || !isWinDev) return false; 
         
-        // Enterprise Level 8: Only queue WRITES. SQLite supports concurrent readers.
-        // Queueing reads creates unnecessary bottlenecks during page loads.
-        return isWrite === true; 
+        // Enterprise Level 10: Optimal Read-Pass Strategy. Concurrent reads are fine on SQLite WAL.
+        return isWrite; 
     }
 
     async enqueue<T>(fn: () => Promise<T>, isWrite = true): Promise<T> {
@@ -55,7 +54,7 @@ class DbQueue {
             return fn();
         }
 
-        // Level 8: Batch registry operations to reduce contention
+        // Enterprise Level 10: Registry-Level Task Batching (Throughput Optimization)
         const fnString = fn.toString();
         const isRegistryOp = fnString.includes('registry') || fnString.includes('SYSTEM_SETTING');
         
@@ -76,7 +75,7 @@ class DbQueue {
         this.activeCount++;
         const queueId = Math.random().toString(36).substring(7);
         
-        // Level 8: Suppress high contention warnings on Windows Dev
+        // Enterprise Level 10: High-Contention Telemetry (Throttled Reporting)
         // The queueing mechanism itself is working as intended to prevent SQLite locks.
         // Only log if queue exceeds a critical threshold (e.g., > 100 tasks)
         if (this.activeCount > 100) {
@@ -94,7 +93,7 @@ class DbQueue {
                 return res;
             } finally {
                 this.activeCount--;
-                // Level 8: Add micro-delay to prevent queue bursts from overwhelming SQLite
+                // Enterprise Level 10: Anti-Burst Pacing (SQLite Resource Safety)
                 if (this.activeCount > 10) {
                     await new Promise(resolve => setTimeout(resolve, 1));
                 }
