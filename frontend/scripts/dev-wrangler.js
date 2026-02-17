@@ -7,12 +7,23 @@ const isInteractive = Boolean(process.stdin.isTTY);
 let canRun = hasTokenEnv || isInteractive;
 
 if (!canRun) {
-  // last-resort: check if `wrangler whoami` is already authenticated on the machine
+  // last-resort: check for an authenticated wrangler session in PATH or via npx
   try {
-    const whoami = spawnSync('npx', ['wrangler', 'whoami'], { encoding: 'utf8' });
-    if (whoami.status === 0) canRun = true;
+    const wranglerWhoami = spawnSync('wrangler', ['whoami'], { encoding: 'utf8' });
+    if (wranglerWhoami && wranglerWhoami.status === 0) {
+      canRun = true;
+    }
   } catch (err) {
     /* ignore */
+  }
+
+  if (!canRun) {
+    try {
+      const npxWhoami = spawnSync('npx', ['wrangler', 'whoami'], { encoding: 'utf8' });
+      if (npxWhoami && npxWhoami.status === 0) canRun = true;
+    } catch (err) {
+      /* ignore */
+    }
   }
 }
 
@@ -26,8 +37,12 @@ const hasNpx = (() => {
   try { return spawnSync('npx', ['--version'], { encoding: 'utf8' }).status === 0; } catch { return false; }
 })();
 
-// Prefer static Pages dev on Windows (avoids known esbuild/wrk async assertion on Win)
-const preferStaticOnWin = process.platform === 'win32';
+// Prefer static Pages dev on Windows (avoids known esbuild/wrk async assertion on Win).
+// Allow opt-in override via DEV_WRANGLER_FORCE_PROXY to force proxy-mode on Windows.
+const isWin = process.platform === 'win32';
+const forceProxy = Boolean(process.env.DEV_WRANGLER_FORCE_PROXY);
+const preferStaticOnWin = isWin && !forceProxy;
+if (isWin && forceProxy) console.info('[dev-wrangler] DEV_WRANGLER_FORCE_PROXY=true — forcing proxy-mode on Windows (opt-in).');
 if (preferStaticOnWin) {
   console.info('[dev-wrangler] Running Pages static dev on Windows (proxy-mode disabled to avoid bundler issues).');
   if (!hasNpx) {
